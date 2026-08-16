@@ -296,7 +296,7 @@ static void create_completion_visuals(lv_obj_t *parent)
     }
     lv_obj_t *smile = lv_arc_create(view_context.tomato);
     lv_obj_set_size(smile, 30, 18);
-    lv_arc_set_bg_angles(smile, 200, 340);
+    lv_arc_set_bg_angles(smile, 20, 160);
     lv_obj_remove_style(smile, NULL, LV_PART_INDICATOR);
     lv_obj_remove_style(smile, NULL, LV_PART_KNOB);
     lv_obj_set_style_arc_width(smile, 3, LV_PART_MAIN);
