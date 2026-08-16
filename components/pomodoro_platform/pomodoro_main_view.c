@@ -8,6 +8,26 @@
 #include "lvgl.h"
 
 typedef struct {
+    int16_t x;
+    int16_t y;
+    uint32_t color;
+} confetti_piece_t;
+
+static const confetti_piece_t completion_confetti[] = {
+    {.x = -72, .y = 8, .color = 0xFFD166},
+    {.x = -54, .y = 48, .color = 0x5B8CFF},
+    {.x = -42, .y = -2, .color = 0x4DD17A},
+    {.x = 44, .y = -4, .color = 0xFFD166},
+    {.x = 58, .y = 45, .color = 0xFF5C5C},
+    {.x = 72, .y = 14, .color = 0x5B8CFF},
+};
+
+enum {
+    COMPLETION_CONFETTI_COUNT =
+        sizeof(completion_confetti) / sizeof(completion_confetti[0]),
+};
+
+typedef struct {
     pomodoro_main_action_handler_t action_handler;
     pomodoro_application_view_t last_view;
     lv_obj_t *title;
@@ -28,9 +48,10 @@ typedef struct {
     lv_obj_t *completion_countdown;
     lv_obj_t *set_label;
     lv_obj_t *set_markers[4];
-    lv_obj_t *confetti[6];
+    lv_obj_t *confetti[COMPLETION_CONFETTI_COUNT];
     lv_obj_t *mode_dots[3];
     lv_obj_t *boundary_feedback;
+    lv_obj_t *confirmation_mask;
     lv_obj_t *confirmation_overlay;
     lv_obj_t *confirmation_title;
     lv_obj_t *confirmation_body;
@@ -263,22 +284,18 @@ static void create_completion_visuals(lv_obj_t *parent)
     lv_obj_remove_flag(smile, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_align(smile, LV_ALIGN_CENTER, 0, 13);
 
-    static const int16_t confetti_x[6] = {-72, -54, -42, 44, 58, 72};
-    static const int16_t confetti_y[6] = {8, 48, -2, -4, 45, 14};
-    static const uint32_t confetti_color[6] = {
-        0xFFD166, 0x5B8CFF, 0x4DD17A, 0xFFD166, 0xFF5C5C, 0x5B8CFF,
-    };
-    for (uint8_t index = 0; index < 6U; index++) {
+    for (uint8_t index = 0; index < COMPLETION_CONFETTI_COUNT; index++) {
         lv_obj_t *piece = lv_obj_create(parent);
         view_context.confetti[index] = piece;
         lv_obj_remove_style_all(piece);
         lv_obj_set_size(piece, 7, 12);
         lv_obj_set_style_bg_opa(piece, LV_OPA_COVER, 0);
         lv_obj_set_style_bg_color(piece,
-                                  lv_color_hex(confetti_color[index]), 0);
+                                  lv_color_hex(completion_confetti[index].color),
+                                  0);
         lv_obj_set_style_radius(piece, 3, 0);
-        lv_obj_align(piece, LV_ALIGN_TOP_MID, confetti_x[index],
-                     confetti_y[index]);
+        lv_obj_align(piece, LV_ALIGN_TOP_MID, completion_confetti[index].x,
+                     completion_confetti[index].y);
         lv_obj_add_flag(piece, LV_OBJ_FLAG_HIDDEN);
     }
 
@@ -389,13 +406,6 @@ esp_err_t pomodoro_main_view_create(
         lv_obj_set_style_radius(marker, LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_border_width(marker, 2, 0);
         lv_obj_align(marker, LV_ALIGN_BOTTOM_MID, index * 24 - 5, -48);
-        lv_obj_t *marker_leaf = lv_obj_create(marker);
-        lv_obj_remove_style_all(marker_leaf);
-        lv_obj_set_size(marker_leaf, 7, 4);
-        lv_obj_set_style_bg_opa(marker_leaf, LV_OPA_COVER, 0);
-        lv_obj_set_style_bg_color(marker_leaf, lv_color_hex(0x4DD17A), 0);
-        lv_obj_set_style_radius(marker_leaf, 2, 0);
-        lv_obj_align(marker_leaf, LV_ALIGN_TOP_MID, 0, -2);
     }
     for (uint8_t index = 0; index < 3U; index++) {
         lv_obj_t *dot = lv_obj_create(screen);
@@ -411,6 +421,19 @@ esp_err_t pomodoro_main_view_create(
                                 lv_color_hex(0xAAB1BE), 0);
     lv_obj_align(view_context.boundary_feedback, LV_ALIGN_BOTTOM_MID, 0, -76);
     lv_obj_add_flag(view_context.boundary_feedback, LV_OBJ_FLAG_HIDDEN);
+
+    view_context.confirmation_mask = lv_obj_create(screen);
+    lv_obj_set_size(view_context.confirmation_mask, 480, 480);
+    lv_obj_align(view_context.confirmation_mask, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_bg_color(view_context.confirmation_mask,
+                              lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(view_context.confirmation_mask, LV_OPA_60, 0);
+    lv_obj_set_style_border_width(view_context.confirmation_mask, 0, 0);
+    lv_obj_set_style_radius(view_context.confirmation_mask, 0, 0);
+    lv_obj_remove_flag(view_context.confirmation_mask, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(view_context.confirmation_mask, confirmation_cancelled,
+                        LV_EVENT_CLICKED, NULL);
+    lv_obj_add_flag(view_context.confirmation_mask, LV_OBJ_FLAG_HIDDEN);
 
     view_context.confirmation_overlay = lv_obj_create(screen);
     lv_obj_set_size(view_context.confirmation_overlay, 432, 250);
@@ -449,14 +472,17 @@ esp_err_t pomodoro_main_view_create(
 static void render_progress(const pomodoro_application_view_t *view,
                             lv_color_t accent)
 {
+    lv_color_t focus_accent = lv_color_hex(0xFF5C5C);
     lv_label_set_text_fmt(view_context.set_label, "Set %u/4",
                           view->set_progress);
     for (uint8_t index = 0; index < 4U; index++) {
         bool complete = index < view->set_progress;
-        lv_obj_set_style_border_color(view_context.set_markers[index], accent, 0);
+        lv_obj_set_style_border_color(view_context.set_markers[index],
+                                      focus_accent, 0);
         lv_obj_set_style_bg_opa(view_context.set_markers[index],
                                 complete ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
-        lv_obj_set_style_bg_color(view_context.set_markers[index], accent, 0);
+        lv_obj_set_style_bg_color(view_context.set_markers[index],
+                                  focus_accent, 0);
     }
     for (uint8_t index = 0; index < 3U; index++) {
         lv_obj_set_style_bg_opa(view_context.mode_dots[index], LV_OPA_COVER, 0);
@@ -495,7 +521,7 @@ static void render_completion(const pomodoro_application_view_t *view)
         lv_label_set_text(view_context.completion_body,
                           "Ready for another focus?");
     }
-    for (uint8_t index = 0; index < 6U; index++) {
+    for (uint8_t index = 0; index < COMPLETION_CONFETTI_COUNT; index++) {
         if (focus && view->completion_event == POMODORO_EVENT_FOCUS_COMPLETE) {
             lv_obj_remove_flag(view_context.confetti[index], LV_OBJ_FLAG_HIDDEN);
         } else {
@@ -577,6 +603,7 @@ bool pomodoro_main_view_render(const pomodoro_application_view_t *view)
     }
 
     if (view->confirmation == POMODORO_APPLICATION_CONFIRM_NONE) {
+        lv_obj_add_flag(view_context.confirmation_mask, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(view_context.confirmation_overlay, LV_OBJ_FLAG_HIDDEN);
     } else {
         bool reset = view->confirmation == POMODORO_APPLICATION_CONFIRM_RESET;
@@ -584,8 +611,11 @@ bool pomodoro_main_view_render(const pomodoro_application_view_t *view)
                           reset ? "Reset this timer?" : "End this timer?");
         lv_label_set_text(view_context.confirmation_button_label,
                           reset ? "Reset" : "End and switch");
+        lv_obj_remove_flag(view_context.confirmation_mask,
+                           LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(view_context.confirmation_overlay,
                            LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(view_context.confirmation_mask);
         lv_obj_move_foreground(view_context.confirmation_overlay);
     }
     return true;
