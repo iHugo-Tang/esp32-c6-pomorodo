@@ -421,6 +421,8 @@ esp_err_t pomodoro_main_view_create(
                                &lv_font_montserrat_24, 0);
     lv_obj_align(view_context.completion_title, LV_ALIGN_TOP_MID, 0, 82);
     view_context.completion_body = lv_label_create(view_context.completion_group);
+    lv_obj_set_style_text_font(view_context.completion_body,
+                               &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(view_context.completion_body,
                                 lv_color_hex(0xAAB1BE), 0);
     lv_obj_set_style_text_align(view_context.completion_body,
@@ -432,6 +434,8 @@ esp_err_t pomodoro_main_view_create(
     lv_obj_add_flag(view_context.completion_group, LV_OBJ_FLAG_HIDDEN);
 
     view_context.set_label = lv_label_create(screen);
+    lv_obj_set_style_text_font(view_context.set_label,
+                               &lv_font_montserrat_16, 0);
     lv_obj_align(view_context.set_label, LV_ALIGN_BOTTOM_MID, -68, -48);
     for (uint8_t index = 0; index < 4U; index++) {
         lv_obj_t *marker = lv_obj_create(screen);

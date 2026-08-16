@@ -263,9 +263,9 @@ flowchart LR
 1. 小型微笑番茄插画。
 2. 普通 Focus complete 不显示彩纸；仅首次达到 Daily Goal 时显示少量彩纸。
 3. 标题：`Focus complete`。
-4. 正文：`Great work! +1`，旁边使用番茄图标而非 Emoji 字符。
-5. 若首次达到 Daily Goal，追加 `Daily goal reached!`。
-6. Set Progress 已完成一项；第四个完成后显示 `Set 4/4`。
+4. 正文：`Great work! +1`，使用 16 px 字体，旁边使用番茄图标而非 Emoji 字符。
+5. 若首次达到 Daily Goal，使用同样的 16 px 字体追加 `Daily goal reached!`。
+6. Set Progress 使用 16 px 字体；已完成一项，第四个完成后显示 `Set 4/4`。
 
 ### 自动开始开启
 
