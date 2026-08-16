@@ -24,11 +24,11 @@
 | P01 | Sync from iPhone | 全屏页面 | P00；Settings 的 `Sync from iPhone` | 成功后进入来源目标；Back 返回来源 |
 | P02 | Set time manually | 全屏页面 | P00；Settings 的 `Set manually`；P01 失败回退 | Confirm 后进入 Main 或返回 Settings |
 | P10 | Main timer | 全屏页面 | 完成首次设置；从 Settings/Stats 返回；唤醒 | 进入 Stats、Settings、完成态或确认 Dialog |
-| S10-A | Focus / Short break / Long break Ready | P10 状态 | 选择模式；完成态选择 `Not now` | Start 进入 Running |
+| S10-A | Focus / Short break / Long break Ready | P10 状态 | 选择模式 | Start 进入 Running |
 | S10-B | Running | P10 状态 | Start、Resume、自动开始 | Pause；计时完成；切换模式确认 |
 | S10-C | Paused | P10 状态 | Running 中点击 Pause | Resume；Reset Dialog；切换模式确认 |
-| S11 | Focus complete | P10 中央完成态 | Focus 到达 00:00 | 自动开始、Start now、Cancel auto-start、Not now |
-| S12 | Break complete | P10 中央完成态 | Short/Long break 到达 00:00 | 自动开始、Start now、Cancel auto-start、Not now |
+| S11 | Focus complete | P10 中央完成态 | Focus 到达 00:00 | Start break；或自动开始、Start now、Cancel auto-start |
+| S12 | Break complete | P10 中央完成态 | Short/Long break 到达 00:00 | Start focus；或自动开始、Start now、Cancel auto-start |
 | P20 | Statistics | 全屏页面 | Main 顶部图表图标；Settings 的 `Today's statistics` | 返回进入来源 |
 | P30 | Settings | 可滚动全屏页面 | Main 顶部齿轮图标 | Back 返回 Main |
 | P31 | Numeric stepper | 全屏页面模板 | 四个时长/目标设置项 | Confirm 或 Back 返回 Settings |
@@ -65,8 +65,8 @@ flowchart LR
     MANUAL -->|"Confirm from Settings"| SETTINGS
     MAIN -->|"Focus reaches 00:00"| FOCUS_DONE
     MAIN -->|"Break reaches 00:00"| BREAK_DONE
-    FOCUS_DONE -->|"Start now, auto-start, or Not now"| MAIN
-    BREAK_DONE -->|"Start now, auto-start, or Not now"| MAIN
+    FOCUS_DONE -->|"Start break, Start now, or auto-start"| MAIN
+    BREAK_DONE -->|"Start focus, Start now, or auto-start"| MAIN
     MAIN -->|"Top-bar chart icon"| STATS
     MAIN -->|"Top-bar gear icon"| SETTINGS
     SETTINGS -->|"Today's statistics"| STATS
@@ -276,8 +276,7 @@ flowchart LR
 
 ### 自动开始关闭
 
-- 主按钮：`Start short break` 或 `Start long break`。
-- 次操作：`Not now`，进入下一 Mode 的 Ready 状态。
+- 主按钮：`Start break`（由应用按 Set 进度决定进入 Short break 或 Long break）。普通完成状态不显示 `Not now`；仅自动开始倒计时时显示 `Cancel auto-start`。
 - 页面保持到用户操作；无操作 2 分钟变暗、5 分钟熄屏。
 
 ## 10. S12 — Break complete
@@ -298,7 +297,7 @@ flowchart LR
 
 ### 自动开始关闭
 
-- `Start focus` + `Not now`。
+- 仅显示 `Start focus`。
 
 ## 11. P20 — Statistics
 

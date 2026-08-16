@@ -296,7 +296,7 @@ static void create_completion_visuals(lv_obj_t *parent)
     }
     lv_obj_t *smile = lv_arc_create(view_context.tomato);
     lv_obj_set_size(smile, 30, 18);
-    lv_arc_set_bg_angles(smile, 20, 160);
+    lv_arc_set_bg_angles(smile, 200, 340);
     lv_obj_remove_style(smile, NULL, LV_PART_INDICATOR);
     lv_obj_remove_style(smile, NULL, LV_PART_KNOB);
     lv_obj_set_style_arc_width(smile, 3, LV_PART_MAIN);
@@ -574,18 +574,24 @@ static void render_completion(const pomodoro_application_view_t *view)
                               view->auto_start_seconds_remaining);
         lv_label_set_text(view_context.primary_label, "Start now");
         lv_label_set_text(view_context.secondary_label, "Cancel auto-start");
+        lv_obj_remove_flag(view_context.secondary_button, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_label_set_text(view_context.completion_countdown, "");
-        lv_label_set_text_fmt(view_context.primary_label, "Start %s",
-                              scheduled.action_name);
-        lv_label_set_text(view_context.secondary_label, "Not now");
+        if (focus) {
+            lv_label_set_text(view_context.primary_label, "Start break");
+        } else {
+            lv_label_set_text_fmt(view_context.primary_label, "Start %s",
+                                  scheduled.action_name);
+        }
+        lv_obj_add_flag(view_context.secondary_button, LV_OBJ_FLAG_HIDDEN);
     }
     lv_obj_remove_flag(view_context.primary_button, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_remove_flag(view_context.secondary_button, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_size(view_context.primary_button, 220, 56);
     lv_obj_align(view_context.primary_button, LV_ALIGN_CENTER, 0, 48);
-    lv_obj_set_size(view_context.secondary_button, 170, 44);
-    lv_obj_align(view_context.secondary_button, LV_ALIGN_CENTER, 0, 101);
+    if (view->auto_start_pending) {
+        lv_obj_set_size(view_context.secondary_button, 170, 44);
+        lv_obj_align(view_context.secondary_button, LV_ALIGN_CENTER, 0, 101);
+    }
 }
 
 bool pomodoro_main_view_render(const pomodoro_application_view_t *view)

@@ -15,8 +15,8 @@ The repository currently contains an executable device slice of the product:
   pause/resume/reset controls, completion transitions, and Set Progress;
 - non-wrapping touch gestures with confirmation before an active timer is
   discarded;
-- three-second auto-start transitions with Start now, Cancel auto-start, and
-  Not now controls that preserve the configured automation settings;
+- three-second auto-start transitions with Start now and Cancel auto-start
+  controls that preserve the configured automation settings;
 - persistence and hardware service boundaries for NVS, RTC, display, touch,
   audio, and power implementations;
 - default ESP32-C6 memory/flash configuration and a data-preserving partition

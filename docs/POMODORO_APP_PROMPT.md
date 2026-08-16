@@ -21,7 +21,7 @@ Design and implement a single-purpose Pomodoro timer for the Waveshare ESP32-C6-
 Use these canonical English terms throughout UI, design, code, and tests:
 
 - Modes: `Focus`, `Short break`, `Long break`.
-- Actions: `Start`, `Pause`, `Resume`, `Reset`, `Confirm`, `Not now`.
+- Actions: `Start`, `Pause`, `Resume`, `Reset`, `Confirm`.
 - States: `Ready to focus`, `Ready for a break`, `Focusing`, `Taking a short break`, `Taking a long break`, `Paused`.
 - Completion: `Focus complete` / `Great work! +1`; `Break over` / `Ready for another focus?`.
 - Progress: `Set 3/4`.
@@ -113,9 +113,8 @@ When the relevant auto-start setting is on:
 When auto-start is off:
 
 - Keep the completion state visible until the user acts.
-- Focus completion offers `Start short break` or `Start long break`, as appropriate, plus `Not now`.
-- Break completion offers `Start focus` plus `Not now`.
-- `Not now` enters the scheduled next mode in Ready state.
+- Focus completion offers only `Start break`; the application chooses Short break or Long break from Set progress.
+- Break completion offers only `Start focus`.
 
 Completion visuals:
 
