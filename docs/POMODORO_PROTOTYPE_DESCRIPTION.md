@@ -251,7 +251,7 @@ flowchart LR
 - 固定顺序：Focus → Short break → Long break。
 - 向左进入下一项，向右返回上一项。
 - 不首尾循环；边界处使用轻微回弹或短位移反馈。
-- 由于无 PSRAM，达到手势阈值后使用约 120 ms 淡出/淡入，不绘制全屏跟手动画。
+- 由于无 PSRAM，达到手势阈值后使用约 120 ms 的黑色遮罩淡入/淡出，不改变根 screen 的透明度，也不绘制全屏跟手动画。
 
 ## 9. S11 — Focus complete
 

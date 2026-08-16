@@ -57,6 +57,7 @@ typedef struct {
     lv_obj_t *confirmation_title;
     lv_obj_t *confirmation_body;
     lv_obj_t *confirmation_button_label;
+    lv_obj_t *mode_transition_overlay;
     lv_timer_t *tick_timer;
     lv_timer_t *mode_transition_timer;
     pomodoro_application_action_t pending_mode_action;
@@ -178,13 +179,30 @@ static void confirmation_accepted(lv_event_t *event)
                  : POMODORO_APPLICATION_ACTION_CONFIRM_MODE_SWITCH);
 }
 
+static void mode_transition_cleanup(lv_timer_t *timer);
+
 static void mode_transition_finished(lv_timer_t *timer)
 {
     (void) timer;
     pomodoro_application_action_t action = view_context.pending_mode_action;
-    view_context.mode_transition_timer = NULL;
     dispatch(action);
-    lv_obj_fade_in(lv_screen_active(), 60, 0);
+    lv_obj_move_foreground(view_context.mode_transition_overlay);
+    lv_obj_fade_out(view_context.mode_transition_overlay, 60, 0);
+    view_context.mode_transition_timer = lv_timer_create(
+        mode_transition_cleanup, 60, NULL);
+    if (view_context.mode_transition_timer != NULL) {
+        lv_timer_set_repeat_count(view_context.mode_transition_timer, 1);
+    } else {
+        lv_obj_add_flag(view_context.mode_transition_overlay,
+                        LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void mode_transition_cleanup(lv_timer_t *timer)
+{
+    (void) timer;
+    view_context.mode_transition_timer = NULL;
+    lv_obj_add_flag(view_context.mode_transition_overlay, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void gesture(lv_event_t *event)
@@ -215,14 +233,20 @@ static void gesture(lv_event_t *event)
     } else {
         return;
     }
-    lv_obj_fade_out(lv_screen_active(), 60, 0);
+    lv_obj_set_style_opa(view_context.mode_transition_overlay,
+                         LV_OPA_TRANSP, 0);
+    lv_obj_remove_flag(view_context.mode_transition_overlay,
+                       LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(view_context.mode_transition_overlay);
+    lv_obj_fade_in(view_context.mode_transition_overlay, 60, 0);
     view_context.mode_transition_timer = lv_timer_create(
         mode_transition_finished, 60, NULL);
     if (view_context.mode_transition_timer != NULL) {
         lv_timer_set_repeat_count(view_context.mode_transition_timer, 1);
     } else {
         dispatch(view_context.pending_mode_action);
-        lv_obj_fade_in(lv_screen_active(), 60, 0);
+        lv_obj_add_flag(view_context.mode_transition_overlay,
+                        LV_OBJ_FLAG_HIDDEN);
     }
 }
 
@@ -466,6 +490,19 @@ esp_err_t pomodoro_main_view_create(
     lv_obj_set_style_bg_color(confirm, lv_color_hex(0xD94B4B), 0);
     lv_obj_align(confirm, LV_ALIGN_BOTTOM_RIGHT, -30, -25);
     lv_obj_add_flag(view_context.confirmation_overlay, LV_OBJ_FLAG_HIDDEN);
+
+    view_context.mode_transition_overlay = lv_obj_create(screen);
+    lv_obj_set_size(view_context.mode_transition_overlay, 480, 480);
+    lv_obj_align(view_context.mode_transition_overlay, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_bg_color(view_context.mode_transition_overlay,
+                              lv_color_hex(0x07090D), 0);
+    lv_obj_set_style_bg_opa(view_context.mode_transition_overlay,
+                            LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(view_context.mode_transition_overlay, 0, 0);
+    lv_obj_set_style_radius(view_context.mode_transition_overlay, 0, 0);
+    lv_obj_remove_flag(view_context.mode_transition_overlay,
+                       LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(view_context.mode_transition_overlay, LV_OBJ_FLAG_HIDDEN);
 
     lvgl_port_unlock();
     return ESP_OK;
