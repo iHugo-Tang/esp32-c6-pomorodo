@@ -26,6 +26,11 @@ enum {
     COMPLETION_CONFETTI_COUNT =
         sizeof(completion_confetti) / sizeof(completion_confetti[0]),
     TIMER_RING_CENTER_Y = -18,
+    COMPLETION_MANUAL_GROUP_Y = 12,
+    COMPLETION_MANUAL_PRIMARY_Y = 83,
+    COMPLETION_AUTO_GROUP_Y = -11,
+    COMPLETION_AUTO_PRIMARY_Y = 59,
+    COMPLETION_AUTO_SECONDARY_Y = 112,
 };
 
 typedef struct {
@@ -302,7 +307,7 @@ static void create_completion_visuals(lv_obj_t *parent)
     lv_obj_set_style_arc_width(smile, 3, LV_PART_MAIN);
     lv_obj_set_style_arc_color(smile, lv_color_hex(0x542020), LV_PART_MAIN);
     lv_obj_remove_flag(smile, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_align(smile, LV_ALIGN_CENTER, 0, 13);
+    lv_obj_align(smile, LV_ALIGN_CENTER, 6, 13);
 
     for (uint8_t index = 0; index < COMPLETION_CONFETTI_COUNT; index++) {
         lv_obj_t *piece = lv_obj_create(parent);
@@ -568,6 +573,8 @@ static void render_completion(const pomodoro_application_view_t *view)
         }
     }
     if (view->auto_start_pending) {
+        lv_obj_align(view_context.completion_group, LV_ALIGN_CENTER, 0,
+                     COMPLETION_AUTO_GROUP_Y);
         lv_label_set_text_fmt(view_context.completion_countdown,
                               "%s starts in %u",
                               scheduled.name,
@@ -576,6 +583,8 @@ static void render_completion(const pomodoro_application_view_t *view)
         lv_label_set_text(view_context.secondary_label, "Cancel auto-start");
         lv_obj_remove_flag(view_context.secondary_button, LV_OBJ_FLAG_HIDDEN);
     } else {
+        lv_obj_align(view_context.completion_group, LV_ALIGN_CENTER, 0,
+                     COMPLETION_MANUAL_GROUP_Y);
         lv_label_set_text(view_context.completion_countdown, "");
         if (focus) {
             lv_label_set_text(view_context.primary_label, "Start break");
@@ -587,10 +596,13 @@ static void render_completion(const pomodoro_application_view_t *view)
     }
     lv_obj_remove_flag(view_context.primary_button, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_size(view_context.primary_button, 220, 56);
-    lv_obj_align(view_context.primary_button, LV_ALIGN_CENTER, 0, 48);
+    lv_obj_align(view_context.primary_button, LV_ALIGN_CENTER, 0,
+                 view->auto_start_pending ? COMPLETION_AUTO_PRIMARY_Y :
+                                            COMPLETION_MANUAL_PRIMARY_Y);
     if (view->auto_start_pending) {
         lv_obj_set_size(view_context.secondary_button, 170, 44);
-        lv_obj_align(view_context.secondary_button, LV_ALIGN_CENTER, 0, 101);
+        lv_obj_align(view_context.secondary_button, LV_ALIGN_CENTER, 0,
+                     COMPLETION_AUTO_SECONDARY_Y);
     }
 }
 

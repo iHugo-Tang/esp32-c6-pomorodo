@@ -256,6 +256,7 @@ flowchart LR
 ## 9. S11 — Focus complete
 
 此状态替换 P10 中央 CircularTimer，保留顶部栏和底部 Set Progress。
+插图、完成文案与可见操作按钮组成的内容块须在屏幕 Y 方向整体居中；自动开始开启与关闭状态分别按各自可见按钮数量计算中心。
 
 ### UI 元素
 
