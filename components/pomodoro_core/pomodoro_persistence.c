@@ -30,21 +30,42 @@ static bool state_is_valid(const pomodoro_persisted_state_t *state)
            state->timer.version == POMODORO_SNAPSHOT_VERSION &&
            state->statistics.version == POMODORO_STATISTICS_VERSION &&
            pomodoro_settings_are_valid(&state->settings.value) &&
+           state->settings.last_nonzero_volume >= 1U &&
+           state->settings.last_nonzero_volume <= 5U &&
            state->checksum == state_checksum(state);
 }
 
 static bool legacy_v0_is_valid(const pomodoro_persisted_state_t *state)
 {
+    pomodoro_settings_t settings = state != NULL
+        ? state->settings.value
+        : (pomodoro_settings_t) {0};
+    settings.utc_offset_quarter_hours = 0;
     return state != NULL && state->version == 0U &&
            state->settings.version == 0U && state->timer.version == 0U &&
            state->statistics.version == 0U &&
-           pomodoro_settings_are_valid(&state->settings.value) &&
+           pomodoro_settings_are_valid(&settings) &&
+           state->checksum == state_checksum(state);
+}
+
+static bool legacy_v1_is_valid(const pomodoro_persisted_state_t *state)
+{
+    pomodoro_settings_t settings = state != NULL
+        ? state->settings.value
+        : (pomodoro_settings_t) {0};
+    settings.utc_offset_quarter_hours = 0;
+    return state != NULL && state->version == 1U &&
+           state->settings.version == 1U &&
+           state->timer.version == POMODORO_SNAPSHOT_VERSION &&
+           state->statistics.version == POMODORO_STATISTICS_VERSION &&
+           pomodoro_settings_are_valid(&settings) &&
            state->checksum == state_checksum(state);
 }
 
 static bool state_can_be_loaded(const pomodoro_persisted_state_t *state)
 {
-    return state_is_valid(state) || legacy_v0_is_valid(state);
+    return state_is_valid(state) || legacy_v1_is_valid(state) ||
+           legacy_v0_is_valid(state);
 }
 
 static uint32_t slot_checksum(const pomodoro_journal_slot_t *slot)
@@ -74,6 +95,7 @@ bool pomodoro_persistence_pack(pomodoro_persisted_state_t *destination,
     destination->version = POMODORO_PERSISTED_STATE_VERSION;
     destination->settings.version = POMODORO_SETTINGS_VERSION;
     destination->settings.value = model->settings;
+    destination->settings.last_nonzero_volume = model->last_nonzero_volume;
     destination->timer = model->timer;
     destination->statistics = *statistics;
     destination->checksum = state_checksum(destination);
@@ -85,7 +107,7 @@ bool pomodoro_persistence_migrate(pomodoro_persisted_state_t *state)
     if (state_is_valid(state)) {
         return true;
     }
-    if (!legacy_v0_is_valid(state)) {
+    if (!legacy_v1_is_valid(state) && !legacy_v0_is_valid(state)) {
         return false;
     }
 
@@ -93,6 +115,9 @@ bool pomodoro_persistence_migrate(pomodoro_persisted_state_t *state)
     state->settings.version = POMODORO_SETTINGS_VERSION;
     state->timer.version = POMODORO_SNAPSHOT_VERSION;
     state->statistics.version = POMODORO_STATISTICS_VERSION;
+    state->settings.value.utc_offset_quarter_hours = 0;
+    state->settings.last_nonzero_volume =
+        state->settings.value.volume > 0U ? state->settings.value.volume : 3U;
     state->checksum = state_checksum(state);
     return true;
 }
@@ -115,6 +140,13 @@ bool pomodoro_persistence_unpack(pomodoro_persisted_state_t *source,
         return false;
     }
     model->timer = source->timer;
+    model->last_nonzero_volume = source->settings.last_nonzero_volume;
+    if (model->last_nonzero_volume == 0U ||
+        model->last_nonzero_volume > 5U) {
+        model->last_nonzero_volume = model->settings.volume > 0U
+            ? model->settings.volume
+            : 3U;
+    }
     *statistics = source->statistics;
     if (was_migrated != NULL) {
         *was_migrated = !current_schema;

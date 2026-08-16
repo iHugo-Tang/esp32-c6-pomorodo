@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 #define POMODORO_SNAPSHOT_VERSION 1U
-#define POMODORO_SETTINGS_VERSION 1U
+#define POMODORO_SETTINGS_VERSION 2U
 
 typedef enum {
     POMODORO_MODE_FOCUS = 0,
@@ -46,11 +46,13 @@ typedef struct {
     bool auto_start_focus;
     uint8_t volume;
     uint8_t brightness_percent;
+    int8_t utc_offset_quarter_hours;
 } pomodoro_settings_t;
 
 typedef struct {
     uint32_t version;
     pomodoro_settings_t value;
+    uint8_t last_nonzero_volume;
 } pomodoro_persisted_settings_t;
 
 typedef struct {
@@ -76,6 +78,7 @@ typedef struct {
 
 typedef struct {
     pomodoro_settings_t settings;
+    uint8_t last_nonzero_volume;
     pomodoro_snapshot_t timer;
 } pomodoro_model_t;
 
@@ -113,6 +116,11 @@ pomodoro_result_t pomodoro_restore(pomodoro_model_t *model,
                                    const pomodoro_snapshot_t *snapshot,
                                    uint64_t now_epoch_seconds,
                                    pomodoro_event_t *event);
+pomodoro_result_t pomodoro_rebase_running_timer(
+    pomodoro_model_t *model, uint64_t old_now_epoch_seconds,
+    uint64_t new_now_epoch_seconds);
+pomodoro_result_t pomodoro_rebase_running_timer_from_snapshot(
+    pomodoro_model_t *model, uint64_t new_now_epoch_seconds);
 
 #ifdef __cplusplus
 }

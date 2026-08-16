@@ -2,6 +2,19 @@
 
 #include <string.h>
 
+static int64_t days_since_unix_epoch(int32_t year, uint8_t month, uint8_t day)
+{
+    year -= month <= 2U;
+    int32_t era = (year >= 0 ? year : year - 399) / 400;
+    uint32_t year_of_era = (uint32_t) (year - era * 400);
+    uint32_t day_of_year =
+        (153U * (uint32_t) (month + (month > 2U ? -3 : 9)) + 2U) / 5U +
+        day - 1U;
+    uint32_t day_of_era = year_of_era * 365U + year_of_era / 4U -
+        year_of_era / 100U + day_of_year;
+    return (int64_t) era * 146097 + (int64_t) day_of_era - 719468;
+}
+
 static int compare_dates(pomodoro_date_t left, pomodoro_date_t right)
 {
     if (left.year != right.year) {
@@ -84,6 +97,87 @@ bool pomodoro_date_is_valid(pomodoro_date_t date)
         maximum++;
     }
     return date.day <= maximum;
+}
+
+bool pomodoro_date_add_days(pomodoro_date_t date, int days,
+                            pomodoro_date_t *result)
+{
+    if (!pomodoro_date_is_valid(date) || result == NULL) {
+        return false;
+    }
+    int64_t resolved = days_since_unix_epoch(
+        date.year, date.month, date.day) + days;
+    if (resolved < 0 || (uint64_t) resolved > UINT64_MAX / 86400U) {
+        return false;
+    }
+    return pomodoro_local_date_from_utc(
+        (uint64_t) resolved * 86400U, 0, result);
+}
+
+bool pomodoro_local_datetime_to_utc(
+    pomodoro_date_t date, uint8_t hour, uint8_t minute,
+    int8_t utc_offset_quarter_hours, uint64_t *utc_epoch_seconds)
+{
+    if (!pomodoro_date_is_valid(date) || hour > 23U || minute > 59U ||
+        utc_offset_quarter_hours < -48 || utc_offset_quarter_hours > 56 ||
+        utc_epoch_seconds == NULL) {
+        return false;
+    }
+    int64_t local_seconds = days_since_unix_epoch(
+        date.year, date.month, date.day) * 86400 +
+        (int64_t) hour * 3600 + (int64_t) minute * 60;
+    int64_t utc_seconds = local_seconds -
+        (int64_t) utc_offset_quarter_hours * 15 * 60;
+    if (utc_seconds < 0) {
+        return false;
+    }
+    *utc_epoch_seconds = (uint64_t) utc_seconds;
+    return true;
+}
+
+bool pomodoro_local_date_from_utc(
+    uint64_t utc_epoch_seconds, int8_t utc_offset_quarter_hours,
+    pomodoro_date_t *date)
+{
+    if (date == NULL || utc_offset_quarter_hours < -48 ||
+        utc_offset_quarter_hours > 56) {
+        return false;
+    }
+    int64_t offset_seconds =
+        (int64_t) utc_offset_quarter_hours * 15 * 60;
+    if (utc_epoch_seconds > INT64_MAX ||
+        (offset_seconds < 0 && utc_epoch_seconds < (uint64_t) -offset_seconds)) {
+        return false;
+    }
+    int64_t local_seconds = (int64_t) utc_epoch_seconds + offset_seconds;
+    int64_t days = local_seconds / 86400;
+    if (local_seconds < 0 && local_seconds % 86400 != 0) {
+        days--;
+    }
+    days += 719468;
+    int64_t era = (days >= 0 ? days : days - 146096) / 146097;
+    uint32_t day_of_era = (uint32_t) (days - era * 146097);
+    uint32_t year_of_era =
+        (day_of_era - day_of_era / 1460U + day_of_era / 36524U -
+         day_of_era / 146096U) / 365U;
+    int64_t year = (int64_t) year_of_era + era * 400;
+    uint32_t day_of_year = day_of_era -
+        (365U * year_of_era + year_of_era / 4U - year_of_era / 100U);
+    uint32_t month_part = (5U * day_of_year + 2U) / 153U;
+    uint8_t resolved_day = (uint8_t) (day_of_year -
+        (153U * month_part + 2U) / 5U + 1U);
+    uint8_t month = (uint8_t) ((int32_t) month_part +
+        (month_part < 10U ? 3 : -9));
+    year += month <= 2U;
+    if (year < 0 || year > UINT16_MAX) {
+        return false;
+    }
+    *date = (pomodoro_date_t) {
+        .year = (uint16_t) year,
+        .month = month,
+        .day = resolved_day,
+    };
+    return pomodoro_date_is_valid(*date);
 }
 
 bool pomodoro_statistics_apply(pomodoro_statistics_store_t *store,

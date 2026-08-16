@@ -23,6 +23,9 @@ add_executable(
     pomodoro_application_test
     pomodoro_application_test.c
     ../components/pomodoro_app/pomodoro_application.c
+    ../components/pomodoro_app/pomodoro_display_policy.c
+    ../components/pomodoro_app/pomodoro_settings_editor.c
+    ../components/pomodoro_app/pomodoro_statistics_projection.c
     ../components/pomodoro_core/pomodoro_core.c
     ../components/pomodoro_core/pomodoro_statistics.c
     ../components/pomodoro_core/pomodoro_persistence.c

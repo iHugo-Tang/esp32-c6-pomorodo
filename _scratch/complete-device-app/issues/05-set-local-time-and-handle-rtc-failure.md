@@ -4,11 +4,15 @@
 
 **Blocked by:** 04 — Recover a timer without data loss.
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-- [ ] An invalid RTC at boot blocks Main and offers the non-skippable first-run time setup with a manual path.
-- [ ] Manual setup validates date, 24-hour time, and fixed UTC offset, writes UTC to the RTC, and returns to the correct source.
-- [ ] Correcting date or time preserves an active timer's remaining duration and recomputes its absolute deadline.
-- [ ] RTC failure during a timer continues from a monotonic clock and completed Focus results enter Pending Statistics.
-- [ ] Restoring valid time assigns Pending Statistics to the restored current Statistics Day without relabeling historical days.
+- [x] An invalid RTC at boot blocks Main and offers the non-skippable first-run time setup with a manual path.
+- [x] Manual setup validates date, 24-hour time, and fixed UTC offset, writes UTC to the RTC, and returns to the correct source.
+- [x] Correcting date or time preserves an active timer's remaining duration and recomputes its absolute deadline.
+- [x] RTC failure during a timer continues from a monotonic clock and completed Focus results enter Pending Statistics.
+- [x] Restoring valid time assigns Pending Statistics to the restored current Statistics Day without relabeling historical days.
 - [ ] RTC failure and recovery behavior is covered through host application tests and a PCF85063 hardware test.
+
+## Comments
+
+2026-08-16: RTC setup, correction, monotonic fallback, Pending Statistics, and recovery-day attribution are implemented and covered by host application tests. The ESP-IDF firmware builds successfully. The PCF85063 portion remains in `docs/HARDWARE_CONNECTION_TEST.md` for connected-device execution.

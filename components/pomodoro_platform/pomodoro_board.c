@@ -1,8 +1,13 @@
 #include "pomodoro_board.h"
 
 #include <stddef.h>
+#include <string.h>
 
 #include "driver/i2c_master.h"
+#include "driver/gpio.h"
+#include "driver/i2s_std.h"
+#include "esp_codec_dev.h"
+#include "esp_codec_dev_defaults.h"
 #include "driver/spi_master.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
@@ -10,6 +15,7 @@
 #include "esp_lcd_touch_cst9217.h"
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lvgl.h"
@@ -24,6 +30,14 @@
 #define LCD_D3 GPIO_NUM_4
 #define TOUCH_RESET GPIO_NUM_11
 #define TOUCH_INTERRUPT GPIO_NUM_5
+#define KEY_VOLUME_UP GPIO_NUM_18
+#define BOOT_VOLUME_DOWN GPIO_NUM_9
+#define AUDIO_MCLK GPIO_NUM_19
+#define AUDIO_BCLK GPIO_NUM_20
+#define AUDIO_WS GPIO_NUM_22
+#define AUDIO_DOUT GPIO_NUM_23
+#define AUDIO_DIN GPIO_NUM_21
+#define AUDIO_SAMPLE_RATE 16000U
 #define DISPLAY_WIDTH 480U
 #define DISPLAY_HEIGHT 480U
 #define DRAW_BUFFER_ROWS 20U
@@ -31,6 +45,14 @@
 #define AXP2101_ADDRESS 0x34U
 #define PCF85063_ADDRESS 0x51U
 #define PCF85063_SECONDS_REGISTER 0x04U
+#define AXP2101_STATUS1_REGISTER 0x00U
+#define AXP2101_STATUS2_REGISTER 0x01U
+#define AXP2101_COMMON_CONFIG_REGISTER 0x10U
+#define AXP2101_BATTERY_PERCENT_REGISTER 0xA4U
+#define AXP2101_INTERRUPT_ENABLE2_REGISTER 0x41U
+#define AXP2101_INTERRUPT_STATUS2_REGISTER 0x49U
+#define AXP2101_POWER_SHORT_PRESS_BIT 0x08U
+#define AXP2101_POWER_LONG_PRESS_BIT 0x04U
 
 typedef struct {
     i2c_master_bus_handle_t i2c_bus;
@@ -45,6 +67,14 @@ typedef struct {
 
 static const char *TAG = "pomodoro_board";
 static board_context_t board;
+static uint64_t last_valid_utc_epoch_seconds;
+static int64_t last_valid_monotonic_microseconds;
+static bool has_last_valid_time;
+static i2s_chan_handle_t audio_tx_channel;
+static esp_codec_dev_handle_t audio_device;
+static bool audio_busy;
+static bool queued_focus_tone;
+static uint8_t queued_tone_volume;
 
 static const sh8601_lcd_init_cmd_t lcd_init_commands[] = {
     {0x11, NULL, 0, 120},
@@ -87,9 +117,41 @@ static esp_err_t write_register(i2c_master_dev_handle_t handle, uint8_t reg,
                                I2C_TIMEOUT_MS);
 }
 
+static esp_err_t write_registers(i2c_master_dev_handle_t handle, uint8_t reg,
+                                 const uint8_t *data, size_t size)
+{
+    uint8_t command[8];
+    if (data == NULL || size + 1U > sizeof(command)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    command[0] = reg;
+    memcpy(&command[1], data, size);
+    return i2c_master_transmit(handle, command, size + 1U, I2C_TIMEOUT_MS);
+}
+
 static uint8_t from_bcd(uint8_t value)
 {
     return (uint8_t) (((value >> 4U) * 10U) + (value & 0x0FU));
+}
+
+static uint8_t to_bcd(uint8_t value)
+{
+    return (uint8_t) (((value / 10U) << 4U) | (value % 10U));
+}
+
+static void use_monotonic_fallback(pomodoro_application_time_t *time)
+{
+    int64_t now = esp_timer_get_time();
+    uint64_t elapsed_seconds = has_last_valid_time &&
+        now >= last_valid_monotonic_microseconds
+        ? (uint64_t) (now - last_valid_monotonic_microseconds) / 1000000U
+        : (uint64_t) now / 1000000U;
+    *time = (pomodoro_application_time_t) {
+        .epoch_seconds = has_last_valid_time
+            ? last_valid_utc_epoch_seconds + elapsed_seconds
+            : elapsed_seconds,
+        .rtc_is_valid = false,
+    };
 }
 
 static bool bcd_is_valid(uint8_t value)
@@ -119,27 +181,17 @@ static bool date_is_valid(uint16_t year, uint8_t month, uint8_t day,
     return day >= 1U && day <= limit;
 }
 
-static int64_t days_since_unix_epoch(int32_t year, uint8_t month, uint8_t day)
-{
-    year -= month <= 2U;
-    int32_t era = (year >= 0 ? year : year - 399) / 400;
-    uint32_t year_of_era = (uint32_t) (year - era * 400);
-    uint32_t day_of_year =
-        (153U * (uint32_t) (month + (month > 2U ? -3 : 9)) + 2U) / 5U +
-        day - 1U;
-    uint32_t day_of_era = year_of_era * 365U + year_of_era / 4U -
-        year_of_era / 100U + day_of_year;
-    return (int64_t) era * 146097 + (int64_t) day_of_era - 719468;
-}
-
 bool pomodoro_board_read_time(pomodoro_application_time_t *time)
 {
     uint8_t raw[7];
-    if (time == NULL || board.rtc == NULL ||
-        read_register(board.rtc, PCF85063_SECONDS_REGISTER, raw,
+    if (time == NULL || board.rtc == NULL) {
+        return false;
+    }
+    if (read_register(board.rtc, PCF85063_SECONDS_REGISTER, raw,
                       sizeof(raw)) != ESP_OK) {
         ESP_LOGE(TAG, "RTC read failed");
-        return false;
+        use_monotonic_fallback(time);
+        return true;
     }
 
     uint8_t second_bcd = raw[0] & 0x7FU;
@@ -163,53 +215,320 @@ bool pomodoro_board_read_time(pomodoro_application_time_t *time)
     if (!valid) {
         ESP_LOGE(TAG, "RTC invalid (OS=%d %04u-%02u-%02u %02u:%02u:%02u)",
                  oscillator_stopped, year, month, day, hour, minute, second);
-        return false;
+        use_monotonic_fallback(time);
+        return true;
     }
 
-    int64_t days = days_since_unix_epoch(year, month, day);
-    time->epoch_seconds = (uint64_t) (days * 86400 + hour * 3600U +
-                                      minute * 60U + second);
+    uint64_t minute_epoch_seconds;
+    if (!pomodoro_local_datetime_to_utc(
+            (pomodoro_date_t) {.year = year, .month = month, .day = day},
+            hour, minute, 0, &minute_epoch_seconds)) {
+        use_monotonic_fallback(time);
+        return true;
+    }
+    time->epoch_seconds = minute_epoch_seconds + second;
     time->rtc_is_valid = true;
     time->local_date = (pomodoro_date_t) {
         .year = year,
         .month = month,
         .day = day,
     };
+    last_valid_utc_epoch_seconds = time->epoch_seconds;
+    last_valid_monotonic_microseconds = esp_timer_get_time();
+    has_last_valid_time = true;
     return true;
 }
 
 bool pomodoro_board_resolve_local_date(uint64_t epoch_seconds,
+                                       int8_t utc_offset_quarter_hours,
                                        pomodoro_date_t *date)
 {
-    uint64_t day_count = epoch_seconds / 86400U;
-    if (date == NULL || day_count > (uint64_t) INT32_MAX - 719468U) {
+    return pomodoro_local_date_from_utc(
+        epoch_seconds, utc_offset_quarter_hours, date);
+}
+
+bool pomodoro_board_write_utc_time(uint64_t utc_epoch_seconds)
+{
+    pomodoro_date_t date;
+    if (board.rtc == NULL ||
+        !pomodoro_local_date_from_utc(utc_epoch_seconds, 0, &date) ||
+        date.year < 2020U || date.year > 2069U) {
         return false;
     }
-    int32_t days = (int32_t) day_count + 719468;
-    int32_t era = (days >= 0 ? days : days - 146096) / 146097;
-    uint32_t day_of_era = (uint32_t) (days - era * 146097);
-    uint32_t year_of_era =
-        (day_of_era - day_of_era / 1460U + day_of_era / 36524U -
-         day_of_era / 146096U) /
-        365U;
-    int32_t year = (int32_t) year_of_era + era * 400;
-    uint32_t day_of_year = day_of_era -
-        (365U * year_of_era + year_of_era / 4U - year_of_era / 100U);
-    uint32_t month_part = (5U * day_of_year + 2U) / 153U;
-    uint8_t day = (uint8_t) (day_of_year -
-        (153U * month_part + 2U) / 5U + 1U);
-    uint8_t month = (uint8_t) ((int32_t) month_part +
-        (month_part < 10U ? 3 : -9));
-    year += month <= 2U;
-    if (year < 0 || year > UINT16_MAX ||
-        !date_is_valid((uint16_t) year, month, day, 0U, 0U, 0U)) {
-        return false;
-    }
-    *date = (pomodoro_date_t) {
-        .year = (uint16_t) year,
-        .month = month,
-        .day = day,
+    uint32_t seconds_of_day = (uint32_t) (utc_epoch_seconds % 86400U);
+    uint8_t raw[] = {
+        to_bcd((uint8_t) (seconds_of_day % 60U)),
+        to_bcd((uint8_t) ((seconds_of_day / 60U) % 60U)),
+        to_bcd((uint8_t) (seconds_of_day / 3600U)),
+        to_bcd(date.day),
+        0U,
+        to_bcd(date.month),
+        to_bcd((uint8_t) (date.year - 1970U)),
     };
+    if (write_registers(board.rtc, PCF85063_SECONDS_REGISTER, raw,
+                        sizeof(raw)) != ESP_OK) {
+        ESP_LOGE(TAG, "RTC write failed");
+        return false;
+    }
+    has_last_valid_time = false;
+    return true;
+}
+
+bool pomodoro_board_set_display_brightness(uint8_t percent)
+{
+    if (board.panel_io == NULL || percent < 1U || percent > 100U) {
+        return false;
+    }
+    uint8_t value = (uint8_t) ((uint16_t) percent * 255U / 100U);
+    return esp_lcd_panel_io_tx_param(board.panel_io, 0x51, &value,
+                                     sizeof(value)) == ESP_OK;
+}
+
+bool pomodoro_board_read_device_status(
+    pomodoro_application_device_status_t *status)
+{
+    uint8_t status1;
+    uint8_t status2;
+    uint8_t battery_percent;
+    if (status == NULL || board.pmic == NULL ||
+        read_register(board.pmic, AXP2101_STATUS1_REGISTER, &status1, 1) !=
+            ESP_OK ||
+        read_register(board.pmic, AXP2101_STATUS2_REGISTER, &status2, 1) !=
+            ESP_OK ||
+        read_register(board.pmic, AXP2101_BATTERY_PERCENT_REGISTER,
+                      &battery_percent, 1) != ESP_OK ||
+        battery_percent > 100U) {
+        return false;
+    }
+    *status = (pomodoro_application_device_status_t) {
+        .battery_percent = battery_percent,
+        .charging = (status2 >> 5U) == 0x01U,
+        .usb_power = (status1 & 0x20U) != 0U && (status2 & 0x08U) == 0U,
+        .low_battery = battery_percent <= 15U,
+    };
+    return true;
+}
+
+bool pomodoro_board_set_display_awake(bool awake)
+{
+    return board.panel != NULL &&
+           esp_lcd_panel_disp_on_off(board.panel, awake) == ESP_OK;
+}
+
+bool pomodoro_board_power_off(void)
+{
+    uint8_t config;
+    if (board.pmic == NULL ||
+        read_register(board.pmic, AXP2101_COMMON_CONFIG_REGISTER, &config,
+                      1) != ESP_OK) {
+        return false;
+    }
+    return write_register(board.pmic, AXP2101_COMMON_CONFIG_REGISTER,
+                          config | 0x01U) == ESP_OK;
+}
+
+esp_err_t pomodoro_board_initialize_controls(void)
+{
+    gpio_config_t config = {
+        .pin_bit_mask = (UINT64_C(1) << KEY_VOLUME_UP) |
+                        (UINT64_C(1) << BOOT_VOLUME_DOWN),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    esp_err_t result = gpio_config(&config);
+    if (result != ESP_OK) {
+        return result;
+    }
+    uint8_t interrupts;
+    result = read_register(board.pmic, AXP2101_INTERRUPT_ENABLE2_REGISTER,
+                           &interrupts, 1);
+    if (result == ESP_OK) {
+        result = write_register(
+            board.pmic, AXP2101_INTERRUPT_ENABLE2_REGISTER,
+            interrupts | AXP2101_POWER_SHORT_PRESS_BIT |
+                AXP2101_POWER_LONG_PRESS_BIT);
+    }
+    if (result == ESP_OK) {
+        result = write_register(
+            board.pmic, AXP2101_INTERRUPT_STATUS2_REGISTER,
+            AXP2101_POWER_SHORT_PRESS_BIT |
+                AXP2101_POWER_LONG_PRESS_BIT);
+    }
+    return result;
+}
+
+bool pomodoro_board_read_volume_buttons(bool *increase, bool *decrease)
+{
+    if (increase == NULL || decrease == NULL) {
+        return false;
+    }
+    *increase = gpio_get_level(KEY_VOLUME_UP) == 0;
+    *decrease = gpio_get_level(BOOT_VOLUME_DOWN) == 0;
+    return true;
+}
+
+bool pomodoro_board_read_power_events(bool *short_press, bool *long_press)
+{
+    uint8_t events;
+    if (short_press == NULL || long_press == NULL ||
+        read_register(board.pmic, AXP2101_INTERRUPT_STATUS2_REGISTER,
+                      &events, 1) != ESP_OK) {
+        return false;
+    }
+    uint8_t relevant = events & (AXP2101_POWER_SHORT_PRESS_BIT |
+                                 AXP2101_POWER_LONG_PRESS_BIT);
+    *short_press = (relevant & AXP2101_POWER_SHORT_PRESS_BIT) != 0U;
+    *long_press = (relevant & AXP2101_POWER_LONG_PRESS_BIT) != 0U;
+    return relevant == 0U || write_register(
+        board.pmic, AXP2101_INTERRUPT_STATUS2_REGISTER, relevant) == ESP_OK;
+}
+
+esp_err_t pomodoro_board_initialize_audio(void)
+{
+    i2s_chan_config_t channel_config = I2S_CHANNEL_DEFAULT_CONFIG(
+        I2S_NUM_AUTO, I2S_ROLE_MASTER);
+    channel_config.auto_clear = true;
+    esp_err_t result = i2s_new_channel(&channel_config, &audio_tx_channel,
+                                       NULL);
+    if (result != ESP_OK) {
+        return result;
+    }
+    i2s_std_config_t standard_config = {
+        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(AUDIO_SAMPLE_RATE),
+        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(
+            I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
+        .gpio_cfg = {
+            .mclk = AUDIO_MCLK,
+            .bclk = AUDIO_BCLK,
+            .ws = AUDIO_WS,
+            .dout = AUDIO_DOUT,
+            .din = AUDIO_DIN,
+        },
+    };
+    result = i2s_channel_init_std_mode(audio_tx_channel, &standard_config);
+    if (result != ESP_OK) {
+        return result;
+    }
+    result = i2s_channel_enable(audio_tx_channel);
+    if (result != ESP_OK) {
+        return result;
+    }
+
+    audio_codec_i2s_cfg_t data_config = {
+        .port = I2S_NUM_0,
+        .tx_handle = audio_tx_channel,
+    };
+    const audio_codec_data_if_t *data_interface =
+        audio_codec_new_i2s_data(&data_config);
+    audio_codec_i2c_cfg_t control_config = {
+        .port = I2C_NUM_0,
+        .addr = ES8311_CODEC_DEFAULT_ADDR,
+        .bus_handle = board.i2c_bus,
+    };
+    const audio_codec_ctrl_if_t *control_interface =
+        audio_codec_new_i2c_ctrl(&control_config);
+    const audio_codec_gpio_if_t *gpio_interface = audio_codec_new_gpio();
+    es8311_codec_cfg_t codec_config = {
+        .codec_mode = ESP_CODEC_DEV_WORK_MODE_DAC,
+        .ctrl_if = control_interface,
+        .gpio_if = gpio_interface,
+        .pa_pin = GPIO_NUM_NC,
+        .use_mclk = true,
+        .hw_gain = {.pa_gain = 6},
+    };
+    const audio_codec_if_t *codec_interface = es8311_codec_new(&codec_config);
+    if (data_interface == NULL || control_interface == NULL ||
+        gpio_interface == NULL || codec_interface == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    esp_codec_dev_cfg_t device_config = {
+        .codec_if = codec_interface,
+        .data_if = data_interface,
+        .dev_type = ESP_CODEC_DEV_TYPE_OUT,
+    };
+    audio_device = esp_codec_dev_new(&device_config);
+    if (audio_device == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    esp_codec_dev_sample_info_t sample = {
+        .sample_rate = AUDIO_SAMPLE_RATE,
+        .channel = 2,
+        .bits_per_sample = 16,
+    };
+    return esp_codec_dev_open(audio_device, &sample) == ESP_CODEC_DEV_OK
+        ? ESP_OK
+        : ESP_FAIL;
+}
+
+static bool write_tone(uint16_t frequency_hz, uint16_t milliseconds,
+                       uint8_t volume)
+{
+    static const int16_t waveform[] = {
+        0, 6393, 11819, 15446, 16720, 15446, 11819, 6393,
+        0, -6393, -11819, -15446, -16720, -15446, -11819, -6393,
+    };
+    int16_t frames[128U * 2U];
+    uint32_t phase = 0U;
+    uint32_t phase_step = ((uint32_t) frequency_hz << 16U) /
+        AUDIO_SAMPLE_RATE;
+    uint32_t frames_remaining =
+        AUDIO_SAMPLE_RATE * milliseconds / 1000U;
+    if (esp_codec_dev_set_out_vol(audio_device, volume * 20U) !=
+        ESP_CODEC_DEV_OK) {
+        return false;
+    }
+    while (frames_remaining > 0U) {
+        uint32_t count = frames_remaining > 128U ? 128U : frames_remaining;
+        for (uint32_t index = 0; index < count; index++) {
+            int16_t sample = waveform[(phase >> 12U) & 0x0FU];
+            frames[index * 2U] = sample;
+            frames[index * 2U + 1U] = sample;
+            phase += phase_step;
+        }
+        if (esp_codec_dev_write(audio_device, frames,
+                                count * 2U * sizeof(int16_t)) !=
+            ESP_CODEC_DEV_OK) {
+            return false;
+        }
+        frames_remaining -= count;
+    }
+    return true;
+}
+
+static void play_tone_task(void *context)
+{
+    (void) context;
+    bool focus = queued_focus_tone;
+    uint8_t volume = queued_tone_volume;
+    if (focus) {
+        (void) write_tone(660U, 120U, volume);
+        vTaskDelay(pdMS_TO_TICKS(60));
+        (void) write_tone(880U, 120U, volume);
+    } else {
+        (void) write_tone(523U, 180U, volume);
+    }
+    audio_busy = false;
+    vTaskDelete(NULL);
+}
+
+bool pomodoro_board_play_completion_tone(bool focus, uint8_t volume)
+{
+    if (volume == 0U) {
+        return true;
+    }
+    if (audio_device == NULL || audio_busy) {
+        return false;
+    }
+    queued_focus_tone = focus;
+    queued_tone_volume = volume;
+    audio_busy = true;
+    if (xTaskCreate(play_tone_task, "pomodoro_tone", 3072, NULL, 2, NULL) !=
+        pdPASS) {
+        audio_busy = false;
+        return false;
+    }
     return true;
 }
 

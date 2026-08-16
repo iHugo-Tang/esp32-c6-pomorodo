@@ -33,7 +33,72 @@ typedef enum {
     POMODORO_APPLICATION_ACTION_START_NEXT,
     POMODORO_APPLICATION_ACTION_CANCEL_AUTO_START,
     POMODORO_APPLICATION_ACTION_NOT_NOW,
+    POMODORO_APPLICATION_ACTION_OPEN_STATISTICS,
+    POMODORO_APPLICATION_ACTION_OPEN_SETTINGS,
+    POMODORO_APPLICATION_ACTION_BACK,
+    POMODORO_APPLICATION_ACTION_VOLUME_UP,
+    POMODORO_APPLICATION_ACTION_VOLUME_DOWN,
+    POMODORO_APPLICATION_ACTION_TOGGLE_SOUND,
+    POMODORO_APPLICATION_ACTION_TOGGLE_DISPLAY,
+    POMODORO_APPLICATION_ACTION_POWER_OFF,
+    POMODORO_APPLICATION_ACTION_OPEN_FOCUS_MINUTES,
+    POMODORO_APPLICATION_ACTION_OPEN_SHORT_BREAK_MINUTES,
+    POMODORO_APPLICATION_ACTION_OPEN_LONG_BREAK_MINUTES,
+    POMODORO_APPLICATION_ACTION_OPEN_DAILY_GOAL,
+    POMODORO_APPLICATION_ACTION_NUMERIC_DECREMENT,
+    POMODORO_APPLICATION_ACTION_NUMERIC_INCREMENT,
+    POMODORO_APPLICATION_ACTION_NUMERIC_CONFIRM,
+    POMODORO_APPLICATION_ACTION_TOGGLE_AUTO_FOCUS,
+    POMODORO_APPLICATION_ACTION_TOGGLE_AUTO_BREAK,
+    POMODORO_APPLICATION_ACTION_OPEN_DATE_TIME,
+    POMODORO_APPLICATION_ACTION_MANUAL_YEAR_DOWN,
+    POMODORO_APPLICATION_ACTION_MANUAL_YEAR_UP,
+    POMODORO_APPLICATION_ACTION_MANUAL_MONTH_DOWN,
+    POMODORO_APPLICATION_ACTION_MANUAL_MONTH_UP,
+    POMODORO_APPLICATION_ACTION_MANUAL_DAY_DOWN,
+    POMODORO_APPLICATION_ACTION_MANUAL_DAY_UP,
+    POMODORO_APPLICATION_ACTION_MANUAL_HOUR_DOWN,
+    POMODORO_APPLICATION_ACTION_MANUAL_HOUR_UP,
+    POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_DOWN,
+    POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_UP,
+    POMODORO_APPLICATION_ACTION_MANUAL_OFFSET_DOWN,
+    POMODORO_APPLICATION_ACTION_MANUAL_OFFSET_UP,
+    POMODORO_APPLICATION_ACTION_MANUAL_TIME_CONFIRM,
 } pomodoro_application_action_t;
+
+typedef enum {
+    POMODORO_APPLICATION_PAGE_MAIN = 0,
+    POMODORO_APPLICATION_PAGE_STATISTICS,
+    POMODORO_APPLICATION_PAGE_SETTINGS,
+    POMODORO_APPLICATION_PAGE_NUMERIC_STEPPER,
+} pomodoro_application_page_t;
+
+typedef enum {
+    POMODORO_APPLICATION_SETTING_FOCUS_MINUTES = 0,
+    POMODORO_APPLICATION_SETTING_SHORT_BREAK_MINUTES,
+    POMODORO_APPLICATION_SETTING_LONG_BREAK_MINUTES,
+    POMODORO_APPLICATION_SETTING_DAILY_GOAL,
+} pomodoro_application_numeric_setting_t;
+
+typedef struct {
+    pomodoro_date_t date;
+    uint16_t completed_pomodoros;
+    bool is_today;
+} pomodoro_application_statistics_bar_t;
+
+typedef struct {
+    uint8_t battery_percent;
+    bool charging;
+    bool usb_power;
+    bool low_battery;
+} pomodoro_application_device_status_t;
+
+typedef struct {
+    pomodoro_date_t local_date;
+    uint8_t hour;
+    uint8_t minute;
+    int8_t utc_offset_quarter_hours;
+} pomodoro_application_manual_time_t;
 
 typedef enum {
     POMODORO_APPLICATION_CONFIRM_NONE = 0,
@@ -50,6 +115,7 @@ typedef enum {
 typedef enum {
     POMODORO_APPLICATION_PHASE_UNINITIALIZED = 0,
     POMODORO_APPLICATION_PHASE_ACTIVE,
+    POMODORO_APPLICATION_PHASE_TIME_SETUP,
     POMODORO_APPLICATION_PHASE_PLATFORM_ERROR,
 } pomodoro_application_phase_t;
 
@@ -85,6 +151,32 @@ typedef struct {
     pomodoro_mode_t scheduled_mode;
     bool auto_start_pending;
     uint8_t auto_start_seconds_remaining;
+    bool rtc_is_valid;
+    pomodoro_date_t current_local_date;
+    uint8_t current_local_hour;
+    uint8_t current_local_minute;
+    pomodoro_application_page_t page;
+    bool statistics_available;
+    uint16_t today_completed_pomodoros;
+    uint32_t today_completed_focus_seconds;
+    uint16_t today_goal_percent;
+    uint8_t today_goal_fill_percent;
+    uint16_t statistics_chart_scale;
+    pomodoro_application_statistics_bar_t trailing_seven_days[7];
+    pomodoro_application_numeric_setting_t numeric_setting;
+    uint16_t numeric_draft_value;
+    uint16_t numeric_minimum;
+    uint16_t numeric_maximum;
+    uint8_t brightness_preview_percent;
+    uint8_t last_nonzero_volume;
+    bool volume_feedback_visible;
+    pomodoro_application_device_status_t device_status;
+    bool low_battery_warning_visible;
+    bool display_awake;
+    uint8_t effective_brightness_percent;
+    int8_t pixel_shift_x;
+    int8_t pixel_shift_y;
+    pomodoro_application_manual_time_t manual_time_draft;
 } pomodoro_application_view_t;
 
 typedef struct {
@@ -93,7 +185,14 @@ typedef struct {
     bool (*read_time)(void *context, pomodoro_application_time_t *time);
     /* Resolves a persisted deadline to its local Statistics Day. */
     bool (*resolve_local_date)(void *context, uint64_t epoch_seconds,
+                               int8_t utc_offset_quarter_hours,
                                pomodoro_date_t *date);
+    bool (*write_utc_time)(void *context, uint64_t utc_epoch_seconds);
+    bool (*set_display_brightness_percent)(void *context, uint8_t percent);
+    bool (*read_device_status)(void *context,
+                               pomodoro_application_device_status_t *status);
+    bool (*set_display_awake)(void *context, bool awake);
+    bool (*power_off)(void *context);
     /* Distinguishes an unused store from an I/O failure. */
     pomodoro_application_load_result_t (*load)(
         void *context, pomodoro_persisted_state_t *state);
@@ -121,6 +220,22 @@ pomodoro_application_result_t pomodoro_application_dispatch(
 pomodoro_application_result_t pomodoro_application_confirm_settings(
     pomodoro_application_t *application,
     const pomodoro_settings_t *settings);
+pomodoro_application_result_t pomodoro_application_confirm_manual_time(
+    pomodoro_application_t *application,
+    const pomodoro_application_manual_time_t *manual_time);
+pomodoro_application_result_t pomodoro_application_open_numeric_setting(
+    pomodoro_application_t *application,
+    pomodoro_application_numeric_setting_t setting);
+pomodoro_application_result_t pomodoro_application_adjust_numeric_setting(
+    pomodoro_application_t *application, int delta);
+pomodoro_application_result_t pomodoro_application_confirm_numeric_setting(
+    pomodoro_application_t *application);
+pomodoro_application_result_t pomodoro_application_preview_brightness(
+    pomodoro_application_t *application, uint8_t percent);
+pomodoro_application_result_t pomodoro_application_confirm_brightness(
+    pomodoro_application_t *application, uint8_t percent);
+pomodoro_application_result_t pomodoro_application_handle_touch(
+    pomodoro_application_t *application, bool *consumed);
 void pomodoro_application_destroy(pomodoro_application_t *application);
 
 #ifdef __cplusplus

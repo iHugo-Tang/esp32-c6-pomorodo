@@ -85,6 +85,7 @@ pomodoro_settings_t pomodoro_default_settings(void)
         .auto_start_focus = false,
         .volume = 3,
         .brightness_percent = 70,
+        .utc_offset_quarter_hours = 0,
     };
 }
 
@@ -100,7 +101,9 @@ bool pomodoro_settings_are_valid(const pomodoro_settings_t *settings)
            settings->volume <= 5U &&
            settings->brightness_percent >= 10U &&
            settings->brightness_percent <= 100U &&
-           settings->brightness_percent % 5U == 0U;
+           settings->brightness_percent % 5U == 0U &&
+           settings->utc_offset_quarter_hours >= -48 &&
+           settings->utc_offset_quarter_hours <= 56;
 }
 
 pomodoro_result_t pomodoro_init(pomodoro_model_t *model,
@@ -118,6 +121,7 @@ pomodoro_result_t pomodoro_init(pomodoro_model_t *model,
     }
     memset(model, 0, sizeof(*model));
     model->settings = resolved;
+    model->last_nonzero_volume = resolved.volume > 0U ? resolved.volume : 3U;
     model->timer.version = POMODORO_SNAPSHOT_VERSION;
     prepare_ready(model, POMODORO_MODE_FOCUS);
     return POMODORO_OK;
@@ -374,4 +378,43 @@ pomodoro_result_t pomodoro_restore(pomodoro_model_t *model,
             now_epoch_seconds + 3U;
     }
     return POMODORO_OK;
+}
+
+static pomodoro_result_t rebase_running_timer_with_remaining(
+    pomodoro_model_t *model, uint32_t remaining_seconds,
+    uint64_t new_now_epoch_seconds)
+{
+    if (model == NULL ||
+        model->timer.timer_state != POMODORO_TIMER_RUNNING) {
+        return POMODORO_ERR_INVALID_STATE;
+    }
+    if (UINT64_MAX - new_now_epoch_seconds < remaining_seconds) {
+        return POMODORO_ERR_INVALID_ARGUMENT;
+    }
+    model->timer.remaining_seconds = remaining_seconds;
+    model->timer.deadline_epoch_seconds =
+        new_now_epoch_seconds + remaining_seconds;
+    return POMODORO_OK;
+}
+
+pomodoro_result_t pomodoro_rebase_running_timer(
+    pomodoro_model_t *model, uint64_t old_now_epoch_seconds,
+    uint64_t new_now_epoch_seconds)
+{
+    if (model == NULL) {
+        return POMODORO_ERR_INVALID_STATE;
+    }
+    return rebase_running_timer_with_remaining(
+        model, pomodoro_remaining_seconds(model, old_now_epoch_seconds),
+        new_now_epoch_seconds);
+}
+
+pomodoro_result_t pomodoro_rebase_running_timer_from_snapshot(
+    pomodoro_model_t *model, uint64_t new_now_epoch_seconds)
+{
+    return model == NULL
+        ? POMODORO_ERR_INVALID_STATE
+        : rebase_running_timer_with_remaining(
+              model, model->timer.remaining_seconds,
+              new_now_epoch_seconds);
 }

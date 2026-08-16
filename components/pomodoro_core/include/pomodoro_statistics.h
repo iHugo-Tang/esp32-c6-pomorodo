@@ -37,6 +37,14 @@ typedef struct {
 
 void pomodoro_statistics_init(pomodoro_statistics_store_t *store);
 bool pomodoro_date_is_valid(pomodoro_date_t date);
+bool pomodoro_date_add_days(pomodoro_date_t date, int days,
+                            pomodoro_date_t *result);
+bool pomodoro_local_datetime_to_utc(
+    pomodoro_date_t date, uint8_t hour, uint8_t minute,
+    int8_t utc_offset_quarter_hours, uint64_t *utc_epoch_seconds);
+bool pomodoro_local_date_from_utc(
+    uint64_t utc_epoch_seconds, int8_t utc_offset_quarter_hours,
+    pomodoro_date_t *date);
 bool pomodoro_statistics_apply(pomodoro_statistics_store_t *store,
                                const pomodoro_completion_record_t *completion,
                                bool rtc_is_valid,
