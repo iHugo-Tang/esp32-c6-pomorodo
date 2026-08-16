@@ -8,6 +8,7 @@ typedef struct {
     uint16_t value;
     uint16_t minimum;
     uint16_t maximum;
+    uint16_t step;
 } pomodoro_numeric_editor_t;
 
 bool pomodoro_numeric_editor_open(

@@ -127,6 +127,7 @@ static void snapshot_view(pomodoro_application_t *application,
     application->view.numeric_draft_value = application->numeric_editor.value;
     application->view.numeric_minimum = application->numeric_editor.minimum;
     application->view.numeric_maximum = application->numeric_editor.maximum;
+    application->view.numeric_step = application->numeric_editor.step;
     application->view.brightness_preview_percent =
         application->brightness_preview_percent != 0U
         ? application->brightness_preview_percent
@@ -292,9 +293,13 @@ static pomodoro_application_result_t update_display_lifecycle(
             application->last_interaction_epoch_seconds
         ? time->epoch_seconds - application->last_interaction_epoch_seconds
         : 0U;
+    uint8_t chosen_brightness =
+        application->brightness_preview_percent != 0U
+        ? application->brightness_preview_percent
+        : application->model.settings.brightness_percent;
     pomodoro_display_policy_result_t policy = pomodoro_display_policy_resolve(
         application->model.timer.timer_state, idle_seconds,
-        application->model.settings.brightness_percent);
+        chosen_brightness);
     return set_display_state(application, policy.awake,
                              policy.brightness_percent);
 }
@@ -305,8 +310,11 @@ static pomodoro_application_result_t record_interaction(
     if (!application->has_last_time) {
         return POMODORO_APPLICATION_OK;
     }
+    uint8_t brightness = application->brightness_preview_percent != 0U
+        ? application->brightness_preview_percent
+        : application->model.settings.brightness_percent;
     pomodoro_application_result_t result = set_display_state(
-        application, true, application->model.settings.brightness_percent);
+        application, true, brightness);
     if (result != POMODORO_APPLICATION_OK) {
         return result;
     }
@@ -1134,6 +1142,16 @@ pomodoro_application_result_t pomodoro_application_dispatch(
         }
         if (application->page ==
             POMODORO_APPLICATION_PAGE_NUMERIC_STEPPER) {
+            if (application->numeric_editor.setting ==
+                    POMODORO_APPLICATION_SETTING_BRIGHTNESS_PERCENT) {
+                application->brightness_preview_percent = 0U;
+                pomodoro_application_result_t restore = set_display_state(
+                    application, true,
+                    application->model.settings.brightness_percent);
+                if (restore != POMODORO_APPLICATION_OK) {
+                    return restore;
+                }
+            }
             application->page = POMODORO_APPLICATION_PAGE_SETTINGS;
             return render(application, NULL, POMODORO_EVENT_NONE);
         }
@@ -1184,7 +1202,7 @@ pomodoro_application_result_t pomodoro_application_dispatch(
         return start_time_sync(application);
     }
     if (action >= POMODORO_APPLICATION_ACTION_OPEN_FOCUS_MINUTES &&
-        action <= POMODORO_APPLICATION_ACTION_OPEN_DAILY_GOAL) {
+        action <= POMODORO_APPLICATION_ACTION_OPEN_BRIGHTNESS) {
         return pomodoro_application_open_numeric_setting(
             application,
             (pomodoro_application_numeric_setting_t) (
@@ -1241,6 +1259,17 @@ pomodoro_application_result_t pomodoro_application_adjust_numeric_setting(
         !pomodoro_numeric_editor_adjust(&application->numeric_editor, delta)) {
         return POMODORO_APPLICATION_ERR_INVALID_STATE;
     }
+    if (application->numeric_editor.setting ==
+        POMODORO_APPLICATION_SETTING_BRIGHTNESS_PERCENT) {
+        uint8_t percent = (uint8_t) application->numeric_editor.value;
+        if (!application->platform.set_display_brightness_percent(
+                application->platform.context, percent)) {
+            return fail_platform(application,
+                                 POMODORO_APPLICATION_ERROR_DISPLAY);
+        }
+        application->brightness_preview_percent = percent;
+        application->effective_brightness_percent = percent;
+    }
     return render(application, NULL, POMODORO_EVENT_NONE);
 }
 
@@ -1255,6 +1284,7 @@ pomodoro_application_result_t pomodoro_application_confirm_numeric_setting(
     }
     pomodoro_settings_t settings = application->model.settings;
     pomodoro_numeric_editor_apply(&application->numeric_editor, &settings);
+    application->brightness_preview_percent = 0U;
     application->page = POMODORO_APPLICATION_PAGE_SETTINGS;
     return pomodoro_application_confirm_settings(application, &settings);
 }

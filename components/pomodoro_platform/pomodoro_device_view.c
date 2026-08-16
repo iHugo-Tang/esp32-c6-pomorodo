@@ -36,6 +36,9 @@ enum {
     COMPLETION_AUTO_GROUP_Y = -11,
     COMPLETION_AUTO_PRIMARY_Y = 59,
     COMPLETION_AUTO_SECONDARY_Y = 112,
+    SETTINGS_SECTION_TEXT_COLOR = 0xAAB1BE,
+    SETTINGS_ITEM_TEXT_COLOR = 0xF5F7FA,
+    SETTINGS_VALUE_TEXT_COLOR = 0x9FC2FF,
 };
 
 typedef struct {
@@ -57,6 +60,7 @@ static const struct {
     {POMODORO_APPLICATION_ACTION_TOGGLE_SOUND, "Sound"},
     {POMODORO_APPLICATION_ACTION_OPEN_STATISTICS, "Stats"},
     {POMODORO_APPLICATION_ACTION_OPEN_SETTINGS, "Settings"},
+    {POMODORO_APPLICATION_ACTION_OPEN_BRIGHTNESS, "Brightness"},
     {POMODORO_APPLICATION_ACTION_POWER_OFF, "Power off"},
     {POMODORO_APPLICATION_ACTION_OPEN_DATE_TIME, "Date & time"},
     {POMODORO_APPLICATION_ACTION_OPEN_TIME_SYNC, "Sync from iPhone"},
@@ -86,7 +90,6 @@ enum {
 
 typedef struct {
     pomodoro_device_action_handler_t action_handler;
-    pomodoro_device_brightness_handler_t brightness_handler;
     pomodoro_application_view_t last_view;
     lv_obj_t *title;
     lv_obj_t *ring;
@@ -132,6 +135,7 @@ typedef struct {
     lv_obj_t *settings_today_value;
     lv_obj_t *settings_timer_values[4];
     lv_obj_t *settings_volume_value;
+    lv_obj_t *settings_brightness_value;
     lv_obj_t *settings_datetime_value;
     lv_obj_t *settings_time_sync_value;
     lv_obj_t *settings_power_value;
@@ -142,7 +146,6 @@ typedef struct {
     lv_obj_t *statistics_chart;
     lv_obj_t *numeric_roller;
     lv_obj_t *time_sync_qr;
-    lv_obj_t *brightness_slider;
     lv_obj_t *statistics_bars[7];
     lv_obj_t *statistics_dates[7];
     lv_obj_t *statistics_counts[7];
@@ -199,33 +202,23 @@ static void action_clicked(lv_event_t *event)
         lv_event_get_user_data(event));
 }
 
-static void brightness_changed(lv_event_t *event)
-{
-    if (view_context.brightness_handler == NULL) {
-        return;
-    }
-    int32_t value = lv_slider_get_value(view_context.brightness_slider);
-    uint8_t rounded = (uint8_t) (((value + 2) / 5) * 5);
-    lv_slider_set_value(view_context.brightness_slider, rounded, LV_ANIM_OFF);
-    view_context.brightness_handler(
-        rounded, lv_event_get_code(event) == LV_EVENT_RELEASED);
-}
-
 static void numeric_roller_changed(lv_event_t *event)
 {
     (void) event;
     if (view_context.numeric_roller_rendering) {
         return;
     }
-    uint16_t selected = (uint16_t) lv_roller_get_selected(
-        view_context.numeric_roller) + view_context.last_view.numeric_minimum;
+    uint16_t selected = view_context.last_view.numeric_minimum +
+        (uint16_t) lv_roller_get_selected(view_context.numeric_roller) *
+            view_context.last_view.numeric_step;
     pomodoro_application_action_t action = selected >
             view_context.last_view.numeric_draft_value
         ? POMODORO_APPLICATION_ACTION_NUMERIC_INCREMENT
         : POMODORO_APPLICATION_ACTION_NUMERIC_DECREMENT;
-    uint16_t steps = selected > view_context.last_view.numeric_draft_value
+    uint16_t difference = selected > view_context.last_view.numeric_draft_value
         ? selected - view_context.last_view.numeric_draft_value
         : view_context.last_view.numeric_draft_value - selected;
+    uint16_t steps = difference / view_context.last_view.numeric_step;
     for (uint16_t step = 0; step < steps; step++) {
         dispatch(action);
     }
@@ -412,7 +405,9 @@ static void gesture(lv_event_t *event)
     }
     lv_dir_t direction = lv_indev_get_gesture_dir(indev);
     if (view_context.last_view.page != POMODORO_APPLICATION_PAGE_MAIN) {
-        if (direction == LV_DIR_RIGHT && view_context.gesture_start_x < 32 &&
+        if (view_context.last_view.page !=
+                POMODORO_APPLICATION_PAGE_SETTINGS &&
+            direction == LV_DIR_RIGHT && view_context.gesture_start_x < 32 &&
             point.x - view_context.gesture_start_x >= 72) {
             dispatch(POMODORO_APPLICATION_ACTION_BACK);
             lv_event_stop_bubbling(event);
@@ -502,6 +497,8 @@ static lv_obj_t *make_setting_switch_row(
                         (void *) (uintptr_t) action);
     lv_obj_t *label = lv_label_create(row);
     lv_label_set_text(label, text);
+    lv_obj_set_style_text_color(
+        label, lv_color_hex(SETTINGS_ITEM_TEXT_COLOR), 0);
     lv_obj_align(label, LV_ALIGN_LEFT_MID, 4, 0);
     *toggle = lv_switch_create(row);
     lv_obj_align(*toggle, LV_ALIGN_RIGHT_MID, -4, 0);
@@ -523,11 +520,28 @@ static lv_obj_t *make_setting_action_row(
                         (void *) (uintptr_t) action);
     lv_obj_t *label = lv_label_create(row);
     lv_label_set_text(label, text);
+    lv_obj_set_style_text_color(
+        label, lv_color_hex(SETTINGS_ITEM_TEXT_COLOR), 0);
     lv_obj_align(label, LV_ALIGN_LEFT_MID, 4, 0);
     *value_label = lv_label_create(row);
-    lv_obj_set_style_text_color(*value_label, lv_color_hex(0xAAB1BE), 0);
+    lv_obj_set_style_text_color(
+        *value_label, lv_color_hex(SETTINGS_VALUE_TEXT_COLOR), 0);
     lv_obj_align(*value_label, LV_ALIGN_RIGHT_MID, -4, 0);
     return row;
+}
+
+static lv_obj_t *make_settings_section_label(lv_obj_t *parent,
+                                             const char *text,
+                                             bool separated)
+{
+    lv_obj_t *label = lv_label_create(parent);
+    lv_label_set_text(label, text);
+    lv_obj_set_style_text_color(
+        label, lv_color_hex(SETTINGS_SECTION_TEXT_COLOR), 0);
+    if (separated) {
+        lv_obj_set_style_margin_top(label, 14, 0);
+    }
+    return label;
 }
 
 static void create_completion_visuals(lv_obj_t *parent)
@@ -609,18 +623,15 @@ static void create_completion_visuals(lv_obj_t *parent)
 }
 
 esp_err_t pomodoro_device_view_create(
-    pomodoro_device_action_handler_t action_handler,
-    pomodoro_device_brightness_handler_t brightness_handler)
+    pomodoro_device_action_handler_t action_handler)
 {
-    if (action_handler == NULL || brightness_handler == NULL ||
-        !lvgl_port_lock(1000)) {
-        return action_handler == NULL || brightness_handler == NULL
+    if (action_handler == NULL || !lvgl_port_lock(1000)) {
+        return action_handler == NULL
             ? ESP_ERR_INVALID_ARG
             : ESP_ERR_TIMEOUT;
     }
     memset(&view_context, 0, sizeof(view_context));
     view_context.action_handler = action_handler;
-    view_context.brightness_handler = brightness_handler;
     lv_obj_t *screen = lv_screen_active();
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x07090D), 0);
     lv_obj_set_style_text_color(screen, lv_color_hex(0xF5F7FA), 0);
@@ -761,6 +772,8 @@ esp_err_t pomodoro_device_view_create(
                                &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_align(view_context.page_title,
                                 LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(view_context.page_title,
+                                lv_color_hex(0xF5F7FA), 0);
     view_context.page_back_button = make_action_button(
         view_context.page_panel, POMODORO_APPLICATION_ACTION_BACK,
         LV_SYMBOL_LEFT);
@@ -824,15 +837,22 @@ esp_err_t pomodoro_device_view_create(
     lv_obj_set_style_radius(view_context.statistics_goal_card, 12, 0);
     view_context.statistics_focus_value = lv_label_create(
         view_context.statistics_focus_card);
+    lv_label_set_recolor(view_context.statistics_focus_value, true);
     lv_obj_align(view_context.statistics_focus_value, LV_ALIGN_TOP_LEFT, 0, 0);
     view_context.statistics_goal_value = lv_label_create(
         view_context.statistics_goal_card);
+    lv_label_set_recolor(view_context.statistics_goal_value, true);
     lv_obj_align(view_context.statistics_goal_value, LV_ALIGN_TOP_LEFT, 0, 0);
     view_context.statistics_goal_bar = lv_bar_create(
         view_context.statistics_goal_card);
     lv_obj_set_size(view_context.statistics_goal_bar, LV_PCT(100), 10);
     lv_obj_align(view_context.statistics_goal_bar, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_bar_set_range(view_context.statistics_goal_bar, 0, 100);
+    lv_obj_set_style_bg_color(view_context.statistics_goal_bar,
+                              lv_color_hex(0x303846), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(view_context.statistics_goal_bar,
+                              lv_color_hex(SETTINGS_VALUE_TEXT_COLOR),
+                              LV_PART_INDICATOR);
     lv_obj_add_flag(view_context.statistics_metrics, LV_OBJ_FLAG_HIDDEN);
     view_context.settings_switches = lv_obj_create(view_context.page_content);
     lv_obj_set_size(view_context.settings_switches, LV_PCT(100),
@@ -843,14 +863,16 @@ esp_err_t pomodoro_device_view_create(
     lv_obj_set_style_pad_row(view_context.settings_switches, 8, 0);
     lv_obj_set_flex_flow(view_context.settings_switches,
                          LV_FLEX_FLOW_COLUMN);
-    lv_obj_t *section = lv_label_create(view_context.settings_switches);
-    lv_label_set_text(section, "STATISTICS");
+    lv_obj_set_style_text_color(view_context.settings_switches,
+                                lv_color_hex(0xF5F7FA), 0);
+    (void) make_settings_section_label(view_context.settings_switches,
+                                       "STATISTICS", false);
     (void) make_setting_action_row(
         view_context.settings_switches, "Today's statistics",
         POMODORO_APPLICATION_ACTION_OPEN_STATISTICS,
         &view_context.settings_today_value);
-    section = lv_label_create(view_context.settings_switches);
-    lv_label_set_text(section, "TIMER");
+    (void) make_settings_section_label(view_context.settings_switches,
+                                       "TIMER", true);
     (void) make_setting_action_row(
         view_context.settings_switches, "Focus duration",
         POMODORO_APPLICATION_ACTION_OPEN_FOCUS_MINUTES,
@@ -867,8 +889,8 @@ esp_err_t pomodoro_device_view_create(
         view_context.settings_switches, "Daily goal",
         POMODORO_APPLICATION_ACTION_OPEN_DAILY_GOAL,
         &view_context.settings_timer_values[3]);
-    lv_obj_t *automation = lv_label_create(view_context.settings_switches);
-    lv_label_set_text(automation, "AUTOMATION");
+    (void) make_settings_section_label(view_context.settings_switches,
+                                       "AUTOMATION", true);
     (void) make_setting_switch_row(
         view_context.settings_switches, "Auto-start breaks",
         POMODORO_APPLICATION_ACTION_TOGGLE_AUTO_BREAK,
@@ -877,18 +899,23 @@ esp_err_t pomodoro_device_view_create(
         view_context.settings_switches, "Auto-start focus",
         POMODORO_APPLICATION_ACTION_TOGGLE_AUTO_FOCUS,
         &view_context.auto_focus_switch);
-    lv_obj_t *sound = lv_label_create(view_context.settings_switches);
-    lv_label_set_text(sound, "SOUND");
+    (void) make_settings_section_label(view_context.settings_switches,
+                                       "SOUND", true);
     (void) make_setting_switch_row(
         view_context.settings_switches, "Sound",
         POMODORO_APPLICATION_ACTION_TOGGLE_SOUND,
         &view_context.sound_switch);
     view_context.settings_volume_value = lv_label_create(
         view_context.settings_switches);
-    lv_obj_set_style_text_color(view_context.settings_volume_value,
-                                lv_color_hex(0xAAB1BE), 0);
-    section = lv_label_create(view_context.settings_switches);
-    lv_label_set_text(section, "DISPLAY\nBrightness");
+    lv_obj_set_style_text_color(
+        view_context.settings_volume_value,
+        lv_color_hex(SETTINGS_VALUE_TEXT_COLOR), 0);
+    (void) make_settings_section_label(view_context.settings_switches,
+                                       "DISPLAY", true);
+    (void) make_setting_action_row(
+        view_context.settings_switches, "Brightness",
+        POMODORO_APPLICATION_ACTION_OPEN_BRIGHTNESS,
+        &view_context.settings_brightness_value);
     lv_obj_add_flag(view_context.settings_switches, LV_OBJ_FLAG_HIDDEN);
     view_context.statistics_chart = lv_obj_create(view_context.page_content);
     lv_obj_set_size(view_context.statistics_chart, LV_PCT(100), 180);
@@ -906,10 +933,16 @@ esp_err_t pomodoro_device_view_create(
                                LV_BAR_ORIENTATION_VERTICAL);
         view_context.statistics_dates[index] = lv_label_create(
             view_context.statistics_chart);
+        lv_obj_set_style_text_color(
+            view_context.statistics_dates[index],
+            lv_color_hex(SETTINGS_SECTION_TEXT_COLOR), 0);
         lv_obj_align(view_context.statistics_dates[index],
                      LV_ALIGN_BOTTOM_LEFT, x - 2, -2);
         view_context.statistics_counts[index] = lv_label_create(
             view_context.statistics_chart);
+        lv_obj_set_style_text_color(
+            view_context.statistics_counts[index],
+            lv_color_hex(SETTINGS_VALUE_TEXT_COLOR), 0);
         lv_obj_align(view_context.statistics_counts[index],
                      LV_ALIGN_TOP_LEFT, x + 8, 0);
     }
@@ -920,17 +953,8 @@ esp_err_t pomodoro_device_view_create(
     lv_obj_add_event_cb(view_context.numeric_roller, numeric_roller_changed,
                         LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_flag(view_context.numeric_roller, LV_OBJ_FLAG_HIDDEN);
-    view_context.brightness_slider = lv_slider_create(
-        view_context.settings_switches);
-    lv_obj_set_width(view_context.brightness_slider, LV_PCT(92));
-    lv_slider_set_range(view_context.brightness_slider, 10, 100);
-    lv_obj_add_event_cb(view_context.brightness_slider, brightness_changed,
-                        LV_EVENT_VALUE_CHANGED, NULL);
-    lv_obj_add_event_cb(view_context.brightness_slider, brightness_changed,
-                        LV_EVENT_RELEASED, NULL);
-    lv_obj_add_flag(view_context.brightness_slider, LV_OBJ_FLAG_HIDDEN);
-    section = lv_label_create(view_context.settings_switches);
-    lv_label_set_text(section, "DATE & TIME");
+    (void) make_settings_section_label(view_context.settings_switches,
+                                       "DATE & TIME", true);
     (void) make_setting_action_row(
         view_context.settings_switches, "Sync from iPhone",
         POMODORO_APPLICATION_ACTION_OPEN_TIME_SYNC,
@@ -939,8 +963,8 @@ esp_err_t pomodoro_device_view_create(
         view_context.settings_switches, "Set manually",
         POMODORO_APPLICATION_ACTION_OPEN_DATE_TIME,
         &view_context.settings_datetime_value);
-    section = lv_label_create(view_context.settings_switches);
-    lv_label_set_text(section, "POWER");
+    (void) make_settings_section_label(view_context.settings_switches,
+                                       "POWER", true);
     (void) make_setting_action_row(
         view_context.settings_switches, "Power off",
         POMODORO_APPLICATION_ACTION_POWER_OFF,
@@ -971,6 +995,10 @@ esp_err_t pomodoro_device_view_create(
             entry->action == POMODORO_APPLICATION_ACTION_OPEN_SETTINGS;
         lv_obj_set_size(entry->button, menu_destination ? 420 : 136,
                         menu_destination ? 56 : 42);
+        if (menu_destination) {
+            lv_obj_set_style_text_color(entry->label,
+                                        lv_color_hex(0xF5F7FA), 0);
+        }
     }
     lv_obj_add_flag(view_context.page_panel, LV_OBJ_FLAG_HIDDEN);
 
@@ -1043,15 +1071,18 @@ esp_err_t pomodoro_device_view_create(
     view_context.volume_feedback = lv_obj_create(view_context.status_overlay);
     lv_obj_set_size(view_context.volume_feedback, LV_PCT(100), 42);
     lv_obj_set_style_bg_color(view_context.volume_feedback,
-                              lv_color_hex(0x232A35), 0);
+                              lv_color_hex(0x1A1F27), 0);
     lv_obj_set_style_border_width(view_context.volume_feedback, 0, 0);
     lv_obj_set_style_radius(view_context.volume_feedback, 12, 0);
     lv_obj_set_style_pad_all(view_context.volume_feedback, 8, 0);
     lv_obj_set_flex_flow(view_context.volume_feedback, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_column(view_context.volume_feedback, 8, 0);
     lv_obj_set_flex_align(view_context.volume_feedback,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER);
     view_context.volume_icon = lv_label_create(view_context.volume_feedback);
+    lv_obj_set_style_text_color(view_context.volume_icon,
+                                lv_color_hex(SETTINGS_ITEM_TEXT_COLOR), 0);
     for (uint8_t index = 0; index < 5U; index++) {
         view_context.volume_segments[index] = lv_obj_create(
             view_context.volume_feedback);
@@ -1060,6 +1091,8 @@ esp_err_t pomodoro_device_view_create(
         lv_obj_set_style_radius(view_context.volume_segments[index], 3, 0);
     }
     view_context.volume_value = lv_label_create(view_context.volume_feedback);
+    lv_obj_set_style_text_color(view_context.volume_value,
+                                lv_color_hex(SETTINGS_VALUE_TEXT_COLOR), 0);
     lv_obj_set_style_text_align(view_context.status_overlay,
                                 LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_add_flag(view_context.rtc_warning, LV_OBJ_FLAG_HIDDEN);
@@ -1218,6 +1251,8 @@ static const char *numeric_setting_name(
         return "Long break";
     case POMODORO_APPLICATION_SETTING_DAILY_GOAL:
         return "Daily goal";
+    case POMODORO_APPLICATION_SETTING_BRIGHTNESS_PERCENT:
+        return "Brightness";
     default:
         return "Focus";
     }
@@ -1229,8 +1264,10 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
     lv_obj_remove_flag(view_context.page_panel, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(view_context.menu_button, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(view_context.page_content, LV_OBJ_FLAG_SCROLLABLE);
+    if (view->page != POMODORO_APPLICATION_PAGE_SETTINGS) {
+        lv_obj_scroll_to_y(view_context.page_content, 0, LV_ANIM_OFF);
+    }
     lv_obj_add_flag(view_context.statistics_chart, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(view_context.brightness_slider, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(view_context.statistics_metrics, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(view_context.settings_switches, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(view_context.numeric_roller, LV_OBJ_FLAG_HIDDEN);
@@ -1338,7 +1375,9 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
     }
     if (view->page == POMODORO_APPLICATION_PAGE_STATISTICS) {
         char text[768];
-        snprintf(text, sizeof(text), "Today · ×%u",
+        lv_label_set_recolor(view_context.page_body, true);
+        snprintf(text, sizeof(text),
+                 "#AAB1BE TODAY#  #9FC2FF ×%u#",
                  view->today_completed_pomodoros);
         if (!view->statistics_available) {
             snprintf(text, sizeof(text),
@@ -1348,10 +1387,12 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
                 POMODORO_APPLICATION_ACTION_OPEN_DATE_TIME, true);
         } else {
             lv_label_set_text_fmt(view_context.statistics_focus_value,
-                                  "Focus time\n%" PRIu32 " min",
+                                  "#AAB1BE FOCUS TIME#\n#9FC2FF %" PRIu32
+                                  " min#",
                                   view->today_completed_focus_seconds / 60U);
             lv_label_set_text_fmt(view_context.statistics_goal_value,
-                                  "Goal\n%u%%", view->today_goal_percent);
+                                  "#AAB1BE GOAL#\n#9FC2FF %u%%#",
+                                  view->today_goal_percent);
             lv_bar_set_value(view_context.statistics_goal_bar,
                              view->today_goal_fill_percent, LV_ANIM_OFF);
             lv_obj_remove_flag(view_context.statistics_metrics,
@@ -1367,7 +1408,8 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
                                  bar->completed_pomodoros, LV_ANIM_OFF);
                 lv_obj_set_style_bg_color(
                     view_context.statistics_bars[index],
-                    lv_color_hex(bar->is_today ? 0xFF5C5C : 0x5B8CFF),
+                    lv_color_hex(bar->is_today
+                        ? SETTINGS_VALUE_TEXT_COLOR : 0x5B7396),
                     LV_PART_INDICATOR);
                 lv_label_set_text_fmt(view_context.statistics_dates[index],
                                       "%u/%u", bar->date.month,
@@ -1386,17 +1428,29 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
         lv_label_set_text(view_context.page_body, text);
         return;
     }
+    lv_label_set_recolor(view_context.page_body, false);
     if (view->page == POMODORO_APPLICATION_PAGE_NUMERIC_STEPPER) {
         char text[80];
-        snprintf(text, sizeof(text), "Range %u-%u · step 1",
-                 view->numeric_minimum, view->numeric_maximum);
+        bool is_brightness = view->numeric_setting ==
+            POMODORO_APPLICATION_SETTING_BRIGHTNESS_PERCENT;
+        snprintf(text, sizeof(text),
+                 is_brightness ? "%u%%" : "Range %u-%u - step %u",
+                 is_brightness ? view->numeric_draft_value :
+                                 view->numeric_minimum,
+                 view->numeric_maximum, view->numeric_step);
         lv_label_set_text(view_context.page_title,
                           numeric_setting_name(view->numeric_setting));
         lv_label_set_text(view_context.page_body, text);
+        set_auxiliary_button_text(
+            POMODORO_APPLICATION_ACTION_NUMERIC_DECREMENT,
+            is_brightness ? "-" : LV_SYMBOL_DOWN);
+        set_auxiliary_button_text(
+            POMODORO_APPLICATION_ACTION_NUMERIC_INCREMENT,
+            is_brightness ? "+" : LV_SYMBOL_UP);
         char options[256] = "";
         size_t used = 0U;
         for (uint16_t value = view->numeric_minimum;
-             value <= view->numeric_maximum; value++) {
+             value <= view->numeric_maximum; value += view->numeric_step) {
             int written = snprintf(options + used, sizeof(options) - used,
                                    value == view->numeric_maximum ? "%u" :
                                                                     "%u\n",
@@ -1406,14 +1460,19 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
             }
             used += (size_t) written;
         }
-        view_context.numeric_roller_rendering = true;
-        lv_roller_set_options(view_context.numeric_roller, options,
-                              LV_ROLLER_MODE_NORMAL);
-        lv_roller_set_selected(
-            view_context.numeric_roller,
-            view->numeric_draft_value - view->numeric_minimum, LV_ANIM_OFF);
-        view_context.numeric_roller_rendering = false;
-        lv_obj_remove_flag(view_context.numeric_roller, LV_OBJ_FLAG_HIDDEN);
+        if (!is_brightness) {
+            view_context.numeric_roller_rendering = true;
+            lv_roller_set_options(view_context.numeric_roller, options,
+                                  LV_ROLLER_MODE_NORMAL);
+            lv_roller_set_selected(
+                view_context.numeric_roller,
+                (view->numeric_draft_value - view->numeric_minimum) /
+                    view->numeric_step,
+                LV_ANIM_OFF);
+            view_context.numeric_roller_rendering = false;
+            lv_obj_remove_flag(view_context.numeric_roller,
+                               LV_OBJ_FLAG_HIDDEN);
+        }
         set_auxiliary_button_visible(
             POMODORO_APPLICATION_ACTION_NUMERIC_DECREMENT, true);
         set_auxiliary_button_visible(
@@ -1437,11 +1496,13 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
                           view->settings.daily_goal);
     lv_label_set_text_fmt(
         view_context.settings_volume_value,
-        "Volume %u/5 · Use the side buttons to adjust volume",
+        "Volume %u/5 - Use the side buttons to adjust volume",
         view->settings.volume);
+    lv_label_set_text_fmt(view_context.settings_brightness_value, "%u%%",
+                          view->settings.brightness_percent);
     lv_label_set_text_fmt(
         view_context.settings_time_sync_value, "%s%s",
-        view->time_zone_needs_sync ? "Sync soon · " : "",
+        view->time_zone_needs_sync ? "Sync soon - " : "",
         view->time_zone_needs_sync ? "rules expiring" :
         view->time_zone_name[0] != '\0' ? view->time_zone_name :
                                          "automatic DST");
@@ -1475,9 +1536,6 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
         lv_obj_remove_state(view_context.sound_switch, LV_STATE_CHECKED);
     }
     lv_obj_add_flag(view_context.page_content, LV_OBJ_FLAG_SCROLLABLE);
-    lv_slider_set_value(view_context.brightness_slider,
-                        view->brightness_preview_percent, LV_ANIM_OFF);
-    lv_obj_remove_flag(view_context.brightness_slider, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void render_status_overlay(const pomodoro_application_view_t *view)
@@ -1520,7 +1578,8 @@ static void render_status_overlay(const pomodoro_application_view_t *view)
         for (uint8_t index = 0; index < 5U; index++) {
             lv_obj_set_style_bg_color(
                 view_context.volume_segments[index],
-                lv_color_hex(index < view->settings.volume ? 0xF5F7FA :
+                lv_color_hex(index < view->settings.volume
+                    ? SETTINGS_VALUE_TEXT_COLOR :
                                                             0x555D6A),
                 0);
             lv_obj_set_style_bg_opa(view_context.volume_segments[index],

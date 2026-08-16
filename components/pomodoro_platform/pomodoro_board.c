@@ -44,6 +44,8 @@
 #define I2C_TIMEOUT_MS 250
 #define AXP2101_ADDRESS 0x34U
 #define PCF85063_ADDRESS 0x51U
+#define SH8601_QSPI_WRITE_COMMAND_OPCODE 0x02U
+#define SH8601_BRIGHTNESS_COMMAND 0x51U
 #define PCF85063_SECONDS_REGISTER 0x04U
 #define AXP2101_STATUS1_REGISTER 0x00U
 #define AXP2101_STATUS2_REGISTER 0x01U
@@ -284,7 +286,9 @@ bool pomodoro_board_set_display_brightness(uint8_t percent)
         return false;
     }
     uint8_t value = (uint8_t) ((uint16_t) percent * 255U / 100U);
-    return esp_lcd_panel_io_tx_param(board.panel_io, 0x51, &value,
+    uint32_t command = (SH8601_QSPI_WRITE_COMMAND_OPCODE << 24U) |
+                       (SH8601_BRIGHTNESS_COMMAND << 8U);
+    return esp_lcd_panel_io_tx_param(board.panel_io, command, &value,
                                      sizeof(value)) == ESP_OK;
 }
 

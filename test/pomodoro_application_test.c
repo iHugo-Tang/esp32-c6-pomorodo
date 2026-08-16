@@ -847,6 +847,59 @@ static void test_switches_and_brightness_save_with_specified_timing(void)
     pomodoro_application_destroy(application);
 }
 
+static void test_brightness_numeric_page_previews_and_saves_on_confirm(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_epoch_seconds = 100U;
+    fake_enable_journal(&fake);
+    pomodoro_application_t *application = boot_application(&fake);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_SETTINGS) ==
+           POMODORO_APPLICATION_OK);
+
+    unsigned saves_before_preview = fake.save_count;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_BRIGHTNESS) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.page ==
+           POMODORO_APPLICATION_PAGE_NUMERIC_STEPPER);
+    assert(fake.rendered_view.numeric_setting ==
+           POMODORO_APPLICATION_SETTING_BRIGHTNESS_PERCENT);
+    assert(fake.rendered_view.numeric_draft_value == 70U);
+    assert(fake.rendered_view.numeric_minimum == 10U);
+    assert(fake.rendered_view.numeric_maximum == 100U);
+
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_NUMERIC_INCREMENT) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.numeric_draft_value == 75U);
+    assert(fake.brightness_percent == 75U);
+    assert(fake.save_count == saves_before_preview);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_BACK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.page == POMODORO_APPLICATION_PAGE_SETTINGS);
+    assert(fake.brightness_percent == 70U);
+    assert(fake.rendered_view.settings.brightness_percent == 70U);
+    assert(fake.save_count == saves_before_preview);
+
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_BRIGHTNESS) ==
+           POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_NUMERIC_DECREMENT) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.brightness_percent == 65U);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_NUMERIC_CONFIRM) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.page == POMODORO_APPLICATION_PAGE_SETTINGS);
+    assert(fake.rendered_view.settings.brightness_percent == 65U);
+    assert(fake.save_count == saves_before_preview + 1U);
+    pomodoro_application_destroy(application);
+}
+
 static void test_volume_buttons_and_sound_toggle_persist_last_nonzero_volume(void)
 {
     fake_platform_t fake;
@@ -2079,6 +2132,7 @@ int main(void)
     test_numeric_stepper_discards_back_and_saves_confirm();
     test_duration_change_does_not_alter_running_timer();
     test_switches_and_brightness_save_with_specified_timing();
+    test_brightness_numeric_page_previews_and_saves_on_confirm();
     test_volume_buttons_and_sound_toggle_persist_last_nonzero_volume();
     test_battery_status_and_one_shot_warning_do_not_cancel_timer();
     test_display_lifecycle_dims_sleeps_and_consumes_wake_touch();

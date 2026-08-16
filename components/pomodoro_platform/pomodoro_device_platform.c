@@ -169,23 +169,6 @@ static void dispatch_action(pomodoro_application_action_t action)
     }
 }
 
-static void change_brightness(uint8_t percent, bool confirmed)
-{
-    bool consumed = false;
-    pomodoro_application_result_t result =
-        pomodoro_application_handle_touch(runtime.application, &consumed);
-    if (result == POMODORO_APPLICATION_OK && !consumed) {
-        result = confirmed
-            ? pomodoro_application_confirm_brightness(runtime.application,
-                                                       percent)
-            : pomodoro_application_preview_brightness(runtime.application,
-                                                       percent);
-    }
-    if (result != POMODORO_APPLICATION_OK) {
-        ESP_LOGE(TAG, "Brightness change failed: %d", result);
-    }
-}
-
 static void dispatch_hardware_action(pomodoro_application_action_t action)
 {
     if (!lvgl_port_lock(50)) {
@@ -270,7 +253,7 @@ esp_err_t pomodoro_platform_start(void)
     if (result != ESP_OK) {
         return fail_startup("Display initialization failed", result);
     }
-    result = pomodoro_device_view_create(dispatch_action, change_brightness);
+    result = pomodoro_device_view_create(dispatch_action);
     if (result != ESP_OK) {
         return fail_startup("Main view initialization failed", result);
     }

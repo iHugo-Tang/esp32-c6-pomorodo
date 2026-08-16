@@ -46,6 +46,7 @@ typedef enum {
     POMODORO_APPLICATION_ACTION_OPEN_SHORT_BREAK_MINUTES,
     POMODORO_APPLICATION_ACTION_OPEN_LONG_BREAK_MINUTES,
     POMODORO_APPLICATION_ACTION_OPEN_DAILY_GOAL,
+    POMODORO_APPLICATION_ACTION_OPEN_BRIGHTNESS,
     POMODORO_APPLICATION_ACTION_NUMERIC_DECREMENT,
     POMODORO_APPLICATION_ACTION_NUMERIC_INCREMENT,
     POMODORO_APPLICATION_ACTION_NUMERIC_CONFIRM,
@@ -81,6 +82,7 @@ typedef enum {
     POMODORO_APPLICATION_SETTING_SHORT_BREAK_MINUTES,
     POMODORO_APPLICATION_SETTING_LONG_BREAK_MINUTES,
     POMODORO_APPLICATION_SETTING_DAILY_GOAL,
+    POMODORO_APPLICATION_SETTING_BRIGHTNESS_PERCENT,
 } pomodoro_application_numeric_setting_t;
 
 typedef struct {
@@ -195,6 +197,7 @@ typedef struct {
     uint16_t numeric_draft_value;
     uint16_t numeric_minimum;
     uint16_t numeric_maximum;
+    uint16_t numeric_step;
     uint8_t brightness_preview_percent;
     uint8_t last_nonzero_volume;
     bool volume_feedback_visible;
