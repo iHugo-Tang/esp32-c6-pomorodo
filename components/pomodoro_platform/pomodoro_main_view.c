@@ -612,12 +612,10 @@ bool pomodoro_main_view_render(const pomodoro_application_view_t *view)
             lv_obj_remove_flag(view_context.secondary_button,
                                LV_OBJ_FLAG_HIDDEN);
         } else {
-            bool compact_focus_pause =
-                view->mode == POMODORO_MODE_FOCUS &&
-                view->timer_state == POMODORO_TIMER_RUNNING;
+            bool compact_focus_action = view->mode == POMODORO_MODE_FOCUS;
             lv_obj_set_size(view_context.primary_button,
-                            compact_focus_pause ? 160 : 220,
-                            compact_focus_pause ? 48 : 56);
+                            compact_focus_action ? 160 : 220,
+                            compact_focus_action ? 48 : 56);
             lv_obj_align(view_context.primary_button, LV_ALIGN_CENTER, 0, 48);
         }
     }
