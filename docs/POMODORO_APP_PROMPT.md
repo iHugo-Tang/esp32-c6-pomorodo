@@ -321,7 +321,7 @@ Typography:
 
 - Inter for all interface text.
 - Space Mono for `MM:SS`.
-- Countdown around 64px; body at least 16px; supporting text at least 14px, adjusted only after physical-size testing.
+- Countdown around 64px; body and supporting text use at least 16px, adjusted only after physical-size testing. No page text uses a 14px font.
 - Every interactive target is at least 48×48px.
 - Never communicate mode by color alone; always pair accent color with icon and text.
 
