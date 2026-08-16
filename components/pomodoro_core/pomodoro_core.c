@@ -319,6 +319,16 @@ pomodoro_result_t pomodoro_reset(pomodoro_model_t *model)
     return POMODORO_OK;
 }
 
+pomodoro_result_t pomodoro_clear_set_progress(pomodoro_model_t *model)
+{
+    if (model == NULL) {
+        return POMODORO_ERR_INVALID_ARGUMENT;
+    }
+
+    model->timer.set_progress = 0U;
+    return POMODORO_OK;
+}
+
 pomodoro_result_t pomodoro_request_mode(pomodoro_model_t *model,
                                         pomodoro_mode_t mode)
 {

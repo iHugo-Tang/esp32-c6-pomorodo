@@ -129,6 +129,7 @@ pomodoro_result_t pomodoro_pause(pomodoro_model_t *model,
 pomodoro_result_t pomodoro_resume(pomodoro_model_t *model,
                                   uint64_t now_epoch_seconds);
 pomodoro_result_t pomodoro_reset(pomodoro_model_t *model);
+pomodoro_result_t pomodoro_clear_set_progress(pomodoro_model_t *model);
 pomodoro_result_t pomodoro_request_mode(pomodoro_model_t *model,
                                         pomodoro_mode_t mode);
 pomodoro_result_t pomodoro_confirm_mode_switch(pomodoro_model_t *model,

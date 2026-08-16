@@ -202,6 +202,29 @@ static void test_skipping_long_break_resets_on_next_focus_start(void)
     assert(model.timer.set_progress == 0);
 }
 
+static void test_clear_set_progress_preserves_timer_and_recomputes_next_mode(void)
+{
+    pomodoro_model_t model = fresh_model();
+    model.timer.mode = POMODORO_MODE_FOCUS;
+    model.timer.timer_state = POMODORO_TIMER_COMPLETION;
+    model.timer.set_progress = 4U;
+    model.timer.remaining_seconds = 0U;
+    model.timer.completion_transition_deadline_epoch_seconds = 500U;
+
+    assert(pomodoro_scheduled_next_mode(&model) ==
+           POMODORO_MODE_LONG_BREAK);
+    assert(pomodoro_clear_set_progress(&model) == POMODORO_OK);
+    assert(model.timer.set_progress == 0U);
+    assert(model.timer.timer_state == POMODORO_TIMER_COMPLETION);
+    assert(model.timer.mode == POMODORO_MODE_FOCUS);
+    assert(model.timer.completion_transition_deadline_epoch_seconds == 500U);
+    assert(pomodoro_scheduled_next_mode(&model) ==
+           POMODORO_MODE_SHORT_BREAK);
+    assert(pomodoro_clear_set_progress(&model) == POMODORO_OK);
+    assert(pomodoro_clear_set_progress(NULL) ==
+           POMODORO_ERR_INVALID_ARGUMENT);
+}
+
 static void test_restore_settles_expired_timer_exactly_once(void)
 {
     pomodoro_model_t before = fresh_model();
@@ -599,6 +622,7 @@ int main(void)
     test_fourth_focus_schedules_long_break();
     test_long_break_resets_set();
     test_skipping_long_break_resets_on_next_focus_start();
+    test_clear_set_progress_preserves_timer_and_recomputes_next_mode();
     test_restore_settles_expired_timer_exactly_once();
     test_pause_at_deadline_settles_immediately();
     test_completion_countdown_restarts_after_reboot();

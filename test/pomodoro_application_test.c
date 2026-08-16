@@ -703,6 +703,24 @@ static void test_main_menu_routes_to_statistics_settings_and_back(void)
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.page == POMODORO_APPLICATION_PAGE_MENU);
 
+    unsigned saves_before_clear = fake.save_count;
+    assert(pomodoro_application_dispatch(
+               application,
+               POMODORO_APPLICATION_ACTION_REQUEST_CLEAR_SET_PROGRESS) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.confirmation ==
+           POMODORO_APPLICATION_CONFIRM_CLEAR_SET_PROGRESS);
+    assert(pomodoro_application_dispatch(
+               application,
+               POMODORO_APPLICATION_ACTION_CONFIRM_CLEAR_SET_PROGRESS) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.page == POMODORO_APPLICATION_PAGE_MAIN);
+    assert(fake.rendered_view.set_progress == 0U);
+    assert(fake.save_count == saves_before_clear + 1U);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_MENU) ==
+           POMODORO_APPLICATION_OK);
+
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_OPEN_STATISTICS) ==
            POMODORO_APPLICATION_OK);
@@ -725,6 +743,164 @@ static void test_main_menu_routes_to_statistics_settings_and_back(void)
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.page == POMODORO_APPLICATION_PAGE_MAIN);
 
+    pomodoro_application_destroy(application);
+}
+
+static void test_clear_set_progress_from_completion_preserves_statistics(void)
+{
+    fake_platform_t fake;
+    pomodoro_model_t model;
+    pomodoro_statistics_store_t statistics;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_epoch_seconds = 100U;
+    fake.load_result = POMODORO_APPLICATION_LOAD_LOADED;
+    pomodoro_settings_t settings = pomodoro_default_settings();
+    settings.auto_start_breaks = false;
+    assert(pomodoro_init(&model, &settings) == POMODORO_OK);
+    model.timer.set_progress = 3U;
+    pomodoro_statistics_init(&statistics);
+    assert(pomodoro_persistence_pack(&fake.persisted, &model, &statistics));
+
+    pomodoro_application_t *application = boot_application(&fake);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_START) ==
+           POMODORO_APPLICATION_OK);
+    fake.now_epoch_seconds = 1600U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.set_progress == 4U);
+    assert(fake.rendered_view.today_completed_pomodoros == 1U);
+    assert(fake.rendered_view.scheduled_mode == POMODORO_MODE_LONG_BREAK);
+
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_MENU) ==
+           POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_dispatch(
+               application,
+               POMODORO_APPLICATION_ACTION_REQUEST_CLEAR_SET_PROGRESS) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.confirmation ==
+           POMODORO_APPLICATION_CONFIRM_CLEAR_SET_PROGRESS);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_CANCEL_CONFIRMATION) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.page == POMODORO_APPLICATION_PAGE_MENU);
+    assert(fake.rendered_view.set_progress == 4U);
+
+    assert(pomodoro_application_dispatch(
+               application,
+               POMODORO_APPLICATION_ACTION_REQUEST_CLEAR_SET_PROGRESS) ==
+           POMODORO_APPLICATION_OK);
+    unsigned saves_before_clear = fake.save_count;
+    assert(pomodoro_application_dispatch(
+               application,
+               POMODORO_APPLICATION_ACTION_CONFIRM_CLEAR_SET_PROGRESS) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.page == POMODORO_APPLICATION_PAGE_MAIN);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
+    assert(fake.rendered_view.set_progress == 0U);
+    assert(fake.rendered_view.today_completed_pomodoros == 1U);
+    assert(fake.rendered_view.scheduled_mode == POMODORO_MODE_SHORT_BREAK);
+    assert(fake.save_count == saves_before_clear + 1U);
+
+    pomodoro_application_destroy(application);
+    application = boot_application(&fake);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
+    assert(fake.rendered_view.set_progress == 0U);
+    assert(fake.rendered_view.today_completed_pomodoros == 1U);
+    assert(fake.rendered_view.scheduled_mode == POMODORO_MODE_SHORT_BREAK);
+    pomodoro_application_destroy(application);
+}
+
+static void test_clear_set_progress_preserves_running_focus(void)
+{
+    fake_platform_t fake;
+    pomodoro_model_t model;
+    pomodoro_statistics_store_t statistics;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_epoch_seconds = 100U;
+    fake.load_result = POMODORO_APPLICATION_LOAD_LOADED;
+    pomodoro_settings_t settings = pomodoro_default_settings();
+    settings.auto_start_breaks = false;
+    assert(pomodoro_init(&model, &settings) == POMODORO_OK);
+    model.timer.set_progress = 2U;
+    pomodoro_statistics_init(&statistics);
+    assert(pomodoro_persistence_pack(&fake.persisted, &model, &statistics));
+
+    pomodoro_application_t *application = boot_application(&fake);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_START) ==
+           POMODORO_APPLICATION_OK);
+    fake.now_epoch_seconds = 400U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.remaining_seconds == 1200U);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_MENU) ==
+           POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_dispatch(
+               application,
+               POMODORO_APPLICATION_ACTION_REQUEST_CLEAR_SET_PROGRESS) ==
+           POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_dispatch(
+               application,
+               POMODORO_APPLICATION_ACTION_CONFIRM_CLEAR_SET_PROGRESS) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_RUNNING);
+    assert(fake.rendered_view.remaining_seconds == 1200U);
+    assert(fake.rendered_view.set_progress == 0U);
+
+    fake.now_epoch_seconds = 1600U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
+    assert(fake.rendered_view.set_progress == 1U);
+    assert(fake.rendered_view.today_completed_pomodoros == 1U);
+    pomodoro_application_destroy(application);
+}
+
+static void test_focus_completion_cancels_pending_set_progress_clear(void)
+{
+    fake_platform_t fake;
+    pomodoro_model_t model;
+    pomodoro_statistics_store_t statistics;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_epoch_seconds = 100U;
+    fake.load_result = POMODORO_APPLICATION_LOAD_LOADED;
+    pomodoro_settings_t settings = pomodoro_default_settings();
+    settings.auto_start_breaks = false;
+    assert(pomodoro_init(&model, &settings) == POMODORO_OK);
+    model.timer.set_progress = 2U;
+    pomodoro_statistics_init(&statistics);
+    assert(pomodoro_persistence_pack(&fake.persisted, &model, &statistics));
+
+    pomodoro_application_t *application = boot_application(&fake);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_START) ==
+           POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_MENU) ==
+           POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_dispatch(
+               application,
+               POMODORO_APPLICATION_ACTION_REQUEST_CLEAR_SET_PROGRESS) ==
+           POMODORO_APPLICATION_OK);
+
+    fake.now_epoch_seconds = 1600U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.page == POMODORO_APPLICATION_PAGE_MAIN);
+    assert(fake.rendered_view.confirmation ==
+           POMODORO_APPLICATION_CONFIRM_NONE);
+    assert(fake.rendered_view.set_progress == 3U);
+    assert(pomodoro_application_dispatch(
+               application,
+               POMODORO_APPLICATION_ACTION_CONFIRM_CLEAR_SET_PROGRESS) ==
+           POMODORO_APPLICATION_ERR_INVALID_STATE);
     pomodoro_application_destroy(application);
 }
 
@@ -2191,6 +2367,9 @@ int main(void)
     test_statistics_view_shows_today_and_trailing_seven_days();
     test_statistics_hide_chart_while_rtc_is_invalid();
     test_main_menu_routes_to_statistics_settings_and_back();
+    test_clear_set_progress_from_completion_preserves_statistics();
+    test_clear_set_progress_preserves_running_focus();
+    test_focus_completion_cancels_pending_set_progress_clear();
     test_completion_behind_statistics_returns_to_main();
     test_numeric_stepper_discards_back_and_saves_confirm();
     test_duration_change_does_not_alter_running_timer();

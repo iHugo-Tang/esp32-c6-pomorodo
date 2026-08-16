@@ -601,6 +601,31 @@ static pomodoro_application_result_t confirm_reset(
     return save_and_render(application, NULL);
 }
 
+static pomodoro_application_result_t request_clear_set_progress(
+    pomodoro_application_t *application)
+{
+    if (application->page != POMODORO_APPLICATION_PAGE_MENU ||
+        application->view.confirmation != POMODORO_APPLICATION_CONFIRM_NONE) {
+        return POMODORO_APPLICATION_ERR_INVALID_STATE;
+    }
+    application->view.confirmation =
+        POMODORO_APPLICATION_CONFIRM_CLEAR_SET_PROGRESS;
+    return render(application, NULL, POMODORO_EVENT_NONE);
+}
+
+static pomodoro_application_result_t confirm_clear_set_progress(
+    pomodoro_application_t *application)
+{
+    if (application->view.confirmation !=
+            POMODORO_APPLICATION_CONFIRM_CLEAR_SET_PROGRESS ||
+        pomodoro_clear_set_progress(&application->model) != POMODORO_OK) {
+        return POMODORO_APPLICATION_ERR_INVALID_STATE;
+    }
+    application->view.confirmation = POMODORO_APPLICATION_CONFIRM_NONE;
+    application->page = POMODORO_APPLICATION_PAGE_MAIN;
+    return save_and_render(application, NULL);
+}
+
 static pomodoro_application_result_t request_mode(
     pomodoro_application_t *application, int direction)
 {
@@ -1107,6 +1132,14 @@ pomodoro_application_result_t pomodoro_application_dispatch(
     }
     if (action == POMODORO_APPLICATION_ACTION_NOT_NOW) {
         return not_now(application);
+    }
+    if (action ==
+        POMODORO_APPLICATION_ACTION_REQUEST_CLEAR_SET_PROGRESS) {
+        return request_clear_set_progress(application);
+    }
+    if (action ==
+        POMODORO_APPLICATION_ACTION_CONFIRM_CLEAR_SET_PROGRESS) {
+        return confirm_clear_set_progress(application);
     }
     if (action == POMODORO_APPLICATION_ACTION_OPEN_MENU &&
         application->page == POMODORO_APPLICATION_PAGE_MAIN) {

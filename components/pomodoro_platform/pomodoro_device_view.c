@@ -60,6 +60,8 @@ static const struct {
     {POMODORO_APPLICATION_ACTION_TOGGLE_SOUND, "Sound"},
     {POMODORO_APPLICATION_ACTION_OPEN_STATISTICS, "Stats"},
     {POMODORO_APPLICATION_ACTION_OPEN_SETTINGS, "Settings"},
+    {POMODORO_APPLICATION_ACTION_REQUEST_CLEAR_SET_PROGRESS,
+     "Clear set progress"},
     {POMODORO_APPLICATION_ACTION_OPEN_BRIGHTNESS, "Brightness"},
     {POMODORO_APPLICATION_ACTION_OPEN_IDLE_BRIGHTNESS, "Idle brightness"},
     {POMODORO_APPLICATION_ACTION_POWER_OFF, "Power off"},
@@ -355,10 +357,16 @@ static void confirmation_cancelled(lv_event_t *event)
 static void confirmation_accepted(lv_event_t *event)
 {
     (void) event;
-    dispatch(view_context.last_view.confirmation ==
-                     POMODORO_APPLICATION_CONFIRM_RESET
-                 ? POMODORO_APPLICATION_ACTION_CONFIRM_RESET
-                 : POMODORO_APPLICATION_ACTION_CONFIRM_MODE_SWITCH);
+    pomodoro_application_action_t action =
+        POMODORO_APPLICATION_ACTION_CONFIRM_MODE_SWITCH;
+    if (view_context.last_view.confirmation ==
+        POMODORO_APPLICATION_CONFIRM_RESET) {
+        action = POMODORO_APPLICATION_ACTION_CONFIRM_RESET;
+    } else if (view_context.last_view.confirmation ==
+               POMODORO_APPLICATION_CONFIRM_CLEAR_SET_PROGRESS) {
+        action = POMODORO_APPLICATION_ACTION_CONFIRM_CLEAR_SET_PROGRESS;
+    }
+    dispatch(action);
 }
 
 static void mode_transition_cleanup(lv_timer_t *timer);
@@ -399,13 +407,21 @@ static void gesture(lv_event_t *event)
         view_context.gesture_start_x = point.x;
         return;
     }
+    lv_dir_t direction = lv_indev_get_gesture_dir(indev);
+    if (view_context.last_view.confirmation !=
+        POMODORO_APPLICATION_CONFIRM_NONE) {
+        if (direction == LV_DIR_RIGHT &&
+            view_context.gesture_start_x < 32 &&
+            point.x - view_context.gesture_start_x >= 72) {
+            dispatch(POMODORO_APPLICATION_ACTION_CANCEL_CONFIRMATION);
+            lv_event_stop_bubbling(event);
+        }
+        return;
+    }
     if (view_context.last_view.timer_state == POMODORO_TIMER_COMPLETION ||
-        view_context.last_view.confirmation !=
-            POMODORO_APPLICATION_CONFIRM_NONE ||
         view_context.mode_transition_timer != NULL) {
         return;
     }
-    lv_dir_t direction = lv_indev_get_gesture_dir(indev);
     if (view_context.last_view.page != POMODORO_APPLICATION_PAGE_MAIN) {
         if (view_context.last_view.page !=
                 POMODORO_APPLICATION_PAGE_SETTINGS &&
@@ -998,12 +1014,19 @@ esp_err_t pomodoro_device_view_create(
         entry->label = lv_obj_get_child(entry->button, 0);
         bool menu_destination =
             entry->action == POMODORO_APPLICATION_ACTION_OPEN_STATISTICS ||
-            entry->action == POMODORO_APPLICATION_ACTION_OPEN_SETTINGS;
+            entry->action == POMODORO_APPLICATION_ACTION_OPEN_SETTINGS ||
+            entry->action ==
+                POMODORO_APPLICATION_ACTION_REQUEST_CLEAR_SET_PROGRESS;
         lv_obj_set_size(entry->button, menu_destination ? 420 : 136,
                         menu_destination ? 56 : 42);
         if (menu_destination) {
             lv_obj_set_style_text_color(entry->label,
-                                        lv_color_hex(0xF5F7FA), 0);
+                lv_color_hex(
+                    entry->action ==
+                            POMODORO_APPLICATION_ACTION_REQUEST_CLEAR_SET_PROGRESS
+                        ? 0xFF6B6B
+                        : 0xF5F7FA),
+                0);
         }
     }
     lv_obj_add_flag(view_context.page_panel, LV_OBJ_FLAG_HIDDEN);
@@ -1019,6 +1042,10 @@ esp_err_t pomodoro_device_view_create(
     lv_obj_remove_flag(view_context.confirmation_mask, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(view_context.confirmation_mask, confirmation_cancelled,
                         LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(view_context.confirmation_mask, gesture,
+                        LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(view_context.confirmation_mask, gesture,
+                        LV_EVENT_GESTURE, NULL);
     lv_obj_add_flag(view_context.confirmation_mask, LV_OBJ_FLAG_HIDDEN);
 
     view_context.confirmation_overlay = lv_obj_create(screen);
@@ -1038,6 +1065,9 @@ esp_err_t pomodoro_device_view_create(
                       "Current progress will be discarded.");
     lv_obj_set_style_text_color(view_context.confirmation_body,
                                 lv_color_hex(0xAAB1BE), 0);
+    lv_obj_set_width(view_context.confirmation_body, 380);
+    lv_obj_set_style_text_align(view_context.confirmation_body,
+                                LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(view_context.confirmation_body, LV_ALIGN_TOP_MID, 0, 66);
     lv_obj_t *cancel = make_text_button(view_context.confirmation_overlay,
                                         confirmation_cancelled, "Cancel");
@@ -1379,6 +1409,8 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
             POMODORO_APPLICATION_ACTION_OPEN_STATISTICS, true);
         set_auxiliary_button_visible(
             POMODORO_APPLICATION_ACTION_OPEN_SETTINGS, true);
+        set_auxiliary_button_visible(
+            POMODORO_APPLICATION_ACTION_REQUEST_CLEAR_SET_PROGRESS, true);
         return;
     }
     if (view->page == POMODORO_APPLICATION_PAGE_STATISTICS) {
@@ -1647,6 +1679,36 @@ static void apply_pixel_shift(const pomodoro_application_view_t *view)
     }
 }
 
+static void render_confirmation(const pomodoro_application_view_t *view)
+{
+    if (view->confirmation == POMODORO_APPLICATION_CONFIRM_NONE) {
+        lv_obj_add_flag(view_context.confirmation_mask, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(view_context.confirmation_overlay, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
+    const char *title = "End this timer?";
+    const char *body = "Current progress will be discarded.";
+    const char *button = "End and switch";
+    if (view->confirmation == POMODORO_APPLICATION_CONFIRM_RESET) {
+        title = "Reset this timer?";
+        button = "Reset";
+    } else if (view->confirmation ==
+               POMODORO_APPLICATION_CONFIRM_CLEAR_SET_PROGRESS) {
+        title = "Clear set progress?";
+        body = "This resets the current set to 0/4. Today's statistics won't "
+               "be changed.";
+        button = "Clear";
+    }
+    lv_label_set_text(view_context.confirmation_title, title);
+    lv_label_set_text(view_context.confirmation_body, body);
+    lv_label_set_text(view_context.confirmation_button_label, button);
+    lv_obj_remove_flag(view_context.confirmation_mask, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(view_context.confirmation_overlay, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(view_context.confirmation_mask);
+    lv_obj_move_foreground(view_context.confirmation_overlay);
+}
+
 bool pomodoro_device_view_render(const pomodoro_application_view_t *view)
 {
     if (view == NULL || view_context.time == NULL) {
@@ -1669,6 +1731,7 @@ bool pomodoro_device_view_render(const pomodoro_application_view_t *view)
     if (view->phase == POMODORO_APPLICATION_PHASE_TIME_SETUP ||
         view->page != POMODORO_APPLICATION_PAGE_MAIN) {
         render_auxiliary_page(view);
+        render_confirmation(view);
         return true;
     }
     lv_obj_add_flag(view_context.page_panel, LV_OBJ_FLAG_HIDDEN);
@@ -1723,22 +1786,7 @@ bool pomodoro_device_view_render(const pomodoro_application_view_t *view)
         }
     }
 
-    if (view->confirmation == POMODORO_APPLICATION_CONFIRM_NONE) {
-        lv_obj_add_flag(view_context.confirmation_mask, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(view_context.confirmation_overlay, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        bool reset = view->confirmation == POMODORO_APPLICATION_CONFIRM_RESET;
-        lv_label_set_text(view_context.confirmation_title,
-                          reset ? "Reset this timer?" : "End this timer?");
-        lv_label_set_text(view_context.confirmation_button_label,
-                          reset ? "Reset" : "End and switch");
-        lv_obj_remove_flag(view_context.confirmation_mask,
-                           LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(view_context.confirmation_overlay,
-                           LV_OBJ_FLAG_HIDDEN);
-        lv_obj_move_foreground(view_context.confirmation_mask);
-        lv_obj_move_foreground(view_context.confirmation_overlay);
-    }
+    render_confirmation(view);
     return true;
 }
 
