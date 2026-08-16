@@ -32,6 +32,12 @@ bool pomodoro_numeric_editor_open(
         editor->minimum = 10U;
         editor->maximum = 100U;
         editor->step = 5U;
+    } else if (setting ==
+               POMODORO_APPLICATION_SETTING_IDLE_BRIGHTNESS_PERCENT) {
+        editor->value = settings->idle_brightness_percent;
+        editor->minimum = 10U;
+        editor->maximum = 100U;
+        editor->step = 5U;
     } else {
         return false;
     }
@@ -65,8 +71,11 @@ void pomodoro_numeric_editor_apply(const pomodoro_numeric_editor_t *editor,
         settings->long_break_minutes = editor->value;
     } else if (editor->setting == POMODORO_APPLICATION_SETTING_DAILY_GOAL) {
         settings->daily_goal = (uint8_t) editor->value;
-    } else {
+    } else if (editor->setting ==
+               POMODORO_APPLICATION_SETTING_BRIGHTNESS_PERCENT) {
         settings->brightness_percent = (uint8_t) editor->value;
+    } else {
+        settings->idle_brightness_percent = (uint8_t) editor->value;
     }
 }
 

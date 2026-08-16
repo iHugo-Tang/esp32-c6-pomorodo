@@ -7,8 +7,20 @@
 #include <string.h>
 
 typedef struct {
+    uint16_t focus_minutes;
+    uint16_t short_break_minutes;
+    uint16_t long_break_minutes;
+    uint8_t daily_goal;
+    bool auto_start_breaks;
+    bool auto_start_focus;
+    uint8_t volume;
+    uint8_t brightness_percent;
+    int8_t utc_offset_quarter_hours;
+} legacy_v2_settings_t;
+
+typedef struct {
     uint32_t version;
-    pomodoro_settings_t value;
+    legacy_v2_settings_t value;
     uint8_t last_nonzero_volume;
 } legacy_v2_persisted_settings_t;
 
@@ -900,6 +912,46 @@ static void test_brightness_numeric_page_previews_and_saves_on_confirm(void)
     pomodoro_application_destroy(application);
 }
 
+static void test_idle_brightness_multiplier_saves_and_dims_ready_display(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_epoch_seconds = 100U;
+    fake_enable_journal(&fake);
+    pomodoro_application_t *application = boot_application(&fake);
+    assert(fake.rendered_view.settings.idle_brightness_percent == 20U);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_SETTINGS) ==
+           POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_dispatch(
+               application,
+               POMODORO_APPLICATION_ACTION_OPEN_IDLE_BRIGHTNESS) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.numeric_setting ==
+           POMODORO_APPLICATION_SETTING_IDLE_BRIGHTNESS_PERCENT);
+    assert(fake.rendered_view.numeric_draft_value == 20U);
+    assert(fake.rendered_view.numeric_minimum == 10U);
+    assert(fake.rendered_view.numeric_maximum == 100U);
+    assert(fake.rendered_view.numeric_step == 5U);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_NUMERIC_INCREMENT) ==
+           POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_NUMERIC_CONFIRM) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.settings.idle_brightness_percent == 25U);
+    pomodoro_application_destroy(application);
+
+    application = boot_application(&fake);
+    assert(fake.rendered_view.settings.idle_brightness_percent == 25U);
+    fake.now_epoch_seconds += 120U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.effective_brightness_percent == 17U);
+    pomodoro_application_destroy(application);
+}
+
 static void test_volume_buttons_and_sound_toggle_persist_last_nonzero_volume(void)
 {
     fake_platform_t fake;
@@ -1720,7 +1772,18 @@ static void test_boot_migrates_and_resaves_supported_legacy_state(void)
     memset(&legacy, 0, sizeof(legacy));
     legacy.version = 2U;
     legacy.settings.version = 2U;
-    legacy.settings.value = model.settings;
+    legacy.settings.value = (legacy_v2_settings_t) {
+        .focus_minutes = model.settings.focus_minutes,
+        .short_break_minutes = model.settings.short_break_minutes,
+        .long_break_minutes = model.settings.long_break_minutes,
+        .daily_goal = model.settings.daily_goal,
+        .auto_start_breaks = model.settings.auto_start_breaks,
+        .auto_start_focus = model.settings.auto_start_focus,
+        .volume = model.settings.volume,
+        .brightness_percent = model.settings.brightness_percent,
+        .utc_offset_quarter_hours =
+            model.settings.utc_offset_quarter_hours,
+    };
     legacy.settings.last_nonzero_volume = model.last_nonzero_volume;
     legacy.timer = model.timer;
     legacy.statistics = statistics;
@@ -2133,6 +2196,7 @@ int main(void)
     test_duration_change_does_not_alter_running_timer();
     test_switches_and_brightness_save_with_specified_timing();
     test_brightness_numeric_page_previews_and_saves_on_confirm();
+    test_idle_brightness_multiplier_saves_and_dims_ready_display();
     test_volume_buttons_and_sound_toggle_persist_last_nonzero_volume();
     test_battery_status_and_one_shot_warning_do_not_cancel_timer();
     test_display_lifecycle_dims_sleeps_and_consumes_wake_touch();

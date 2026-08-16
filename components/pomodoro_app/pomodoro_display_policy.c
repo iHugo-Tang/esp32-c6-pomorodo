@@ -4,7 +4,7 @@
 
 pomodoro_display_policy_result_t pomodoro_display_policy_resolve(
     pomodoro_timer_state_t timer_state, uint64_t idle_seconds,
-    uint8_t chosen_brightness_percent)
+    uint8_t chosen_brightness_percent, uint8_t idle_brightness_percent)
 {
     pomodoro_display_policy_result_t result = {
         .awake = true,
@@ -24,7 +24,7 @@ pomodoro_display_policy_result_t pomodoro_display_policy_resolve(
         return result;
     }
     result.brightness_percent = (uint8_t) (
-        (uint16_t) chosen_brightness_percent * 20U / 100U);
+        (uint16_t) chosen_brightness_percent * idle_brightness_percent / 100U);
     return result;
 }
 

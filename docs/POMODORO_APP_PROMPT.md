@@ -182,6 +182,8 @@ Brightness:
 
 - Range 10%–100%, step 5%, default 70%.
 - Preview while dragging; save on release.
+- Idle brightness is a 10%–100% multiplier of the chosen brightness, in 5%
+  steps, default 20%.
 
 ## Statistics
 
@@ -295,7 +297,7 @@ Battery UI:
 ## Display and AMOLED protection
 
 - Running timer: after two minutes without touch, dim to 60% of the chosen brightness but remain visible.
-- Ready, paused, or waiting completion state: after two minutes dim to 20% of chosen brightness; after five minutes turn the display off.
+- Ready, paused, or waiting completion state: after two minutes dim to the configured Idle brightness multiplier of chosen brightness; after five minutes turn the display off.
 - First touch while off wakes the display only and does not execute the underlying action.
 - Timer completion wakes the display and plays sound if enabled.
 - Apply an unobtrusive ±2px periodic pixel shift to static content.

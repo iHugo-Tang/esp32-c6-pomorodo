@@ -33,8 +33,20 @@ typedef struct {
 } legacy_v1_persisted_state_t;
 
 typedef struct {
+    uint16_t focus_minutes;
+    uint16_t short_break_minutes;
+    uint16_t long_break_minutes;
+    uint8_t daily_goal;
+    bool auto_start_breaks;
+    bool auto_start_focus;
+    uint8_t volume;
+    uint8_t brightness_percent;
+    int8_t utc_offset_quarter_hours;
+} legacy_v2_settings_t;
+
+typedef struct {
     uint32_t version;
-    pomodoro_settings_t value;
+    legacy_v2_settings_t value;
     uint8_t last_nonzero_volume;
 } legacy_v2_persisted_settings_t;
 
@@ -51,6 +63,27 @@ typedef struct {
     legacy_v2_persisted_state_t state;
     uint32_t checksum;
 } legacy_v2_journal_slot_t;
+
+typedef struct {
+    uint32_t version;
+    legacy_v2_settings_t value;
+    uint8_t last_nonzero_volume;
+    pomodoro_time_zone_schedule_t time_zone;
+} legacy_v3_persisted_settings_t;
+
+typedef struct {
+    uint32_t version;
+    legacy_v3_persisted_settings_t settings;
+    pomodoro_snapshot_t timer;
+    pomodoro_statistics_store_t statistics;
+    uint32_t checksum;
+} legacy_v3_persisted_state_t;
+
+typedef struct {
+    uint64_t generation;
+    legacy_v3_persisted_state_t state;
+    uint32_t checksum;
+} legacy_v3_journal_slot_t;
 
 _Static_assert(sizeof(legacy_v1_persisted_state_t) <
                    sizeof(pomodoro_persisted_state_t),
@@ -472,7 +505,17 @@ static void test_real_legacy_v2_journal_slot_migrates_without_data_loss(void)
     legacy.generation = 7U;
     legacy.state.version = 2U;
     legacy.state.settings.version = 2U;
-    legacy.state.settings.value = pomodoro_default_settings();
+    legacy.state.settings.value = (legacy_v2_settings_t) {
+        .focus_minutes = 25U,
+        .short_break_minutes = 5U,
+        .long_break_minutes = 15U,
+        .daily_goal = 8U,
+        .auto_start_breaks = true,
+        .auto_start_focus = false,
+        .volume = 3U,
+        .brightness_percent = 70U,
+        .utc_offset_quarter_hours = 0,
+    };
     legacy.state.settings.value.daily_goal = 13U;
     legacy.state.settings.last_nonzero_volume = 4U;
     legacy.state.timer = fresh_model().timer;
@@ -501,6 +544,52 @@ static void test_real_legacy_v2_journal_slot_migrates_without_data_loss(void)
     assert(statistics.pending_completed_pomodoros == 2U);
 }
 
+static void test_legacy_v3_journal_adds_default_idle_brightness(void)
+{
+    pomodoro_test_memory_journal_t memory;
+    pomodoro_journal_t journal;
+    memset(&memory, 0, sizeof(memory));
+    pomodoro_test_memory_journal_init(&memory, &journal);
+
+    legacy_v3_journal_slot_t legacy;
+    memset(&legacy, 0, sizeof(legacy));
+    legacy.generation = 9U;
+    legacy.state.version = 3U;
+    legacy.state.settings.version = 3U;
+    legacy.state.settings.value = (legacy_v2_settings_t) {
+        .focus_minutes = 25U,
+        .short_break_minutes = 5U,
+        .long_break_minutes = 15U,
+        .daily_goal = 8U,
+        .auto_start_breaks = true,
+        .auto_start_focus = false,
+        .volume = 3U,
+        .brightness_percent = 65U,
+        .utc_offset_quarter_hours = -24,
+    };
+    legacy.state.settings.last_nonzero_volume = 3U;
+    legacy.state.timer = fresh_model().timer;
+    pomodoro_statistics_init(&legacy.state.statistics);
+    legacy.state.checksum = pomodoro_test_crc32(
+        &legacy.state, offsetof(legacy_v3_persisted_state_t, checksum));
+    legacy.checksum = pomodoro_test_crc32(
+        &legacy, offsetof(legacy_v3_journal_slot_t, checksum));
+    memcpy(&memory.slots[0], &legacy, sizeof(legacy));
+    memory.present[0] = true;
+
+    pomodoro_persisted_state_t loaded;
+    assert(pomodoro_journal_load(&journal, &loaded) ==
+           POMODORO_JOURNAL_READ_LOADED);
+    pomodoro_model_t restored;
+    pomodoro_statistics_store_t statistics;
+    bool migrated = false;
+    assert(pomodoro_persistence_unpack(&loaded, &restored, &statistics,
+                                       &migrated));
+    assert(restored.settings.brightness_percent == 65U);
+    assert(restored.settings.idle_brightness_percent == 20U);
+    assert(restored.settings.utc_offset_quarter_hours == -24);
+}
+
 int main(void)
 {
     test_focus_completes_once();
@@ -524,6 +613,7 @@ int main(void)
     test_legacy_v0_state_migrates_to_current();
     test_real_legacy_v1_layout_migrates_without_data_loss();
     test_real_legacy_v2_journal_slot_migrates_without_data_loss();
+    test_legacy_v3_journal_adds_default_idle_brightness();
     puts("pomodoro_core_test: all tests passed");
     return 0;
 }

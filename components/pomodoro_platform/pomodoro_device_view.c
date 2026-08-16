@@ -61,6 +61,7 @@ static const struct {
     {POMODORO_APPLICATION_ACTION_OPEN_STATISTICS, "Stats"},
     {POMODORO_APPLICATION_ACTION_OPEN_SETTINGS, "Settings"},
     {POMODORO_APPLICATION_ACTION_OPEN_BRIGHTNESS, "Brightness"},
+    {POMODORO_APPLICATION_ACTION_OPEN_IDLE_BRIGHTNESS, "Idle brightness"},
     {POMODORO_APPLICATION_ACTION_POWER_OFF, "Power off"},
     {POMODORO_APPLICATION_ACTION_OPEN_DATE_TIME, "Date & time"},
     {POMODORO_APPLICATION_ACTION_OPEN_TIME_SYNC, "Sync from iPhone"},
@@ -136,6 +137,7 @@ typedef struct {
     lv_obj_t *settings_timer_values[4];
     lv_obj_t *settings_volume_value;
     lv_obj_t *settings_brightness_value;
+    lv_obj_t *settings_idle_brightness_value;
     lv_obj_t *settings_datetime_value;
     lv_obj_t *settings_time_sync_value;
     lv_obj_t *settings_power_value;
@@ -916,6 +918,10 @@ esp_err_t pomodoro_device_view_create(
         view_context.settings_switches, "Brightness",
         POMODORO_APPLICATION_ACTION_OPEN_BRIGHTNESS,
         &view_context.settings_brightness_value);
+    (void) make_setting_action_row(
+        view_context.settings_switches, "Idle brightness",
+        POMODORO_APPLICATION_ACTION_OPEN_IDLE_BRIGHTNESS,
+        &view_context.settings_idle_brightness_value);
     lv_obj_add_flag(view_context.settings_switches, LV_OBJ_FLAG_HIDDEN);
     view_context.statistics_chart = lv_obj_create(view_context.page_content);
     lv_obj_set_size(view_context.statistics_chart, LV_PCT(100), 180);
@@ -1253,6 +1259,8 @@ static const char *numeric_setting_name(
         return "Daily goal";
     case POMODORO_APPLICATION_SETTING_BRIGHTNESS_PERCENT:
         return "Brightness";
+    case POMODORO_APPLICATION_SETTING_IDLE_BRIGHTNESS_PERCENT:
+        return "Idle brightness";
     default:
         return "Focus";
     }
@@ -1431,22 +1439,25 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
     lv_label_set_recolor(view_context.page_body, false);
     if (view->page == POMODORO_APPLICATION_PAGE_NUMERIC_STEPPER) {
         char text[80];
-        bool is_brightness = view->numeric_setting ==
-            POMODORO_APPLICATION_SETTING_BRIGHTNESS_PERCENT;
+        bool is_percent =
+            view->numeric_setting ==
+                POMODORO_APPLICATION_SETTING_BRIGHTNESS_PERCENT ||
+            view->numeric_setting ==
+                POMODORO_APPLICATION_SETTING_IDLE_BRIGHTNESS_PERCENT;
         snprintf(text, sizeof(text),
-                 is_brightness ? "%u%%" : "Range %u-%u - step %u",
-                 is_brightness ? view->numeric_draft_value :
-                                 view->numeric_minimum,
+                 is_percent ? "%u%%" : "Range %u-%u - step %u",
+                 is_percent ? view->numeric_draft_value :
+                              view->numeric_minimum,
                  view->numeric_maximum, view->numeric_step);
         lv_label_set_text(view_context.page_title,
                           numeric_setting_name(view->numeric_setting));
         lv_label_set_text(view_context.page_body, text);
         set_auxiliary_button_text(
             POMODORO_APPLICATION_ACTION_NUMERIC_DECREMENT,
-            is_brightness ? "-" : LV_SYMBOL_DOWN);
+            is_percent ? "-" : LV_SYMBOL_DOWN);
         set_auxiliary_button_text(
             POMODORO_APPLICATION_ACTION_NUMERIC_INCREMENT,
-            is_brightness ? "+" : LV_SYMBOL_UP);
+            is_percent ? "+" : LV_SYMBOL_UP);
         char options[256] = "";
         size_t used = 0U;
         for (uint16_t value = view->numeric_minimum;
@@ -1460,7 +1471,7 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
             }
             used += (size_t) written;
         }
-        if (!is_brightness) {
+        if (!is_percent) {
             view_context.numeric_roller_rendering = true;
             lv_roller_set_options(view_context.numeric_roller, options,
                                   LV_ROLLER_MODE_NORMAL);
@@ -1500,6 +1511,8 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
         view->settings.volume);
     lv_label_set_text_fmt(view_context.settings_brightness_value, "%u%%",
                           view->settings.brightness_percent);
+    lv_label_set_text_fmt(view_context.settings_idle_brightness_value, "%u%%",
+                          view->settings.idle_brightness_percent);
     lv_label_set_text_fmt(
         view_context.settings_time_sync_value, "%s%s",
         view->time_zone_needs_sync ? "Sync soon - " : "",

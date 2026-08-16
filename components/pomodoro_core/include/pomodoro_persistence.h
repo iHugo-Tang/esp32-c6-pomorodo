@@ -11,7 +11,7 @@
 extern "C" {
 #endif
 
-#define POMODORO_PERSISTED_STATE_VERSION 3U
+#define POMODORO_PERSISTED_STATE_VERSION 4U
 
 typedef struct {
     uint32_t version;

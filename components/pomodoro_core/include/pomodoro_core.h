@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 #define POMODORO_SNAPSHOT_VERSION 1U
-#define POMODORO_SETTINGS_VERSION 3U
+#define POMODORO_SETTINGS_VERSION 4U
 #define POMODORO_TIME_ZONE_NAME_CAPACITY 40U
 #define POMODORO_TIME_ZONE_TRANSITION_CAPACITY 16U
 #define POMODORO_TIME_ZONE_MINIMUM_FUTURE_SECONDS \
@@ -50,6 +50,7 @@ typedef struct {
     bool auto_start_focus;
     uint8_t volume;
     uint8_t brightness_percent;
+    uint8_t idle_brightness_percent;
     int8_t utc_offset_quarter_hours;
 } pomodoro_settings_t;
 

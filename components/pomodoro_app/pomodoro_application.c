@@ -299,7 +299,8 @@ static pomodoro_application_result_t update_display_lifecycle(
         : application->model.settings.brightness_percent;
     pomodoro_display_policy_result_t policy = pomodoro_display_policy_resolve(
         application->model.timer.timer_state, idle_seconds,
-        chosen_brightness);
+        chosen_brightness,
+        application->model.settings.idle_brightness_percent);
     return set_display_state(application, policy.awake,
                              policy.brightness_percent);
 }
@@ -1202,7 +1203,7 @@ pomodoro_application_result_t pomodoro_application_dispatch(
         return start_time_sync(application);
     }
     if (action >= POMODORO_APPLICATION_ACTION_OPEN_FOCUS_MINUTES &&
-        action <= POMODORO_APPLICATION_ACTION_OPEN_BRIGHTNESS) {
+        action <= POMODORO_APPLICATION_ACTION_OPEN_IDLE_BRIGHTNESS) {
         return pomodoro_application_open_numeric_setting(
             application,
             (pomodoro_application_numeric_setting_t) (

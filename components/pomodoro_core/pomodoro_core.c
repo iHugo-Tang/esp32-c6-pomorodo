@@ -85,6 +85,7 @@ pomodoro_settings_t pomodoro_default_settings(void)
         .auto_start_focus = false,
         .volume = 3,
         .brightness_percent = 70,
+        .idle_brightness_percent = 20,
         .utc_offset_quarter_hours = 0,
     };
 }
@@ -102,6 +103,9 @@ bool pomodoro_settings_are_valid(const pomodoro_settings_t *settings)
            settings->brightness_percent >= 10U &&
            settings->brightness_percent <= 100U &&
            settings->brightness_percent % 5U == 0U &&
+           settings->idle_brightness_percent >= 10U &&
+           settings->idle_brightness_percent <= 100U &&
+           settings->idle_brightness_percent % 5U == 0U &&
            settings->utc_offset_quarter_hours >= -48 &&
            settings->utc_offset_quarter_hours <= 56;
 }

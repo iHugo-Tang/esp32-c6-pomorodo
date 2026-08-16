@@ -365,6 +365,7 @@ flowchart LR
 
 - `Brightness` — Slider，10%–100%，步进 5%，默认 70%。
 - 拖动实时预览，松手保存。
+- `Idle brightness` — 主亮度的乘数，10%–100%，步进 5%，默认 20%。
 
 #### Date & time
 
