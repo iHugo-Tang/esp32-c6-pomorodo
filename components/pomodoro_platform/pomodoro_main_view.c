@@ -368,7 +368,9 @@ esp_err_t pomodoro_main_view_create(
     view_context.primary_button = make_text_button(screen, primary_clicked,
                                                    "Start");
     view_context.primary_label = lv_obj_get_child(view_context.primary_button, 0);
-    lv_obj_set_size(view_context.primary_button, 164, 52);
+    lv_obj_set_style_text_font(view_context.primary_label,
+                               &lv_font_montserrat_24, 0);
+    lv_obj_set_size(view_context.primary_button, 220, 56);
     lv_obj_align(view_context.primary_button, LV_ALIGN_CENTER, 0, 48);
     view_context.secondary_button = make_text_button(screen, secondary_clicked,
                                                      "Reset");
