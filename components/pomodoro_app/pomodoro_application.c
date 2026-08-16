@@ -20,6 +20,7 @@ struct pomodoro_application {
     pomodoro_application_time_t last_time;
     pomodoro_application_page_t page;
     pomodoro_application_page_t statistics_source_page;
+    pomodoro_application_page_t settings_source_page;
     pomodoro_numeric_editor_t numeric_editor;
     uint8_t brightness_preview_percent;
     pomodoro_application_device_status_t device_status;
@@ -28,6 +29,7 @@ struct pomodoro_application {
     uint64_t volume_feedback_deadline_epoch_seconds;
     uint64_t last_interaction_epoch_seconds;
     bool display_awake;
+    bool display_manually_asleep;
     uint8_t effective_brightness_percent;
     pomodoro_application_manual_time_t manual_time_draft;
     bool time_setup_can_cancel;
@@ -283,6 +285,9 @@ static pomodoro_application_result_t update_display_lifecycle(
     pomodoro_application_t *application,
     const pomodoro_application_time_t *time)
 {
+    if (application->display_manually_asleep) {
+        return set_display_state(application, false, 0U);
+    }
     uint64_t idle_seconds = time->epoch_seconds >=
             application->last_interaction_epoch_seconds
         ? time->epoch_seconds - application->last_interaction_epoch_seconds
@@ -300,10 +305,15 @@ static pomodoro_application_result_t record_interaction(
     if (!application->has_last_time) {
         return POMODORO_APPLICATION_OK;
     }
+    pomodoro_application_result_t result = set_display_state(
+        application, true, application->model.settings.brightness_percent);
+    if (result != POMODORO_APPLICATION_OK) {
+        return result;
+    }
+    application->display_manually_asleep = false;
     application->last_interaction_epoch_seconds =
         application->last_time.epoch_seconds;
-    return set_display_state(application, true,
-                             application->model.settings.brightness_percent);
+    return POMODORO_APPLICATION_OK;
 }
 
 static pomodoro_application_result_t save(
@@ -335,6 +345,7 @@ static pomodoro_application_result_t publish_completion(
     if (wake_result != POMODORO_APPLICATION_OK) {
         return wake_result;
     }
+    application->display_manually_asleep = false;
     pomodoro_date_t completion_date = time->local_date;
     if (event == POMODORO_EVENT_FOCUS_COMPLETE &&
         completion_clock_was_valid &&
@@ -935,6 +946,7 @@ static pomodoro_application_result_t toggle_display(
     if (result != POMODORO_APPLICATION_OK) {
         return result;
     }
+    application->display_manually_asleep = !awake;
     if (awake) {
         application->last_interaction_epoch_seconds =
             application->last_time.epoch_seconds;
@@ -1087,15 +1099,23 @@ pomodoro_application_result_t pomodoro_application_dispatch(
     if (action == POMODORO_APPLICATION_ACTION_NOT_NOW) {
         return not_now(application);
     }
+    if (action == POMODORO_APPLICATION_ACTION_OPEN_MENU &&
+        application->page == POMODORO_APPLICATION_PAGE_MAIN) {
+        application->page = POMODORO_APPLICATION_PAGE_MENU;
+        return render(application, NULL, POMODORO_EVENT_NONE);
+    }
     if (action == POMODORO_APPLICATION_ACTION_OPEN_STATISTICS &&
         (application->page == POMODORO_APPLICATION_PAGE_MAIN ||
+         application->page == POMODORO_APPLICATION_PAGE_MENU ||
          application->page == POMODORO_APPLICATION_PAGE_SETTINGS)) {
         application->statistics_source_page = application->page;
         application->page = POMODORO_APPLICATION_PAGE_STATISTICS;
         return render(application, NULL, POMODORO_EVENT_NONE);
     }
     if (action == POMODORO_APPLICATION_ACTION_OPEN_SETTINGS &&
-        application->page == POMODORO_APPLICATION_PAGE_MAIN) {
+        (application->page == POMODORO_APPLICATION_PAGE_MAIN ||
+         application->page == POMODORO_APPLICATION_PAGE_MENU)) {
+        application->settings_source_page = application->page;
         application->page = POMODORO_APPLICATION_PAGE_SETTINGS;
         return render(application, NULL, POMODORO_EVENT_NONE);
     }
@@ -1105,6 +1125,10 @@ pomodoro_application_result_t pomodoro_application_dispatch(
             return render(application, NULL, POMODORO_EVENT_NONE);
         }
         if (application->page == POMODORO_APPLICATION_PAGE_SETTINGS) {
+            application->page = application->settings_source_page;
+            return render(application, NULL, POMODORO_EVENT_NONE);
+        }
+        if (application->page == POMODORO_APPLICATION_PAGE_MENU) {
             application->page = POMODORO_APPLICATION_PAGE_MAIN;
             return render(application, NULL, POMODORO_EVENT_NONE);
         }

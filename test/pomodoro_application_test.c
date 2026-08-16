@@ -678,6 +678,44 @@ static void test_statistics_hide_chart_while_rtc_is_invalid(void)
     pomodoro_application_destroy(application);
 }
 
+static void test_main_menu_routes_to_statistics_settings_and_back(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_epoch_seconds = 100U;
+    fake_enable_journal(&fake);
+    pomodoro_application_t *application = boot_application(&fake);
+
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_MENU) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.page == POMODORO_APPLICATION_PAGE_MENU);
+
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_STATISTICS) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.page == POMODORO_APPLICATION_PAGE_STATISTICS);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_BACK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.page == POMODORO_APPLICATION_PAGE_MENU);
+
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_SETTINGS) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.page == POMODORO_APPLICATION_PAGE_SETTINGS);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_BACK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.page == POMODORO_APPLICATION_PAGE_MENU);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_BACK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.page == POMODORO_APPLICATION_PAGE_MAIN);
+
+    pomodoro_application_destroy(application);
+}
+
 static void test_completion_behind_statistics_returns_to_main(void)
 {
     fake_platform_t fake;
@@ -955,6 +993,17 @@ static void test_power_controls_do_not_change_timer_state(void)
                application, POMODORO_APPLICATION_ACTION_TOGGLE_DISPLAY) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.timer_state == POMODORO_TIMER_RUNNING);
+    assert(!fake.rendered_view.display_awake);
+    fake.now_epoch_seconds = 101U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(!fake.rendered_view.display_awake);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_RUNNING);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TOGGLE_DISPLAY) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.display_awake);
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_POWER_OFF) ==
            POMODORO_APPLICATION_OK);
@@ -2025,6 +2074,7 @@ int main(void)
     test_rtc_failure_uses_pending_statistics_until_time_recovers();
     test_statistics_view_shows_today_and_trailing_seven_days();
     test_statistics_hide_chart_while_rtc_is_invalid();
+    test_main_menu_routes_to_statistics_settings_and_back();
     test_completion_behind_statistics_returns_to_main();
     test_numeric_stepper_discards_back_and_saves_confirm();
     test_duration_change_does_not_alter_running_timer();

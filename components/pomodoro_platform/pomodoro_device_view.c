@@ -55,7 +55,8 @@ static const struct {
     {POMODORO_APPLICATION_ACTION_TOGGLE_AUTO_BREAK, "Auto breaks"},
     {POMODORO_APPLICATION_ACTION_TOGGLE_AUTO_FOCUS, "Auto focus"},
     {POMODORO_APPLICATION_ACTION_TOGGLE_SOUND, "Sound"},
-    {POMODORO_APPLICATION_ACTION_OPEN_STATISTICS, "Statistics"},
+    {POMODORO_APPLICATION_ACTION_OPEN_STATISTICS, "Stats"},
+    {POMODORO_APPLICATION_ACTION_OPEN_SETTINGS, "Settings"},
     {POMODORO_APPLICATION_ACTION_POWER_OFF, "Power off"},
     {POMODORO_APPLICATION_ACTION_OPEN_DATE_TIME, "Date & time"},
     {POMODORO_APPLICATION_ACTION_OPEN_TIME_SYNC, "Sync from iPhone"},
@@ -114,9 +115,7 @@ typedef struct {
     lv_obj_t *confirmation_body;
     lv_obj_t *confirmation_button_label;
     lv_obj_t *mode_transition_overlay;
-    lv_obj_t *statistics_button;
-    lv_obj_t *settings_button;
-    lv_obj_t *sound_button;
+    lv_obj_t *menu_button;
     lv_obj_t *top_power_status;
     lv_obj_t *page_panel;
     lv_obj_t *page_title;
@@ -636,25 +635,19 @@ esp_err_t pomodoro_device_view_create(
     }
 
     view_context.title = lv_label_create(screen);
+    lv_obj_set_width(view_context.title, 260);
     lv_obj_set_style_text_font(view_context.title, &lv_font_montserrat_24, 0);
-    lv_obj_align(view_context.title, LV_ALIGN_TOP_LEFT, 24, 24);
+    lv_obj_set_style_text_align(view_context.title, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(view_context.title, LV_ALIGN_TOP_MID, 0, 24);
+    view_context.menu_button = make_action_button(
+        screen, POMODORO_APPLICATION_ACTION_OPEN_MENU, LV_SYMBOL_LIST);
+    lv_obj_set_size(view_context.menu_button, 52, 38);
+    lv_obj_align(view_context.menu_button, LV_ALIGN_TOP_LEFT, 18, 18);
     view_context.top_power_status = lv_label_create(screen);
-    lv_obj_set_width(view_context.top_power_status, 64);
+    lv_obj_set_width(view_context.top_power_status, 120);
     lv_obj_set_style_text_align(view_context.top_power_status,
                                 LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_align(view_context.top_power_status, LV_ALIGN_TOP_RIGHT, -278, 28);
-    view_context.sound_button = make_action_button(
-        screen, POMODORO_APPLICATION_ACTION_TOGGLE_SOUND, "Sound");
-    lv_obj_set_size(view_context.sound_button, 68, 38);
-    lv_obj_align(view_context.sound_button, LV_ALIGN_TOP_RIGHT, -202, 18);
-    view_context.statistics_button = make_action_button(
-        screen, POMODORO_APPLICATION_ACTION_OPEN_STATISTICS, "Stats");
-    lv_obj_set_size(view_context.statistics_button, 72, 38);
-    lv_obj_align(view_context.statistics_button, LV_ALIGN_TOP_RIGHT, -122, 18);
-    view_context.settings_button = make_action_button(
-        screen, POMODORO_APPLICATION_ACTION_OPEN_SETTINGS, "Settings");
-    lv_obj_set_size(view_context.settings_button, 92, 38);
-    lv_obj_align(view_context.settings_button, LV_ALIGN_TOP_RIGHT, -18, 18);
+    lv_obj_align(view_context.top_power_status, LV_ALIGN_TOP_RIGHT, -18, 28);
 
     view_context.ring = lv_arc_create(screen);
     lv_obj_set_size(view_context.ring, 288, 288);
@@ -973,7 +966,11 @@ esp_err_t pomodoro_device_view_create(
             view_context.auxiliary_buttons_container, entry->action,
             auxiliary_button_definitions[index].text);
         entry->label = lv_obj_get_child(entry->button, 0);
-        lv_obj_set_size(entry->button, 136, 42);
+        bool menu_destination =
+            entry->action == POMODORO_APPLICATION_ACTION_OPEN_STATISTICS ||
+            entry->action == POMODORO_APPLICATION_ACTION_OPEN_SETTINGS;
+        lv_obj_set_size(entry->button, menu_destination ? 420 : 136,
+                        menu_destination ? 56 : 42);
     }
     lv_obj_add_flag(view_context.page_panel, LV_OBJ_FLAG_HIDDEN);
 
@@ -1230,9 +1227,7 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
 {
     hide_auxiliary_buttons();
     lv_obj_remove_flag(view_context.page_panel, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(view_context.statistics_button, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(view_context.settings_button, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(view_context.sound_button, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(view_context.menu_button, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(view_context.page_content, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(view_context.statistics_chart, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(view_context.brightness_slider, LV_OBJ_FLAG_HIDDEN);
@@ -1330,6 +1325,15 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
              action++) {
             set_auxiliary_button_visible(action, true);
         }
+        return;
+    }
+    if (view->page == POMODORO_APPLICATION_PAGE_MENU) {
+        lv_label_set_text(view_context.page_title, "Menu");
+        lv_label_set_text(view_context.page_body, "");
+        set_auxiliary_button_visible(
+            POMODORO_APPLICATION_ACTION_OPEN_STATISTICS, true);
+        set_auxiliary_button_visible(
+            POMODORO_APPLICATION_ACTION_OPEN_SETTINGS, true);
         return;
     }
     if (view->page == POMODORO_APPLICATION_PAGE_STATISTICS) {
@@ -1547,9 +1551,7 @@ static void apply_pixel_shift(const pomodoro_application_view_t *view)
         view_context.completion_group,
         view_context.set_label,
         view_context.boundary_feedback,
-        view_context.statistics_button,
-        view_context.settings_button,
-        view_context.sound_button,
+        view_context.menu_button,
         view_context.top_power_status,
         view_context.page_panel,
         view_context.status_overlay,
@@ -1598,11 +1600,7 @@ bool pomodoro_device_view_render(const pomodoro_application_view_t *view)
         return true;
     }
     lv_obj_add_flag(view_context.page_panel, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_remove_flag(view_context.statistics_button, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_remove_flag(view_context.settings_button, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_remove_flag(view_context.sound_button, LV_OBJ_FLAG_HIDDEN);
-    lv_label_set_text(lv_obj_get_child(view_context.sound_button, 0),
-                      view->settings.volume == 0U ? "Muted" : "Sound");
+    lv_obj_remove_flag(view_context.menu_button, LV_OBJ_FLAG_HIDDEN);
 
     mode_presentation_t presentation = mode_presentation(view->mode);
     lv_color_t accent = lv_color_hex(presentation.accent);
