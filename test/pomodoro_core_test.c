@@ -4,6 +4,42 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
+
+typedef struct {
+    pomodoro_journal_slot_t slots[2];
+    bool present[2];
+    bool tear_next_write;
+} memory_journal_t;
+
+static bool memory_read_slot(void *context, uint8_t slot,
+                             pomodoro_journal_slot_t *value)
+{
+    memory_journal_t *memory = context;
+    if (slot > 1U || !memory->present[slot]) {
+        return false;
+    }
+    *value = memory->slots[slot];
+    return true;
+}
+
+static bool memory_write_slot(void *context, uint8_t slot,
+                              const pomodoro_journal_slot_t *value)
+{
+    memory_journal_t *memory = context;
+    if (slot > 1U) {
+        return false;
+    }
+    memory->present[slot] = true;
+    if (memory->tear_next_write) {
+        memory->tear_next_write = false;
+        memset(&memory->slots[slot], 0, sizeof(memory->slots[slot]));
+        memcpy(&memory->slots[slot], value, sizeof(*value) / 2U);
+        return true;
+    }
+    memory->slots[slot] = *value;
+    return true;
+}
 
 static pomodoro_model_t fresh_model(void)
 {
@@ -33,7 +69,7 @@ static void test_pause_resume_excludes_paused_time(void)
     pomodoro_model_t model = fresh_model();
 
     assert(pomodoro_start(&model, 100) == POMODORO_OK);
-    assert(pomodoro_pause(&model, 120) == POMODORO_OK);
+    assert(pomodoro_pause(&model, 120, NULL) == POMODORO_OK);
     assert(model.timer.remaining_seconds == 280);
     assert(pomodoro_tick(&model, 500) == POMODORO_EVENT_NONE);
     assert(pomodoro_resume(&model, 500) == POMODORO_OK);
@@ -122,9 +158,24 @@ static void test_pause_at_deadline_settles_immediately(void)
     pomodoro_model_t model = fresh_model();
 
     assert(pomodoro_start(&model, 100) == POMODORO_OK);
-    assert(pomodoro_pause(&model, 400) == POMODORO_OK);
+    pomodoro_event_t event = POMODORO_EVENT_NONE;
+    assert(pomodoro_pause(&model, 400, &event) == POMODORO_OK);
+    assert(event == POMODORO_EVENT_FOCUS_COMPLETE);
     assert(model.timer.timer_state == POMODORO_TIMER_COMPLETION);
     assert(model.timer.set_progress == 1);
+}
+
+static void test_completion_countdown_restarts_after_reboot(void)
+{
+    pomodoro_model_t before = fresh_model();
+    pomodoro_model_t after = fresh_model();
+    pomodoro_event_t event;
+
+    complete_focus(&before, 100);
+    assert(pomodoro_auto_start_is_due(&before, 1000));
+    assert(pomodoro_restore(&after, &before.timer, 1000, &event) == POMODORO_OK);
+    assert(!pomodoro_auto_start_is_due(&after, 1002));
+    assert(pomodoro_auto_start_is_due(&after, 1003));
 }
 
 static void test_settings_validation(void)
@@ -137,6 +188,11 @@ static void test_settings_validation(void)
     settings = pomodoro_default_settings();
     settings.focus_minutes = 4;
     assert(pomodoro_init(&model, &settings) == POMODORO_ERR_INVALID_ARGUMENT);
+
+    settings = pomodoro_default_settings();
+    assert(pomodoro_init(&model, &settings) == POMODORO_OK);
+    model.settings.focus_minutes = 0;
+    assert(pomodoro_start(&model, 100) == POMODORO_ERR_INVALID_ARGUMENT);
 }
 
 static void test_auto_start_can_be_due_or_cancelled(void)
@@ -191,6 +247,37 @@ static void test_persistence_detects_corruption(void)
                                         &restored_statistics));
 }
 
+static void test_journal_survives_torn_write(void)
+{
+    memory_journal_t memory;
+    pomodoro_journal_t journal;
+    pomodoro_model_t model = fresh_model();
+    pomodoro_statistics_store_t statistics;
+    pomodoro_persisted_state_t first;
+    pomodoro_persisted_state_t second;
+    pomodoro_persisted_state_t loaded;
+
+    memset(&memory, 0, sizeof(memory));
+    memset(&journal, 0, sizeof(journal));
+    journal.io = (pomodoro_journal_io_t) {
+        .context = &memory,
+        .read_slot = memory_read_slot,
+        .write_slot = memory_write_slot,
+    };
+    pomodoro_statistics_init(&statistics);
+    assert(pomodoro_persistence_pack(&first, &model, &statistics));
+    assert(pomodoro_journal_save(&journal, &first));
+    assert(pomodoro_journal_load(&journal, &loaded));
+    assert(loaded.checksum == first.checksum);
+
+    model.settings.daily_goal = 12;
+    assert(pomodoro_persistence_pack(&second, &model, &statistics));
+    memory.tear_next_write = true;
+    assert(!pomodoro_journal_save(&journal, &second));
+    assert(pomodoro_journal_load(&journal, &loaded));
+    assert(loaded.checksum == first.checksum);
+}
+
 int main(void)
 {
     test_focus_completes_once();
@@ -201,10 +288,12 @@ int main(void)
     test_skipping_long_break_resets_on_next_focus_start();
     test_restore_settles_expired_timer_exactly_once();
     test_pause_at_deadline_settles_immediately();
+    test_completion_countdown_restarts_after_reboot();
     test_settings_validation();
     test_auto_start_can_be_due_or_cancelled();
     test_statistics_are_deduplicated_and_pending_is_assigned();
     test_persistence_detects_corruption();
+    test_journal_survives_torn_write();
     puts("pomodoro_core_test: all tests passed");
     return 0;
 }

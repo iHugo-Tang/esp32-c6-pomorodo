@@ -8,6 +8,8 @@ The repository currently contains the first executable slice of the product:
 - an idempotent, versioned 365-day statistics store with RTC-invalid pending
   results;
 - a CRC-checked atomic persistence payload for settings, timer, and statistics;
+- a dual-slot NVS journal that keeps the previous state recoverable across a
+  torn write;
 - an ESP-IDF 5.5.2 application entry point;
 - persistence and hardware service boundaries ready for NVS, RTC, display,
   touch, audio, and power implementations;

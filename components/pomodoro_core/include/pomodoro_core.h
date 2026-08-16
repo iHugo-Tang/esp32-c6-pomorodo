@@ -91,7 +91,8 @@ uint32_t pomodoro_remaining_seconds(const pomodoro_model_t *model,
 pomodoro_result_t pomodoro_start(pomodoro_model_t *model,
                                  uint64_t now_epoch_seconds);
 pomodoro_result_t pomodoro_pause(pomodoro_model_t *model,
-                                 uint64_t now_epoch_seconds);
+                                 uint64_t now_epoch_seconds,
+                                 pomodoro_event_t *event);
 pomodoro_result_t pomodoro_resume(pomodoro_model_t *model,
                                   uint64_t now_epoch_seconds);
 pomodoro_result_t pomodoro_reset(pomodoro_model_t *model);

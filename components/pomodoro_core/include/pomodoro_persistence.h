@@ -21,12 +21,35 @@ typedef struct {
     uint32_t checksum;
 } pomodoro_persisted_state_t;
 
+typedef struct {
+    uint64_t generation;
+    pomodoro_persisted_state_t state;
+    uint32_t checksum;
+} pomodoro_journal_slot_t;
+
+typedef struct {
+    void *context;
+    bool (*read_slot)(void *context, uint8_t slot,
+                      pomodoro_journal_slot_t *value);
+    bool (*write_slot)(void *context, uint8_t slot,
+                       const pomodoro_journal_slot_t *value);
+} pomodoro_journal_io_t;
+
+typedef struct {
+    pomodoro_journal_io_t io;
+    pomodoro_journal_slot_t workspace;
+} pomodoro_journal_t;
+
 bool pomodoro_persistence_pack(pomodoro_persisted_state_t *destination,
                                const pomodoro_model_t *model,
                                const pomodoro_statistics_store_t *statistics);
 bool pomodoro_persistence_unpack(const pomodoro_persisted_state_t *source,
                                  pomodoro_model_t *model,
                                  pomodoro_statistics_store_t *statistics);
+bool pomodoro_journal_load(pomodoro_journal_t *journal,
+                           pomodoro_persisted_state_t *state);
+bool pomodoro_journal_save(pomodoro_journal_t *journal,
+                           const pomodoro_persisted_state_t *state);
 
 #ifdef __cplusplus
 }

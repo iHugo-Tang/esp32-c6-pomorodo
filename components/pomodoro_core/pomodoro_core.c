@@ -168,6 +168,9 @@ pomodoro_result_t pomodoro_start(pomodoro_model_t *model,
     if (model->timer.timer_state != POMODORO_TIMER_READY) {
         return POMODORO_ERR_INVALID_STATE;
     }
+    if (!pomodoro_settings_are_valid(&model->settings)) {
+        return POMODORO_ERR_INVALID_ARGUMENT;
+    }
 
     if (model->timer.mode == POMODORO_MODE_FOCUS &&
         model->timer.set_progress == 4U) {
@@ -184,8 +187,12 @@ pomodoro_result_t pomodoro_start(pomodoro_model_t *model,
 }
 
 pomodoro_result_t pomodoro_pause(pomodoro_model_t *model,
-                                 uint64_t now_epoch_seconds)
+                                 uint64_t now_epoch_seconds,
+                                 pomodoro_event_t *event)
 {
+    if (event != NULL) {
+        *event = POMODORO_EVENT_NONE;
+    }
     if (model == NULL) {
         return POMODORO_ERR_INVALID_ARGUMENT;
     }
@@ -193,7 +200,10 @@ pomodoro_result_t pomodoro_pause(pomodoro_model_t *model,
         return POMODORO_ERR_INVALID_STATE;
     }
     if (now_epoch_seconds >= model->timer.deadline_epoch_seconds) {
-        (void) settle(model, now_epoch_seconds);
+        pomodoro_event_t settled_event = settle(model, now_epoch_seconds);
+        if (event != NULL) {
+            *event = settled_event;
+        }
         return POMODORO_OK;
     }
 
@@ -354,6 +364,11 @@ pomodoro_result_t pomodoro_restore(pomodoro_model_t *model,
         if (event != NULL) {
             *event = settled_event;
         }
+    } else if (snapshot->timer_state == POMODORO_TIMER_COMPLETION &&
+               !snapshot->auto_start_cancelled &&
+               snapshot->completion_transition_deadline_epoch_seconds != 0U) {
+        model->timer.completion_transition_deadline_epoch_seconds =
+            now_epoch_seconds + 3U;
     }
     return POMODORO_OK;
 }

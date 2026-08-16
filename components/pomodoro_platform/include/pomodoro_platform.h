@@ -17,8 +17,7 @@ typedef struct {
 } pomodoro_clock_service_t;
 
 typedef struct {
-    bool (*load_state)(void *context, pomodoro_persisted_state_t *state);
-    bool (*save_state)(void *context, const pomodoro_persisted_state_t *state);
+    pomodoro_journal_t journal;
 } pomodoro_storage_service_t;
 
 typedef struct {
@@ -40,6 +39,7 @@ typedef struct {
 } pomodoro_platform_t;
 
 const pomodoro_platform_t *pomodoro_platform_get(void);
+bool pomodoro_nvs_journal_init(pomodoro_journal_t *journal);
 
 #ifdef __cplusplus
 }
