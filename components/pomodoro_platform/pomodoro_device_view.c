@@ -1317,7 +1317,7 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
                     view->time_sync_session.ssid,
                     view->time_sync_session.password,
                     view->time_sync_connected
-                        ? "Connected — confirm Sync to Pomodoro on your iPhone."
+                        ? "Connected - confirm Sync to Pomodoro on your iPhone."
                         : "Scan this code with your iPhone.",
                     view->time_sync_seconds_remaining / 60U,
                     view->time_sync_seconds_remaining % 60U);
@@ -1377,7 +1377,7 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
         char text[768];
         lv_label_set_recolor(view_context.page_body, true);
         snprintf(text, sizeof(text),
-                 "#AAB1BE TODAY#  #9FC2FF ×%u#",
+                 "#AAB1BE TODAY#  #9FC2FF x%u#",
                  view->today_completed_pomodoros);
         if (!view->statistics_available) {
             snprintf(text, sizeof(text),
