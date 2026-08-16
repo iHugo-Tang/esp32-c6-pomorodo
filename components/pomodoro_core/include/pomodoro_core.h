@@ -85,6 +85,7 @@ pomodoro_result_t pomodoro_init(pomodoro_model_t *model,
                                 const pomodoro_settings_t *settings);
 uint32_t pomodoro_duration_seconds(const pomodoro_model_t *model,
                                    pomodoro_mode_t mode);
+pomodoro_mode_t pomodoro_scheduled_next_mode(const pomodoro_model_t *model);
 uint32_t pomodoro_remaining_seconds(const pomodoro_model_t *model,
                                     uint64_t now_epoch_seconds);
 

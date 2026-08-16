@@ -21,8 +21,11 @@ static void prepare_ready(pomodoro_model_t *model, pomodoro_mode_t mode)
     model->timer.auto_start_cancelled = false;
 }
 
-static pomodoro_mode_t next_mode(const pomodoro_model_t *model)
+pomodoro_mode_t pomodoro_scheduled_next_mode(const pomodoro_model_t *model)
 {
+    if (model == NULL) {
+        return POMODORO_MODE_FOCUS;
+    }
     if (model->timer.mode != POMODORO_MODE_FOCUS) {
         return POMODORO_MODE_FOCUS;
     }
@@ -299,7 +302,7 @@ pomodoro_result_t pomodoro_finish_completion(pomodoro_model_t *model)
         return POMODORO_ERR_INVALID_STATE;
     }
 
-    prepare_ready(model, next_mode(model));
+    prepare_ready(model, pomodoro_scheduled_next_mode(model));
     return POMODORO_OK;
 }
 
@@ -337,7 +340,7 @@ pomodoro_result_t pomodoro_start_next(pomodoro_model_t *model,
     if (model->timer.timer_state != POMODORO_TIMER_COMPLETION) {
         return POMODORO_ERR_INVALID_STATE;
     }
-    prepare_ready(model, next_mode(model));
+    prepare_ready(model, pomodoro_scheduled_next_mode(model));
     return pomodoro_start(model, now_epoch_seconds);
 }
 

@@ -2,7 +2,7 @@
 
 Offline Pomodoro firmware for the Waveshare ESP32-C6-Touch-AMOLED-2.16.
 
-The repository currently contains the first executable slice of the product:
+The repository currently contains an executable device slice of the product:
 
 - a deterministic, host-testable timer and Pomodoro Set state machine;
 - an idempotent, versioned 365-day statistics store with RTC-invalid pending
@@ -11,12 +11,18 @@ The repository currently contains the first executable slice of the product:
 - a dual-slot NVS journal that keeps the previous state recoverable across a
   torn write;
 - an ESP-IDF 5.5.x application entry point (5.5.2 or newer, below 5.6);
-- persistence and hardware service boundaries ready for NVS, RTC, display,
-  touch, audio, and power implementations;
+- a 480×480 LVGL Main timer with Focus, Short break, and Long break pages,
+  pause/resume/reset controls, completion transitions, and Set Progress;
+- non-wrapping touch gestures with confirmation before an active timer is
+  discarded;
+- three-second auto-start transitions with Start now, Cancel auto-start, and
+  Not now controls that preserve the configured automation settings;
+- persistence and hardware service boundaries for NVS, RTC, display, touch,
+  audio, and power implementations;
 - default ESP32-C6 memory/flash configuration and a data-preserving partition
   table;
-- native tests for completion, abort, pause/resume, set rollover, and reboot
-  recovery rules.
+- native tests for completion, abort, pause/resume, all four Pomodoro Set
+  rounds, automation, and reboot recovery rules.
 
 The product specification lives in [`docs/POMODORO_APP_PROMPT.md`](docs/POMODORO_APP_PROMPT.md).
 The successful ESP32-C6 serial communication check is recorded in

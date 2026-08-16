@@ -22,7 +22,24 @@ typedef enum {
     POMODORO_APPLICATION_ACTION_BOOT = 0,
     POMODORO_APPLICATION_ACTION_START,
     POMODORO_APPLICATION_ACTION_TICK,
+    POMODORO_APPLICATION_ACTION_PAUSE,
+    POMODORO_APPLICATION_ACTION_RESUME,
+    POMODORO_APPLICATION_ACTION_REQUEST_RESET,
+    POMODORO_APPLICATION_ACTION_CONFIRM_RESET,
+    POMODORO_APPLICATION_ACTION_CANCEL_CONFIRMATION,
+    POMODORO_APPLICATION_ACTION_MODE_PREVIOUS,
+    POMODORO_APPLICATION_ACTION_MODE_NEXT,
+    POMODORO_APPLICATION_ACTION_CONFIRM_MODE_SWITCH,
+    POMODORO_APPLICATION_ACTION_START_NEXT,
+    POMODORO_APPLICATION_ACTION_CANCEL_AUTO_START,
+    POMODORO_APPLICATION_ACTION_NOT_NOW,
 } pomodoro_application_action_t;
+
+typedef enum {
+    POMODORO_APPLICATION_CONFIRM_NONE = 0,
+    POMODORO_APPLICATION_CONFIRM_RESET,
+    POMODORO_APPLICATION_CONFIRM_MODE_SWITCH,
+} pomodoro_application_confirmation_t;
 
 typedef enum {
     POMODORO_APPLICATION_LOAD_EMPTY = 0,
@@ -60,6 +77,12 @@ typedef struct {
     uint8_t set_progress;
     pomodoro_settings_t settings;
     pomodoro_event_t completion_event;
+    pomodoro_application_confirmation_t confirmation;
+    pomodoro_mode_t pending_mode;
+    bool mode_boundary_feedback;
+    pomodoro_mode_t scheduled_mode;
+    bool auto_start_pending;
+    uint8_t auto_start_seconds_remaining;
 } pomodoro_application_view_t;
 
 typedef struct {

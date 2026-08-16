@@ -178,7 +178,9 @@ static void test_start_and_deadline_emit_one_focus_completion(void)
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
-    assert(fake.save_count == 2);
+    assert(fake.rendered_view.mode == POMODORO_MODE_SHORT_BREAK);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_RUNNING);
+    assert(fake.save_count == 3);
     assert(fake.focus_audio_count == 1);
     assert(fake.break_audio_count == 0);
     assert(fake.focus_completion_event_count == 1);
@@ -308,6 +310,335 @@ static void test_display_and_audio_failures_are_visible(void)
     pomodoro_application_destroy(application);
 }
 
+static void test_pause_resume_and_confirmed_reset_preserve_remaining_time(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_epoch_seconds = 100;
+    fake.load_result = POMODORO_APPLICATION_LOAD_EMPTY;
+    pomodoro_application_t *application = boot_application(&fake);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_START) ==
+           POMODORO_APPLICATION_OK);
+
+    fake.now_epoch_seconds = 400;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_PAUSE) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_PAUSED);
+    assert(fake.rendered_view.remaining_seconds == 20U * 60U);
+
+    fake.now_epoch_seconds = 500;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_RESUME) ==
+           POMODORO_APPLICATION_OK);
+    fake.now_epoch_seconds = 600;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_PAUSE) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.remaining_seconds == 1100U);
+
+    unsigned saves_before_confirmation = fake.save_count;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_REQUEST_RESET) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.confirmation ==
+           POMODORO_APPLICATION_CONFIRM_RESET);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_PAUSED);
+    assert(fake.rendered_view.remaining_seconds == 1100U);
+    assert(fake.save_count == saves_before_confirmation);
+
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_CANCEL_CONFIRMATION) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.confirmation ==
+           POMODORO_APPLICATION_CONFIRM_NONE);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_PAUSED);
+
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_REQUEST_RESET) ==
+           POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_CONFIRM_RESET) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.confirmation ==
+           POMODORO_APPLICATION_CONFIRM_NONE);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_READY);
+    assert(fake.rendered_view.remaining_seconds == 25U * 60U);
+    assert(fake.rendered_view.set_progress == 0U);
+    assert(fake.save_count == saves_before_confirmation + 1U);
+    pomodoro_application_destroy(application);
+}
+
+static void test_pause_at_deadline_settles_completion_once(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_epoch_seconds = 100;
+    fake.load_result = POMODORO_APPLICATION_LOAD_EMPTY;
+    pomodoro_application_t *application = boot_application(&fake);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_START) ==
+           POMODORO_APPLICATION_OK);
+
+    fake.now_epoch_seconds = 1600;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_PAUSE) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
+    assert(fake.rendered_view.set_progress == 1U);
+    assert(fake.focus_completion_event_count == 1U);
+    assert(fake.focus_audio_count == 1U);
+    assert(fake.save_count == 2U);
+    pomodoro_application_destroy(application);
+}
+
+static void test_idle_mode_swipes_do_not_wrap(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_epoch_seconds = 100;
+    fake.load_result = POMODORO_APPLICATION_LOAD_EMPTY;
+    pomodoro_application_t *application = boot_application(&fake);
+
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_MODE_PREVIOUS) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.mode == POMODORO_MODE_FOCUS);
+    assert(fake.rendered_view.mode_boundary_feedback);
+    assert(fake.save_count == 0U);
+
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_MODE_NEXT) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.mode == POMODORO_MODE_SHORT_BREAK);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_READY);
+    assert(fake.rendered_view.remaining_seconds == 5U * 60U);
+    assert(!fake.rendered_view.mode_boundary_feedback);
+
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_MODE_NEXT) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.mode == POMODORO_MODE_LONG_BREAK);
+    assert(fake.rendered_view.remaining_seconds == 15U * 60U);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_MODE_NEXT) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.mode == POMODORO_MODE_LONG_BREAK);
+    assert(fake.rendered_view.mode_boundary_feedback);
+    assert(fake.save_count == 2U);
+    pomodoro_application_destroy(application);
+}
+
+static void test_active_mode_swipe_requires_confirmation_and_aborts(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_epoch_seconds = 100;
+    fake.load_result = POMODORO_APPLICATION_LOAD_EMPTY;
+    pomodoro_application_t *application = boot_application(&fake);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_START) ==
+           POMODORO_APPLICATION_OK);
+
+    unsigned saves_before_request = fake.save_count;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_MODE_NEXT) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.confirmation ==
+           POMODORO_APPLICATION_CONFIRM_MODE_SWITCH);
+    assert(fake.rendered_view.pending_mode == POMODORO_MODE_SHORT_BREAK);
+    assert(fake.rendered_view.mode == POMODORO_MODE_FOCUS);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_RUNNING);
+    assert(fake.save_count == saves_before_request);
+
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_CANCEL_CONFIRMATION) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.mode == POMODORO_MODE_FOCUS);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_RUNNING);
+
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_MODE_NEXT) ==
+           POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_dispatch(
+               application,
+               POMODORO_APPLICATION_ACTION_CONFIRM_MODE_SWITCH) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.confirmation ==
+           POMODORO_APPLICATION_CONFIRM_NONE);
+    assert(fake.rendered_view.mode == POMODORO_MODE_SHORT_BREAK);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_READY);
+    assert(fake.rendered_view.set_progress == 0U);
+    assert(fake.focus_completion_event_count == 0U);
+    assert(fake.focus_audio_count == 0U);
+    assert(fake.save_count == saves_before_request + 1U);
+    pomodoro_application_destroy(application);
+}
+
+static void test_completion_auto_start_can_be_cancelled_or_started_now(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_epoch_seconds = 100;
+    fake.load_result = POMODORO_APPLICATION_LOAD_EMPTY;
+    pomodoro_application_t *application = boot_application(&fake);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_START) ==
+           POMODORO_APPLICATION_OK);
+    fake.now_epoch_seconds = 1600;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
+    assert(fake.rendered_view.scheduled_mode == POMODORO_MODE_SHORT_BREAK);
+    assert(fake.rendered_view.auto_start_pending);
+    assert(fake.rendered_view.auto_start_seconds_remaining == 3U);
+
+    unsigned saves_before_cancel = fake.save_count;
+    assert(pomodoro_application_dispatch(
+               application,
+               POMODORO_APPLICATION_ACTION_CANCEL_AUTO_START) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
+    assert(!fake.rendered_view.auto_start_pending);
+    assert(fake.rendered_view.settings.auto_start_breaks);
+    assert(fake.save_count == saves_before_cancel + 1U);
+
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_START_NEXT) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.mode == POMODORO_MODE_SHORT_BREAK);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_RUNNING);
+    assert(fake.rendered_view.remaining_seconds == 5U * 60U);
+    assert(fake.rendered_view.set_progress == 1U);
+    pomodoro_application_destroy(application);
+}
+
+static void test_auto_start_begins_scheduled_mode_after_three_seconds(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_epoch_seconds = 100;
+    fake.load_result = POMODORO_APPLICATION_LOAD_EMPTY;
+    pomodoro_application_t *application = boot_application(&fake);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_START) ==
+           POMODORO_APPLICATION_OK);
+    fake.now_epoch_seconds = 1600;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+
+    fake.now_epoch_seconds = 1602;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
+    assert(fake.rendered_view.auto_start_seconds_remaining == 1U);
+    fake.now_epoch_seconds = 1603;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.mode == POMODORO_MODE_SHORT_BREAK);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_RUNNING);
+    assert(fake.rendered_view.remaining_seconds == 5U * 60U);
+    pomodoro_application_destroy(application);
+}
+
+static void test_full_set_schedules_three_short_breaks_then_one_long_break(void)
+{
+    fake_platform_t fake;
+    pomodoro_model_t model;
+    pomodoro_statistics_store_t statistics;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_epoch_seconds = 100;
+    fake.load_result = POMODORO_APPLICATION_LOAD_LOADED;
+    pomodoro_settings_t settings = pomodoro_default_settings();
+    settings.focus_minutes = 5;
+    settings.short_break_minutes = 1;
+    settings.long_break_minutes = 5;
+    settings.auto_start_breaks = false;
+    settings.auto_start_focus = false;
+    assert(pomodoro_init(&model, &settings) == POMODORO_OK);
+    pomodoro_statistics_init(&statistics);
+    assert(pomodoro_persistence_pack(&fake.persisted, &model, &statistics));
+    pomodoro_application_t *application = boot_application(&fake);
+
+    for (uint8_t completed = 1U; completed <= 4U; completed++) {
+        assert(pomodoro_application_dispatch(
+                   application, POMODORO_APPLICATION_ACTION_START) ==
+               POMODORO_APPLICATION_OK);
+        fake.now_epoch_seconds += 300U;
+        assert(pomodoro_application_dispatch(
+                   application, POMODORO_APPLICATION_ACTION_TICK) ==
+               POMODORO_APPLICATION_OK);
+        assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
+        assert(fake.rendered_view.set_progress == completed);
+        assert(!fake.rendered_view.auto_start_pending);
+        assert(fake.rendered_view.scheduled_mode ==
+               (completed == 4U ? POMODORO_MODE_LONG_BREAK
+                                : POMODORO_MODE_SHORT_BREAK));
+        assert(pomodoro_application_dispatch(
+                   application, POMODORO_APPLICATION_ACTION_MODE_NEXT) ==
+               POMODORO_APPLICATION_ERR_INVALID_STATE);
+
+        assert(pomodoro_application_dispatch(
+                   application, POMODORO_APPLICATION_ACTION_NOT_NOW) ==
+               POMODORO_APPLICATION_OK);
+        assert(fake.rendered_view.timer_state == POMODORO_TIMER_READY);
+        assert(fake.rendered_view.set_progress == completed);
+        assert(pomodoro_application_dispatch(
+                   application, POMODORO_APPLICATION_ACTION_START) ==
+               POMODORO_APPLICATION_OK);
+        fake.now_epoch_seconds += completed == 4U ? 300U : 60U;
+        assert(pomodoro_application_dispatch(
+                   application, POMODORO_APPLICATION_ACTION_TICK) ==
+               POMODORO_APPLICATION_OK);
+        assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
+        assert(fake.rendered_view.set_progress ==
+               (completed == 4U ? 0U : completed));
+        assert(fake.rendered_view.scheduled_mode == POMODORO_MODE_FOCUS);
+        assert(pomodoro_application_dispatch(
+                   application, POMODORO_APPLICATION_ACTION_NOT_NOW) ==
+               POMODORO_APPLICATION_OK);
+        assert(fake.rendered_view.mode == POMODORO_MODE_FOCUS);
+    }
+    pomodoro_application_destroy(application);
+}
+
+static void test_boot_restarts_completion_countdown_without_offline_chaining(void)
+{
+    fake_platform_t fake;
+    pomodoro_model_t model;
+    pomodoro_statistics_store_t statistics;
+    memset(&fake, 0, sizeof(fake));
+    pomodoro_settings_t settings = pomodoro_default_settings();
+    assert(pomodoro_init(&model, &settings) == POMODORO_OK);
+    assert(pomodoro_start(&model, 100U) == POMODORO_OK);
+    assert(pomodoro_tick(&model, 1600U) == POMODORO_EVENT_FOCUS_COMPLETE);
+    pomodoro_statistics_init(&statistics);
+    assert(pomodoro_persistence_pack(&fake.persisted, &model, &statistics));
+    fake.load_result = POMODORO_APPLICATION_LOAD_LOADED;
+    fake.now_epoch_seconds = 5000U;
+
+    pomodoro_application_t *application = boot_application(&fake);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
+    assert(fake.rendered_view.auto_start_seconds_remaining == 3U);
+    fake.now_epoch_seconds = 5002U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
+    fake.now_epoch_seconds = 5003U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.mode == POMODORO_MODE_SHORT_BREAK);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_RUNNING);
+    pomodoro_application_destroy(application);
+}
+
 int main(void)
 {
     test_boot_without_saved_state_shows_default_focus_ready();
@@ -316,6 +647,14 @@ int main(void)
     test_boot_platform_failures_are_visible();
     test_boot_with_saved_state_uses_persisted_settings();
     test_display_and_audio_failures_are_visible();
+    test_pause_resume_and_confirmed_reset_preserve_remaining_time();
+    test_pause_at_deadline_settles_completion_once();
+    test_idle_mode_swipes_do_not_wrap();
+    test_active_mode_swipe_requires_confirmation_and_aborts();
+    test_completion_auto_start_can_be_cancelled_or_started_now();
+    test_auto_start_begins_scheduled_mode_after_three_seconds();
+    test_full_set_schedules_three_short_breaks_then_one_long_break();
+    test_boot_restarts_completion_countdown_without_offline_chaining();
     puts("pomodoro_application_test: all tests passed");
     return 0;
 }
