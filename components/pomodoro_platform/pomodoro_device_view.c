@@ -1061,6 +1061,8 @@ esp_err_t pomodoro_device_view_create(
         view_context.confirmation_overlay);
     lv_obj_set_style_text_font(view_context.confirmation_title,
                                &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(view_context.confirmation_title,
+                                lv_color_hex(SETTINGS_ITEM_TEXT_COLOR), 0);
     lv_obj_align(view_context.confirmation_title, LV_ALIGN_TOP_MID, 0, 22);
     view_context.confirmation_body = lv_label_create(
         view_context.confirmation_overlay);
