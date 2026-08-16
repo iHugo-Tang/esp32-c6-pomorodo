@@ -1,0 +1,53 @@
+flowchart LR
+    BOOT["⚙ First-run time setup"]
+    PHONE["📱 Sync from iPhone"]
+    MANUAL["🕒 Set time manually"]
+    MAIN["⏱ Main timer"]
+    FOCUS_DONE["🍅 Focus complete state"]
+    BREAK_DONE["☕ Break complete state"]
+    STATS["▥ Statistics"]
+    SETTINGS["⚙ Settings"]
+    STEPPER["↕ Numeric stepper"]
+    ABORT{"! End timer?"}
+    RESET{"! Reset timer?"}
+
+    BOOT -->|"Sync from iPhone"| PHONE
+    BOOT -->|"Set manually"| MANUAL
+    PHONE -->|"Sync succeeds at first run"| MAIN
+    PHONE -->|"Sync succeeds from Settings"| SETTINGS
+    PHONE -->|"Use manual setup"| MANUAL
+    MANUAL -->|"Confirm at first run"| MAIN
+    MANUAL -->|"Confirm from Settings"| SETTINGS
+
+    MAIN -->|"Focus reaches 00:00"| FOCUS_DONE
+    MAIN -->|"Break reaches 00:00"| BREAK_DONE
+    FOCUS_DONE -->|"Start now, auto-start, or Not now"| MAIN
+    BREAK_DONE -->|"Start now, auto-start, or Not now"| MAIN
+
+    MAIN -->|"Top-bar chart icon"| STATS
+    MAIN -->|"Top-bar gear icon"| SETTINGS
+    SETTINGS -->|"Today's statistics"| STATS
+    STATS -->|"Back to entry source"| MAIN
+    STATS -->|"Back to entry source"| SETTINGS
+
+    SETTINGS -->|"Duration or Daily goal"| STEPPER
+    STEPPER -->|"Confirm or Back"| SETTINGS
+    SETTINGS -->|"Sync from iPhone"| PHONE
+    SETTINGS -->|"Set manually"| MANUAL
+    PHONE -->|"Back"| SETTINGS
+    MANUAL -->|"Back"| SETTINGS
+
+    MAIN -->|"Swipe mode while active"| ABORT
+    ABORT -->|"Confirm or Cancel"| MAIN
+    MAIN -->|"Reset while paused"| RESET
+    RESET -->|"Confirm or Cancel"| MAIN
+
+    classDef primary fill:#D8EAFE,stroke:#245A8D,stroke-width:2px,color:#102A43
+    classDef setup fill:#E6E0F8,stroke:#6347A0,stroke-width:2px,color:#2D1F4E
+    classDef state fill:#DDF4E4,stroke:#287A43,stroke-width:2px,color:#123B21
+    classDef decision fill:#FFE2E2,stroke:#A83A3A,stroke-width:2px,color:#4A1111
+
+    class MAIN,STATS,SETTINGS,STEPPER primary
+    class BOOT,PHONE,MANUAL setup
+    class FOCUS_DONE,BREAK_DONE state
+    class ABORT,RESET decision

@@ -1,0 +1,7 @@
+# 使用 ESP-IDF 与 LVGL 构建设备应用
+
+固件采用 ESP-IDF 5.5.2，界面采用 Waveshare 官方示例验证过并锁定具体版本的 LVGL 9，通过 Espressif 的 `esp_lvgl_port` 集成显示、触摸与平台节能能力。相比 Arduino 封装层，这条路径提供更直接的驱动、任务和持久化控制；依赖不得自动追踪最新版。
+
+## Consequences
+
+UI 组件、计时领域状态机和持久化逻辑需要保持分层，页面不得直接读写存储；显示与触摸驱动优先通过 Espressif BSP 或 `esp_lvgl_port` 适配。
