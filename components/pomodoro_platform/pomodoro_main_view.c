@@ -25,6 +25,7 @@ static const confetti_piece_t completion_confetti[] = {
 enum {
     COMPLETION_CONFETTI_COUNT =
         sizeof(completion_confetti) / sizeof(completion_confetti[0]),
+    TIMER_RING_CENTER_Y = -18,
 };
 
 typedef struct {
@@ -342,7 +343,7 @@ esp_err_t pomodoro_main_view_create(
 
     view_context.ring = lv_arc_create(screen);
     lv_obj_set_size(view_context.ring, 288, 288);
-    lv_obj_align(view_context.ring, LV_ALIGN_CENTER, 0, -18);
+    lv_obj_align(view_context.ring, LV_ALIGN_CENTER, 0, TIMER_RING_CENTER_Y);
     lv_arc_set_rotation(view_context.ring, 270);
     lv_arc_set_bg_angles(view_context.ring, 0, 360);
     lv_arc_set_range(view_context.ring, 0, 1000);
@@ -602,10 +603,12 @@ bool pomodoro_main_view_render(const pomodoro_application_view_t *view)
         if (view->timer_state == POMODORO_TIMER_PAUSED) {
             lv_obj_add_flag(view_context.time, LV_OBJ_FLAG_HIDDEN);
             lv_obj_set_size(view_context.primary_button, 160, 48);
-            lv_obj_align(view_context.primary_button, LV_ALIGN_CENTER, 0, -29);
+            lv_obj_align(view_context.primary_button, LV_ALIGN_CENTER, 0,
+                         TIMER_RING_CENTER_Y - 29);
             lv_label_set_text(view_context.secondary_label, "Reset");
             lv_obj_set_size(view_context.secondary_button, 120, 40);
-            lv_obj_align(view_context.secondary_button, LV_ALIGN_CENTER, 0, 33);
+            lv_obj_align(view_context.secondary_button, LV_ALIGN_CENTER, 0,
+                         TIMER_RING_CENTER_Y + 33);
             lv_obj_remove_flag(view_context.secondary_button,
                                LV_OBJ_FLAG_HIDDEN);
         } else {
