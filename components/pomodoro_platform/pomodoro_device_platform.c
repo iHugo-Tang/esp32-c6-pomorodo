@@ -29,6 +29,13 @@ static bool read_time(void *context, pomodoro_application_time_t *time)
     return read;
 }
 
+static bool resolve_local_date(void *context, uint64_t epoch_seconds,
+                               pomodoro_date_t *date)
+{
+    return context != NULL &&
+           pomodoro_board_resolve_local_date(epoch_seconds, date);
+}
+
 static pomodoro_application_load_result_t load_state(
     void *context, pomodoro_persisted_state_t *state)
 {
@@ -36,9 +43,14 @@ static pomodoro_application_load_result_t load_state(
     if (target == NULL || state == NULL) {
         return POMODORO_APPLICATION_LOAD_ERROR;
     }
-    return pomodoro_journal_load(&target->journal, state)
-        ? POMODORO_APPLICATION_LOAD_LOADED
-        : POMODORO_APPLICATION_LOAD_EMPTY;
+    pomodoro_journal_read_result_t result =
+        pomodoro_journal_load(&target->journal, state);
+    if (result == POMODORO_JOURNAL_READ_LOADED) {
+        return POMODORO_APPLICATION_LOAD_LOADED;
+    }
+    return result == POMODORO_JOURNAL_READ_EMPTY
+        ? POMODORO_APPLICATION_LOAD_EMPTY
+        : POMODORO_APPLICATION_LOAD_ERROR;
 }
 
 static bool save_state(void *context, const pomodoro_persisted_state_t *state)
@@ -123,6 +135,7 @@ esp_err_t pomodoro_platform_start(void)
     pomodoro_application_platform_t platform = {
         .context = &runtime,
         .read_time = read_time,
+        .resolve_local_date = resolve_local_date,
         .load = load_state,
         .save = save_state,
         .render = render_view,

@@ -24,6 +24,7 @@ static uint16_t completed_pomodoros_on(
 static bool platform_is_valid(const pomodoro_application_platform_t *platform)
 {
     return platform != NULL && platform->read_time != NULL &&
+           platform->resolve_local_date != NULL &&
            platform->load != NULL && platform->save != NULL &&
            platform->render != NULL &&
            platform->play_focus_complete != NULL &&
@@ -127,8 +128,16 @@ static pomodoro_application_result_t publish_completion(
     pomodoro_event_t event)
 {
     application->view.confirmation = POMODORO_APPLICATION_CONFIRM_NONE;
+    pomodoro_date_t completion_date = time->local_date;
+    if (event == POMODORO_EVENT_FOCUS_COMPLETE && time->rtc_is_valid &&
+        !application->platform.resolve_local_date(
+            application->platform.context,
+            application->model.timer.deadline_epoch_seconds,
+            &completion_date)) {
+        return fail_platform(application, POMODORO_APPLICATION_ERROR_CLOCK);
+    }
     uint16_t completed_before = time->rtc_is_valid
-        ? completed_pomodoros_on(&application->statistics, time->local_date)
+        ? completed_pomodoros_on(&application->statistics, completion_date)
         : 0U;
     bool reaches_daily_goal =
         event == POMODORO_EVENT_FOCUS_COMPLETE && time->rtc_is_valid &&
@@ -137,7 +146,7 @@ static pomodoro_application_result_t publish_completion(
     if (!pomodoro_statistics_apply(
             &application->statistics,
             &application->model.timer.last_completion,
-            time->rtc_is_valid, time->local_date)) {
+            time->rtc_is_valid, completion_date)) {
         return POMODORO_APPLICATION_ERR_INVALID_STATE;
     }
     application->daily_goal_reached_for_completion = reaches_daily_goal;
@@ -176,6 +185,8 @@ static pomodoro_application_result_t boot(
 {
     pomodoro_application_time_t time;
     pomodoro_persisted_state_t persisted;
+    pomodoro_event_t restored_event = POMODORO_EVENT_NONE;
+    bool save_boot_state = false;
     pomodoro_application_result_t result = read_time(application, &time);
     if (result != POMODORO_APPLICATION_OK) {
         return result;
@@ -188,20 +199,23 @@ static pomodoro_application_result_t boot(
                              POMODORO_APPLICATION_ERROR_STORAGE_LOAD);
     }
     if (loaded == POMODORO_APPLICATION_LOAD_LOADED) {
+        bool was_migrated = false;
         if (!pomodoro_persistence_unpack(&persisted, &application->model,
-                                         &application->statistics)) {
+                                         &application->statistics,
+                                         &was_migrated)) {
             return fail_platform(application,
                                  POMODORO_APPLICATION_ERROR_STORAGE_LOAD);
         }
+        pomodoro_snapshot_t snapshot = application->model.timer;
+        if (pomodoro_restore(&application->model, &snapshot,
+                             time.epoch_seconds, &restored_event) !=
+            POMODORO_OK) {
+            return fail_platform(application,
+                                 POMODORO_APPLICATION_ERROR_STORAGE_LOAD);
+        }
+        save_boot_state = was_migrated;
         if (application->model.timer.timer_state ==
             POMODORO_TIMER_COMPLETION) {
-            pomodoro_event_t ignored_event = POMODORO_EVENT_NONE;
-            pomodoro_snapshot_t snapshot = application->model.timer;
-            if (pomodoro_restore(&application->model, &snapshot,
-                                 time.epoch_seconds, &ignored_event) !=
-                    POMODORO_OK || ignored_event != POMODORO_EVENT_NONE) {
-                return POMODORO_APPLICATION_ERR_INVALID_STATE;
-            }
             const pomodoro_daily_statistics_t *today = time.rtc_is_valid
                 ? pomodoro_statistics_find(&application->statistics,
                                            time.local_date)
@@ -221,10 +235,20 @@ static pomodoro_application_result_t boot(
             return POMODORO_APPLICATION_ERR_INVALID_STATE;
         }
         pomodoro_statistics_init(&application->statistics);
+        save_boot_state = true;
     }
     application->view.phase = POMODORO_APPLICATION_PHASE_ACTIVE;
     application->view.error = POMODORO_APPLICATION_ERROR_NONE;
     application->booted = true;
+    if (restored_event != POMODORO_EVENT_NONE) {
+        return publish_completion(application, &time, restored_event);
+    }
+    if (save_boot_state) {
+        result = save(application);
+        if (result != POMODORO_APPLICATION_OK) {
+            return result;
+        }
+    }
     return render(application, &time, POMODORO_EVENT_NONE);
 }
 
@@ -480,6 +504,32 @@ pomodoro_application_result_t pomodoro_application_dispatch(
         return not_now(application);
     }
     return POMODORO_APPLICATION_ERR_INVALID_STATE;
+}
+
+pomodoro_application_result_t pomodoro_application_confirm_settings(
+    pomodoro_application_t *application,
+    const pomodoro_settings_t *settings)
+{
+    if (application == NULL || settings == NULL) {
+        return POMODORO_APPLICATION_ERR_INVALID_ARGUMENT;
+    }
+    if (!application->booted ||
+        application->view.phase != POMODORO_APPLICATION_PHASE_ACTIVE) {
+        return POMODORO_APPLICATION_ERR_INVALID_STATE;
+    }
+    if (!pomodoro_settings_are_valid(settings)) {
+        return POMODORO_APPLICATION_ERR_INVALID_ARGUMENT;
+    }
+
+    application->model.settings = *settings;
+    if (application->model.timer.timer_state == POMODORO_TIMER_READY) {
+        application->model.timer.configured_duration_seconds =
+            pomodoro_duration_seconds(&application->model,
+                                      application->model.timer.mode);
+        application->model.timer.remaining_seconds =
+            application->model.timer.configured_duration_seconds;
+    }
+    return save_and_render(application, NULL);
 }
 
 void pomodoro_application_destroy(pomodoro_application_t *application)

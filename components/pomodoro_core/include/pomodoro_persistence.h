@@ -27,10 +27,16 @@ typedef struct {
     uint32_t checksum;
 } pomodoro_journal_slot_t;
 
+typedef enum {
+    POMODORO_JOURNAL_READ_EMPTY = 0,
+    POMODORO_JOURNAL_READ_LOADED,
+    POMODORO_JOURNAL_READ_ERROR,
+} pomodoro_journal_read_result_t;
+
 typedef struct {
     void *context;
-    bool (*read_slot)(void *context, uint8_t slot,
-                      pomodoro_journal_slot_t *value);
+    pomodoro_journal_read_result_t (*read_slot)(
+        void *context, uint8_t slot, pomodoro_journal_slot_t *value);
     bool (*write_slot)(void *context, uint8_t slot,
                        const pomodoro_journal_slot_t *value);
 } pomodoro_journal_io_t;
@@ -46,9 +52,10 @@ bool pomodoro_persistence_pack(pomodoro_persisted_state_t *destination,
 bool pomodoro_persistence_migrate(pomodoro_persisted_state_t *state);
 bool pomodoro_persistence_unpack(pomodoro_persisted_state_t *source,
                                  pomodoro_model_t *model,
-                                 pomodoro_statistics_store_t *statistics);
-bool pomodoro_journal_load(pomodoro_journal_t *journal,
-                           pomodoro_persisted_state_t *state);
+                                 pomodoro_statistics_store_t *statistics,
+                                 bool *was_migrated);
+pomodoro_journal_read_result_t pomodoro_journal_load(
+    pomodoro_journal_t *journal, pomodoro_persisted_state_t *state);
 bool pomodoro_journal_save(pomodoro_journal_t *journal,
                            const pomodoro_persisted_state_t *state);
 

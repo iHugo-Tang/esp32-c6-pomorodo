@@ -16,17 +16,24 @@ static const char *slot_key(uint8_t slot)
     return slot == 0U ? "state_a" : "state_b";
 }
 
-static bool read_slot(void *opaque, uint8_t slot,
-                      pomodoro_journal_slot_t *value)
+static pomodoro_journal_read_result_t read_slot(
+    void *opaque, uint8_t slot, pomodoro_journal_slot_t *value)
 {
     if (opaque == NULL || value == NULL || slot > 1U) {
-        return false;
+        return POMODORO_JOURNAL_READ_ERROR;
     }
     pomodoro_nvs_context_t *nvs_context = opaque;
     size_t size = sizeof(*value);
-    return nvs_get_blob(nvs_context->handle, slot_key(slot), value, &size) ==
-               ESP_OK &&
-           size == sizeof(*value);
+    esp_err_t result = nvs_get_blob(nvs_context->handle, slot_key(slot), value,
+                                    &size);
+    if (result == ESP_ERR_NVS_NOT_FOUND) {
+        return POMODORO_JOURNAL_READ_EMPTY;
+    }
+    /* A wrong-sized blob is a corrupt candidate, not a store-wide failure. */
+    if (result == ESP_OK || result == ESP_ERR_NVS_INVALID_LENGTH) {
+        return POMODORO_JOURNAL_READ_LOADED;
+    }
+    return POMODORO_JOURNAL_READ_ERROR;
 }
 
 static bool write_slot(void *opaque, uint8_t slot,

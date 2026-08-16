@@ -99,8 +99,13 @@ bool pomodoro_persistence_migrate(pomodoro_persisted_state_t *state)
 
 bool pomodoro_persistence_unpack(pomodoro_persisted_state_t *source,
                                  pomodoro_model_t *model,
-                                 pomodoro_statistics_store_t *statistics)
+                                 pomodoro_statistics_store_t *statistics,
+                                 bool *was_migrated)
 {
+    bool current_schema = state_is_valid(source);
+    if (was_migrated != NULL) {
+        *was_migrated = false;
+    }
     if (model == NULL || statistics == NULL ||
         !pomodoro_persistence_migrate(source)) {
         return false;
@@ -111,22 +116,29 @@ bool pomodoro_persistence_unpack(pomodoro_persisted_state_t *source,
     }
     model->timer = source->timer;
     *statistics = source->statistics;
+    if (was_migrated != NULL) {
+        *was_migrated = !current_schema;
+    }
     return true;
 }
 
-bool pomodoro_journal_load(pomodoro_journal_t *journal,
-                           pomodoro_persisted_state_t *state)
+pomodoro_journal_read_result_t pomodoro_journal_load(
+    pomodoro_journal_t *journal, pomodoro_persisted_state_t *state)
 {
     if (journal == NULL || state == NULL || journal->io.read_slot == NULL) {
-        return false;
+        return POMODORO_JOURNAL_READ_ERROR;
     }
 
     bool found = false;
     uint64_t selected_generation = 0;
     for (uint8_t index = 0; index < 2U; ++index) {
         memset(&journal->workspace, 0, sizeof(journal->workspace));
-        bool valid = journal->io.read_slot(journal->io.context, index,
-                                           &journal->workspace) &&
+        pomodoro_journal_read_result_t read = journal->io.read_slot(
+            journal->io.context, index, &journal->workspace);
+        if (read == POMODORO_JOURNAL_READ_ERROR) {
+            return POMODORO_JOURNAL_READ_ERROR;
+        }
+        bool valid = read == POMODORO_JOURNAL_READ_LOADED &&
                      slot_is_valid(&journal->workspace);
         if (valid && (!found || journal->workspace.generation >
                                 selected_generation)) {
@@ -135,7 +147,8 @@ bool pomodoro_journal_load(pomodoro_journal_t *journal,
             found = true;
         }
     }
-    return found;
+    return found ? POMODORO_JOURNAL_READ_LOADED
+                 : POMODORO_JOURNAL_READ_EMPTY;
 }
 
 bool pomodoro_journal_save(pomodoro_journal_t *journal,
@@ -150,8 +163,12 @@ bool pomodoro_journal_save(pomodoro_journal_t *journal,
     uint64_t generations[2] = {0, 0};
     for (uint8_t index = 0; index < 2U; ++index) {
         memset(&journal->workspace, 0, sizeof(journal->workspace));
-        valid[index] = journal->io.read_slot(journal->io.context, index,
-                                              &journal->workspace) &&
+        pomodoro_journal_read_result_t read = journal->io.read_slot(
+            journal->io.context, index, &journal->workspace);
+        if (read == POMODORO_JOURNAL_READ_ERROR) {
+            return false;
+        }
+        valid[index] = read == POMODORO_JOURNAL_READ_LOADED &&
                        slot_is_valid(&journal->workspace);
         if (valid[index]) {
             generations[index] = journal->workspace.generation;
@@ -180,7 +197,8 @@ bool pomodoro_journal_save(pomodoro_journal_t *journal,
 
     memset(&journal->workspace, 0, sizeof(journal->workspace));
     return journal->io.read_slot(journal->io.context, target,
-                                 &journal->workspace) &&
+                                 &journal->workspace) ==
+               POMODORO_JOURNAL_READ_LOADED &&
            slot_is_valid(&journal->workspace) &&
            journal->workspace.generation == generation &&
            journal->workspace.state.checksum == state->checksum;

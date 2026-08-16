@@ -178,6 +178,41 @@ bool pomodoro_board_read_time(pomodoro_application_time_t *time)
     return true;
 }
 
+bool pomodoro_board_resolve_local_date(uint64_t epoch_seconds,
+                                       pomodoro_date_t *date)
+{
+    uint64_t day_count = epoch_seconds / 86400U;
+    if (date == NULL || day_count > (uint64_t) INT32_MAX - 719468U) {
+        return false;
+    }
+    int32_t days = (int32_t) day_count + 719468;
+    int32_t era = (days >= 0 ? days : days - 146096) / 146097;
+    uint32_t day_of_era = (uint32_t) (days - era * 146097);
+    uint32_t year_of_era =
+        (day_of_era - day_of_era / 1460U + day_of_era / 36524U -
+         day_of_era / 146096U) /
+        365U;
+    int32_t year = (int32_t) year_of_era + era * 400;
+    uint32_t day_of_year = day_of_era -
+        (365U * year_of_era + year_of_era / 4U - year_of_era / 100U);
+    uint32_t month_part = (5U * day_of_year + 2U) / 153U;
+    uint8_t day = (uint8_t) (day_of_year -
+        (153U * month_part + 2U) / 5U + 1U);
+    uint8_t month = (uint8_t) ((int32_t) month_part +
+        (month_part < 10U ? 3 : -9));
+    year += month <= 2U;
+    if (year < 0 || year > UINT16_MAX ||
+        !date_is_valid((uint16_t) year, month, day, 0U, 0U, 0U)) {
+        return false;
+    }
+    *date = (pomodoro_date_t) {
+        .year = (uint16_t) year,
+        .month = month,
+        .day = day,
+    };
+    return true;
+}
+
 static void round_display_area(lv_area_t *area)
 {
     area->x1 &= ~1;

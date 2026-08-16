@@ -1,60 +1,12 @@
 #include "pomodoro_core.h"
 #include "pomodoro_statistics.h"
 #include "pomodoro_persistence.h"
+#include "pomodoro_test_support.h"
 
 #include <assert.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
-
-typedef struct {
-    pomodoro_journal_slot_t slots[2];
-    bool present[2];
-    bool tear_next_write;
-} memory_journal_t;
-
-static uint32_t test_crc32(const void *data, size_t size)
-{
-    const uint8_t *bytes = data;
-    uint32_t crc = UINT32_C(0xFFFFFFFF);
-    for (size_t index = 0; index < size; ++index) {
-        crc ^= bytes[index];
-        for (unsigned bit = 0; bit < 8U; ++bit) {
-            uint32_t mask = (uint32_t) -(int32_t) (crc & 1U);
-            crc = (crc >> 1U) ^ (UINT32_C(0xEDB88320) & mask);
-        }
-    }
-    return ~crc;
-}
-
-static bool memory_read_slot(void *context, uint8_t slot,
-                             pomodoro_journal_slot_t *value)
-{
-    memory_journal_t *memory = context;
-    if (slot > 1U || !memory->present[slot]) {
-        return false;
-    }
-    *value = memory->slots[slot];
-    return true;
-}
-
-static bool memory_write_slot(void *context, uint8_t slot,
-                              const pomodoro_journal_slot_t *value)
-{
-    memory_journal_t *memory = context;
-    if (slot > 1U) {
-        return false;
-    }
-    memory->present[slot] = true;
-    if (memory->tear_next_write) {
-        memory->tear_next_write = false;
-        memset(&memory->slots[slot], 0, sizeof(memory->slots[slot]));
-        memcpy(&memory->slots[slot], value, sizeof(*value) / 2U);
-        return true;
-    }
-    memory->slots[slot] = *value;
-    return true;
-}
 
 static pomodoro_model_t fresh_model(void)
 {
@@ -254,17 +206,17 @@ static void test_persistence_detects_corruption(void)
     pomodoro_statistics_init(&statistics);
     assert(pomodoro_persistence_pack(&persisted, &model, &statistics));
     assert(pomodoro_persistence_unpack(&persisted, &restored,
-                                       &restored_statistics));
+                                       &restored_statistics, NULL));
     assert(restored.settings.daily_goal == model.settings.daily_goal);
 
     persisted.timer.remaining_seconds++;
     assert(!pomodoro_persistence_unpack(&persisted, &restored,
-                                        &restored_statistics));
+                                        &restored_statistics, NULL));
 }
 
 static void test_journal_survives_torn_write(void)
 {
-    memory_journal_t memory;
+    pomodoro_test_memory_journal_t memory;
     pomodoro_journal_t journal;
     pomodoro_model_t model = fresh_model();
     pomodoro_statistics_store_t statistics;
@@ -274,22 +226,20 @@ static void test_journal_survives_torn_write(void)
 
     memset(&memory, 0, sizeof(memory));
     memset(&journal, 0, sizeof(journal));
-    journal.io = (pomodoro_journal_io_t) {
-        .context = &memory,
-        .read_slot = memory_read_slot,
-        .write_slot = memory_write_slot,
-    };
+    pomodoro_test_memory_journal_init(&memory, &journal);
     pomodoro_statistics_init(&statistics);
     assert(pomodoro_persistence_pack(&first, &model, &statistics));
     assert(pomodoro_journal_save(&journal, &first));
-    assert(pomodoro_journal_load(&journal, &loaded));
+    assert(pomodoro_journal_load(&journal, &loaded) ==
+           POMODORO_JOURNAL_READ_LOADED);
     assert(loaded.checksum == first.checksum);
 
     model.settings.daily_goal = 12;
     assert(pomodoro_persistence_pack(&second, &model, &statistics));
     memory.tear_next_write = true;
     assert(!pomodoro_journal_save(&journal, &second));
-    assert(pomodoro_journal_load(&journal, &loaded));
+    assert(pomodoro_journal_load(&journal, &loaded) ==
+           POMODORO_JOURNAL_READ_LOADED);
     assert(loaded.checksum == first.checksum);
 }
 
@@ -307,11 +257,13 @@ static void test_legacy_v0_state_migrates_to_v1(void)
     legacy.settings.version = 0;
     legacy.timer.version = 0;
     legacy.statistics.version = 0;
-    legacy.checksum = test_crc32(
+    legacy.checksum = pomodoro_test_crc32(
         &legacy, offsetof(pomodoro_persisted_state_t, checksum));
 
+    bool was_migrated = false;
     assert(pomodoro_persistence_unpack(&legacy, &restored,
-                                       &restored_statistics));
+                                       &restored_statistics, &was_migrated));
+    assert(was_migrated);
     assert(legacy.version == POMODORO_PERSISTED_STATE_VERSION);
     assert(legacy.settings.version == POMODORO_SETTINGS_VERSION);
     assert(legacy.timer.version == POMODORO_SNAPSHOT_VERSION);

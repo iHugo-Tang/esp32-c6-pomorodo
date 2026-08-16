@@ -91,6 +91,9 @@ typedef struct {
     void *context;
     /* Supplies one coherent wall-clock observation for each dispatched action. */
     bool (*read_time)(void *context, pomodoro_application_time_t *time);
+    /* Resolves a persisted deadline to its local Statistics Day. */
+    bool (*resolve_local_date)(void *context, uint64_t epoch_seconds,
+                               pomodoro_date_t *date);
     /* Distinguishes an unused store from an I/O failure. */
     pomodoro_application_load_result_t (*load)(
         void *context, pomodoro_persisted_state_t *state);
@@ -115,6 +118,9 @@ pomodoro_application_result_t pomodoro_application_create(
 pomodoro_application_result_t pomodoro_application_dispatch(
     pomodoro_application_t *application,
     pomodoro_application_action_t action);
+pomodoro_application_result_t pomodoro_application_confirm_settings(
+    pomodoro_application_t *application,
+    const pomodoro_settings_t *settings);
 void pomodoro_application_destroy(pomodoro_application_t *application);
 
 #ifdef __cplusplus

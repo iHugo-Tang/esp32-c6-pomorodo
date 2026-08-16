@@ -4,11 +4,11 @@
 
 **Blocked by:** 03 — Complete the Main timer and Pomodoro Set.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] State is loaded during boot and defaults are saved only when no valid supported state exists.
-- [ ] Running timers before their deadline resume from the RTC deadline; paused timers retain their exact remaining duration.
-- [ ] A timer whose deadline passed while powered off settles exactly once and returns in Completion Transition without starting the next Mode.
-- [ ] State saves occur on transitions and confirmed Setting changes, never once per second.
-- [ ] A torn or corrupt latest slot falls back to the previous valid slot, and supported persisted schema versions migrate without losing user data.
-- [ ] Host integration tests exercise save, reboot, restore, corruption, and idempotent settlement through the application boundary.
+- [x] State is loaded during boot and defaults are saved only when no valid supported state exists.
+- [x] Running timers before their deadline resume from the RTC deadline; paused timers retain their exact remaining duration.
+- [x] A timer whose deadline passed while powered off settles exactly once and returns in Completion Transition without starting the next Mode.
+- [x] State saves occur on transitions and confirmed Setting changes, never once per second.
+- [x] A torn or corrupt latest slot falls back to the previous valid slot, and supported persisted schema versions migrate without losing user data.
+- [x] Host integration tests exercise save, reboot, restore, corruption, and idempotent settlement through the application boundary.
