@@ -233,6 +233,7 @@ flowchart LR
 - 圆环从 12 点方向顺时针消退，彩色区域代表剩余时间。
 - Space Mono 倒计时每秒更新。
 - 主按钮：`Pause`。
+- Focus 倒计时中的 `Pause` 使用 160×48 的紧凑按钮，完整落在圆环内；不改变 Paused 状态的 Resume/Reset 布局。
 - 左右滑动切换模式前显示 D01。
 - 进入 Settings/Statistics 时计时继续；若后台完成，播放声音并自动返回完成态。
 
