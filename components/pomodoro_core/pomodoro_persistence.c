@@ -33,6 +33,20 @@ static bool state_is_valid(const pomodoro_persisted_state_t *state)
            state->checksum == state_checksum(state);
 }
 
+static bool legacy_v0_is_valid(const pomodoro_persisted_state_t *state)
+{
+    return state != NULL && state->version == 0U &&
+           state->settings.version == 0U && state->timer.version == 0U &&
+           state->statistics.version == 0U &&
+           pomodoro_settings_are_valid(&state->settings.value) &&
+           state->checksum == state_checksum(state);
+}
+
+static bool state_can_be_loaded(const pomodoro_persisted_state_t *state)
+{
+    return state_is_valid(state) || legacy_v0_is_valid(state);
+}
+
 static uint32_t slot_checksum(const pomodoro_journal_slot_t *slot)
 {
     return crc32(slot, offsetof(pomodoro_journal_slot_t, checksum));
@@ -42,7 +56,7 @@ static bool slot_is_valid(const pomodoro_journal_slot_t *slot)
 {
     return slot != NULL && slot->generation != 0U &&
            slot->checksum == slot_checksum(slot) &&
-           state_is_valid(&slot->state);
+           state_can_be_loaded(&slot->state);
 }
 
 bool pomodoro_persistence_pack(pomodoro_persisted_state_t *destination,
@@ -66,11 +80,29 @@ bool pomodoro_persistence_pack(pomodoro_persisted_state_t *destination,
     return true;
 }
 
-bool pomodoro_persistence_unpack(const pomodoro_persisted_state_t *source,
+bool pomodoro_persistence_migrate(pomodoro_persisted_state_t *state)
+{
+    if (state_is_valid(state)) {
+        return true;
+    }
+    if (!legacy_v0_is_valid(state)) {
+        return false;
+    }
+
+    state->version = POMODORO_PERSISTED_STATE_VERSION;
+    state->settings.version = POMODORO_SETTINGS_VERSION;
+    state->timer.version = POMODORO_SNAPSHOT_VERSION;
+    state->statistics.version = POMODORO_STATISTICS_VERSION;
+    state->checksum = state_checksum(state);
+    return true;
+}
+
+bool pomodoro_persistence_unpack(pomodoro_persisted_state_t *source,
                                  pomodoro_model_t *model,
                                  pomodoro_statistics_store_t *statistics)
 {
-    if (model == NULL || statistics == NULL || !state_is_valid(source)) {
+    if (model == NULL || statistics == NULL ||
+        !pomodoro_persistence_migrate(source)) {
         return false;
     }
 

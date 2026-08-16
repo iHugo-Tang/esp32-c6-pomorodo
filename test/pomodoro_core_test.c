@@ -3,6 +3,7 @@
 #include "pomodoro_persistence.h"
 
 #include <assert.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -11,6 +12,20 @@ typedef struct {
     bool present[2];
     bool tear_next_write;
 } memory_journal_t;
+
+static uint32_t test_crc32(const void *data, size_t size)
+{
+    const uint8_t *bytes = data;
+    uint32_t crc = UINT32_C(0xFFFFFFFF);
+    for (size_t index = 0; index < size; ++index) {
+        crc ^= bytes[index];
+        for (unsigned bit = 0; bit < 8U; ++bit) {
+            uint32_t mask = (uint32_t) -(int32_t) (crc & 1U);
+            crc = (crc >> 1U) ^ (UINT32_C(0xEDB88320) & mask);
+        }
+    }
+    return ~crc;
+}
 
 static bool memory_read_slot(void *context, uint8_t slot,
                              pomodoro_journal_slot_t *value)
@@ -278,6 +293,31 @@ static void test_journal_survives_torn_write(void)
     assert(loaded.checksum == first.checksum);
 }
 
+static void test_legacy_v0_state_migrates_to_v1(void)
+{
+    pomodoro_model_t model = fresh_model();
+    pomodoro_model_t restored;
+    pomodoro_statistics_store_t statistics;
+    pomodoro_statistics_store_t restored_statistics;
+    pomodoro_persisted_state_t legacy;
+
+    pomodoro_statistics_init(&statistics);
+    assert(pomodoro_persistence_pack(&legacy, &model, &statistics));
+    legacy.version = 0;
+    legacy.settings.version = 0;
+    legacy.timer.version = 0;
+    legacy.statistics.version = 0;
+    legacy.checksum = test_crc32(
+        &legacy, offsetof(pomodoro_persisted_state_t, checksum));
+
+    assert(pomodoro_persistence_unpack(&legacy, &restored,
+                                       &restored_statistics));
+    assert(legacy.version == POMODORO_PERSISTED_STATE_VERSION);
+    assert(legacy.settings.version == POMODORO_SETTINGS_VERSION);
+    assert(legacy.timer.version == POMODORO_SNAPSHOT_VERSION);
+    assert(legacy.statistics.version == POMODORO_STATISTICS_VERSION);
+}
+
 int main(void)
 {
     test_focus_completes_once();
@@ -294,6 +334,7 @@ int main(void)
     test_statistics_are_deduplicated_and_pending_is_assigned();
     test_persistence_detects_corruption();
     test_journal_survives_torn_write();
+    test_legacy_v0_state_migrates_to_v1();
     puts("pomodoro_core_test: all tests passed");
     return 0;
 }
