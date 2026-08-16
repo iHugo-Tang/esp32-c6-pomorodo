@@ -41,4 +41,3 @@ The first hardware integration should implement the interfaces declared in
 `components/pomodoro_platform/include/pomodoro_platform.h`, then add the pinned
 Waveshare-validated LVGL 9 and `esp_lvgl_port` versions. Those versions are not
 guessed here because the product decision requires hardware validation.
-

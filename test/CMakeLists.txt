@@ -16,4 +16,3 @@ target_compile_features(pomodoro_core_test PRIVATE c_std_11)
 target_compile_options(pomodoro_core_test PRIVATE -Wall -Wextra -Werror -pedantic)
 
 add_test(NAME pomodoro_core_test COMMAND pomodoro_core_test)
-

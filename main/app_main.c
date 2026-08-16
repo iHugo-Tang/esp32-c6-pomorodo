@@ -22,4 +22,3 @@ void app_main(void)
     ESP_LOGI(TAG, "Pomodoro ready at epoch=%" PRIu64,
              platform->clock.epoch_seconds(platform->context));
 }
-

@@ -274,4 +274,3 @@ pomodoro_result_t pomodoro_restore(pomodoro_model_t *model,
     }
     return POMODORO_OK;
 }
-

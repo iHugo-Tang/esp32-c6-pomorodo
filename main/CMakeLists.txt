@@ -3,4 +3,3 @@ idf_component_register(
     INCLUDE_DIRS "."
     REQUIRES pomodoro_core pomodoro_platform
 )
-
