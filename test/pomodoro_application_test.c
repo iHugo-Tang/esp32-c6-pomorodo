@@ -7,6 +7,20 @@
 #include <string.h>
 
 typedef struct {
+    uint32_t version;
+    pomodoro_settings_t value;
+    uint8_t last_nonzero_volume;
+} legacy_v2_persisted_settings_t;
+
+typedef struct {
+    uint32_t version;
+    legacy_v2_persisted_settings_t settings;
+    pomodoro_snapshot_t timer;
+    pomodoro_statistics_store_t statistics;
+    uint32_t checksum;
+} legacy_v2_persisted_state_t;
+
+typedef struct {
     pomodoro_test_memory_journal_t memory_journal;
     pomodoro_journal_t journal;
     bool use_journal;
@@ -24,6 +38,12 @@ typedef struct {
     unsigned display_awake_count;
     bool display_awake;
     unsigned power_off_count;
+    unsigned start_time_sync_count;
+    unsigned stop_time_sync_count;
+    bool time_sync_running;
+    pomodoro_application_time_sync_poll_result_t time_sync_poll_result;
+    pomodoro_application_time_sync_session_t time_sync_session;
+    pomodoro_application_time_sync_submission_t time_sync_submission;
     pomodoro_application_load_result_t load_result;
     pomodoro_persisted_state_t persisted;
     pomodoro_application_view_t rendered_view;
@@ -62,12 +82,12 @@ static bool fake_read_time(void *context, pomodoro_application_time_t *time)
 }
 
 static bool fake_resolve_local_date(void *context, uint64_t epoch_seconds,
-                                    int8_t utc_offset_quarter_hours,
+                                    int16_t utc_offset_minutes,
                                     pomodoro_date_t *date)
 {
     fake_platform_t *fake = context;
     (void) epoch_seconds;
-    (void) utc_offset_quarter_hours;
+    (void) utc_offset_minutes;
     if (date == NULL) {
         return false;
     }
@@ -120,6 +140,44 @@ static bool fake_power_off(void *context)
 {
     fake_platform_t *fake = context;
     fake->power_off_count++;
+    return true;
+}
+
+static bool fake_start_time_sync(
+    void *context, pomodoro_application_time_sync_session_t *session)
+{
+    fake_platform_t *fake = context;
+    fake->start_time_sync_count++;
+    fake->time_sync_running = true;
+    if (fake->time_sync_session.ssid[0] == '\0') {
+        strcpy(fake->time_sync_session.ssid, "Pomodoro-7F2A");
+        strcpy(fake->time_sync_session.password, "K4M8Q2NP");
+        strcpy(fake->time_sync_session.join_uri,
+               "WIFI:T:WPA;S:Pomodoro-7F2A;P:K4M8Q2NP;;");
+    }
+    *session = fake->time_sync_session;
+    return true;
+}
+
+static pomodoro_application_time_sync_poll_result_t fake_poll_time_sync(
+    void *context, pomodoro_application_time_sync_submission_t *submission)
+{
+    fake_platform_t *fake = context;
+    if (fake->time_sync_poll_result ==
+        POMODORO_APPLICATION_TIME_SYNC_SUBMITTED) {
+        *submission = fake->time_sync_submission;
+    }
+    return fake->time_sync_poll_result;
+}
+
+static bool fake_stop_time_sync(void *context)
+{
+    fake_platform_t *fake = context;
+    fake->stop_time_sync_count++;
+    fake->time_sync_running = false;
+    memset(&fake->time_sync_session, 0, sizeof(fake->time_sync_session));
+    memset(&fake->time_sync_submission, 0,
+           sizeof(fake->time_sync_submission));
     return true;
 }
 
@@ -202,6 +260,9 @@ static pomodoro_application_platform_t fake_platform_services(
         .read_device_status = fake_read_device_status,
         .set_display_awake = fake_set_display_awake,
         .power_off = fake_power_off,
+        .start_time_sync = fake_start_time_sync,
+        .poll_time_sync = fake_poll_time_sync,
+        .stop_time_sync = fake_stop_time_sync,
         .load = fake_load,
         .save = fake_save,
         .render = fake_render,
@@ -1553,13 +1614,18 @@ static void test_boot_migrates_and_resaves_supported_legacy_state(void)
     pomodoro_statistics_init(&statistics);
     statistics.pending_completed_pomodoros = 2U;
     statistics.pending_focus_seconds = 50U * 60U;
-    assert(pomodoro_persistence_pack(&fake.persisted, &model, &statistics));
-    fake.persisted.version = 0U;
-    fake.persisted.settings.version = 0U;
-    fake.persisted.timer.version = 0U;
-    fake.persisted.statistics.version = 0U;
-    fake.persisted.checksum = pomodoro_test_crc32(
-        &fake.persisted, offsetof(pomodoro_persisted_state_t, checksum));
+    legacy_v2_persisted_state_t legacy;
+    memset(&legacy, 0, sizeof(legacy));
+    legacy.version = 2U;
+    legacy.settings.version = 2U;
+    legacy.settings.value = model.settings;
+    legacy.settings.last_nonzero_volume = model.last_nonzero_volume;
+    legacy.timer = model.timer;
+    legacy.statistics = statistics;
+    legacy.checksum = pomodoro_test_crc32(
+        &legacy, offsetof(legacy_v2_persisted_state_t, checksum));
+    memset(&fake.persisted, 0, sizeof(fake.persisted));
+    memcpy(&fake.persisted, &legacy, sizeof(legacy));
 
     pomodoro_application_t *application = boot_application(&fake);
     assert(fake.rendered_view.settings.daily_goal == 12U);
@@ -1591,6 +1657,9 @@ static void test_date_time_setup_actions_confirm_manual_draft(void)
     fake.rtc_is_invalid = true;
     pomodoro_application_t *application = boot_application(&fake);
     assert(fake.rendered_view.phase == POMODORO_APPLICATION_PHASE_TIME_SETUP);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_DATE_TIME) ==
+           POMODORO_APPLICATION_OK);
     assert(pomodoro_application_dispatch(
                application,
                POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_UP) ==
@@ -1632,6 +1701,9 @@ static void test_invalid_rtc_boot_rebases_saved_running_remaining_time(void)
     assert(fake.rendered_view.phase == POMODORO_APPLICATION_PHASE_TIME_SETUP);
     assert(fake.rendered_view.timer_state == POMODORO_TIMER_RUNNING);
     assert(fake.rendered_view.remaining_seconds == 1500U);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_DATE_TIME) ==
+           POMODORO_APPLICATION_OK);
     assert(pomodoro_application_dispatch(
                application,
                POMODORO_APPLICATION_ACTION_MANUAL_TIME_CONFIRM) ==
@@ -1707,6 +1779,238 @@ static void test_hardware_controls_remain_available_during_time_setup(void)
     pomodoro_application_destroy(application);
 }
 
+static void fake_prepare_time_sync_submission(fake_platform_t *fake)
+{
+    fake->time_sync_poll_result = POMODORO_APPLICATION_TIME_SYNC_SUBMITTED;
+    fake->time_sync_submission.utc_epoch_seconds = UINT64_C(1786825800);
+    strcpy(fake->time_sync_submission.time_zone.iana_name,
+           "America/Edmonton");
+    fake->time_sync_submission.time_zone.automatic = true;
+    fake->time_sync_submission.time_zone.transition_count = 2U;
+    fake->time_sync_submission.time_zone.expires_utc_epoch_seconds =
+        UINT64_C(1944592200);
+    fake->time_sync_submission.time_zone.transitions[0] =
+        (pomodoro_utc_offset_transition_t) {
+            .effective_utc_epoch_seconds = 0U,
+            .offset_minutes = -360,
+        };
+    fake->time_sync_submission.time_zone.transitions[1] =
+        (pomodoro_utc_offset_transition_t) {
+            .effective_utc_epoch_seconds = UINT64_C(1793512800),
+            .offset_minutes = -420,
+        };
+}
+
+static void test_iphone_sync_confirms_before_writing_and_persists_schedule(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_epoch_seconds = 100U;
+    fake.rtc_is_invalid = true;
+    pomodoro_application_t *application = boot_application(&fake);
+
+    assert(fake.rendered_view.time_setup_stage ==
+           POMODORO_APPLICATION_TIME_SETUP_LANDING);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_TIME_SYNC) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.start_time_sync_count == 1U);
+    assert(fake.time_sync_running);
+    assert(fake.rendered_view.time_setup_stage ==
+           POMODORO_APPLICATION_TIME_SETUP_SYNC);
+    assert(strcmp(fake.rendered_view.time_sync_session.ssid,
+                  "Pomodoro-7F2A") == 0);
+
+    fake.time_sync_poll_result = POMODORO_APPLICATION_TIME_SYNC_WAITING;
+    fake.now_epoch_seconds = 101U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.write_time_count == 0U);
+
+    fake_prepare_time_sync_submission(&fake);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.write_time_count == 1U);
+    assert(fake.stop_time_sync_count == 1U);
+    assert(!fake.time_sync_running);
+    assert(fake.rendered_view.phase ==
+           POMODORO_APPLICATION_PHASE_TIME_SETUP);
+    assert(fake.rendered_view.time_setup_stage ==
+           POMODORO_APPLICATION_TIME_SETUP_SYNC_SUCCESS);
+    assert(strcmp(fake.persisted.settings.time_zone.iana_name,
+                  "America/Edmonton") == 0);
+    assert(fake.persisted.settings.time_zone.transition_count == 2U);
+    fake.now_epoch_seconds++;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.phase == POMODORO_APPLICATION_PHASE_ACTIVE);
+    pomodoro_application_destroy(application);
+
+    application = boot_application(&fake);
+    assert(strcmp(fake.rendered_view.time_zone_name,
+                  "America/Edmonton") == 0);
+    assert(fake.persisted.settings.time_zone.transition_count == 2U);
+    pomodoro_application_destroy(application);
+}
+
+static void test_iphone_sync_assigns_pending_outage_statistics(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_epoch_seconds = 100U;
+    pomodoro_application_t *application = boot_application(&fake);
+    pomodoro_settings_t settings = fake.rendered_view.settings;
+    settings.focus_minutes = 5U;
+    assert(pomodoro_application_confirm_settings(application, &settings) ==
+           POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_START) ==
+           POMODORO_APPLICATION_OK);
+    fake.rtc_is_invalid = true;
+    fake.now_epoch_seconds = 400U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.persisted.statistics.pending_completed_pomodoros == 1U);
+    pomodoro_application_destroy(application);
+
+    fake.now_epoch_seconds = 401U;
+    application = boot_application(&fake);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_TIME_SYNC) ==
+           POMODORO_APPLICATION_OK);
+    fake_prepare_time_sync_submission(&fake);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.persisted.statistics.pending_completed_pomodoros == 0U);
+    assert(fake.rendered_view.today_completed_pomodoros == 1U);
+    assert(strcmp(fake.rendered_view.time_zone_name,
+                  "America/Edmonton") == 0);
+    pomodoro_application_destroy(application);
+}
+
+static void test_iphone_sync_timeout_and_cancel_destroy_session(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_epoch_seconds = 100U;
+    fake.rtc_is_invalid = true;
+    pomodoro_application_t *application = boot_application(&fake);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_TIME_SYNC) ==
+           POMODORO_APPLICATION_OK);
+    fake.now_epoch_seconds = 400U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.stop_time_sync_count == 1U);
+    assert(fake.write_time_count == 0U);
+    assert(fake.rendered_view.time_sync_failed);
+
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_TIME_SYNC) ==
+           POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_BACK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.stop_time_sync_count == 2U);
+    assert(fake.rendered_view.time_setup_stage ==
+           POMODORO_APPLICATION_TIME_SETUP_LANDING);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_TIME_SYNC) ==
+           POMODORO_APPLICATION_OK);
+    pomodoro_application_destroy(application);
+    assert(fake.stop_time_sync_count == 3U);
+    assert(!fake.time_sync_running);
+}
+
+static void test_iphone_sync_rejects_a_four_year_schedule(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_epoch_seconds = 100U;
+    fake.rtc_is_invalid = true;
+    pomodoro_application_t *application = boot_application(&fake);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_TIME_SYNC) ==
+           POMODORO_APPLICATION_OK);
+    fake_prepare_time_sync_submission(&fake);
+    fake.time_sync_submission.time_zone.expires_utc_epoch_seconds =
+        fake.time_sync_submission.utc_epoch_seconds +
+        UINT64_C(365) * 4U * 86400U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.write_time_count == 0U);
+    assert(fake.stop_time_sync_count == 1U);
+    assert(fake.rendered_view.time_sync_failed);
+    assert(fake.rendered_view.time_sync_session.password[0] == '\0');
+    pomodoro_application_destroy(application);
+}
+
+static void test_iphone_sync_manual_fallback_and_errors_stop_session(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_epoch_seconds = 100U;
+    fake.rtc_is_invalid = true;
+    pomodoro_application_t *application = boot_application(&fake);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_TIME_SYNC) ==
+           POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_DATE_TIME) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.stop_time_sync_count == 1U);
+    assert(!fake.time_sync_running);
+    assert(fake.rendered_view.time_setup_stage ==
+           POMODORO_APPLICATION_TIME_SETUP_MANUAL);
+
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_TIME_SYNC) ==
+           POMODORO_APPLICATION_OK);
+    fake.time_sync_poll_result = POMODORO_APPLICATION_TIME_SYNC_ERROR;
+    fake.now_epoch_seconds++;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.stop_time_sync_count == 2U);
+    assert(!fake.time_sync_running);
+    assert(fake.rendered_view.time_sync_failed);
+    pomodoro_application_destroy(application);
+}
+
+static void test_iphone_sync_returns_to_settings_after_success(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_epoch_seconds = 100U;
+    pomodoro_application_t *application = boot_application(&fake);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_SETTINGS) ==
+           POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_TIME_SYNC) ==
+           POMODORO_APPLICATION_OK);
+    fake_prepare_time_sync_submission(&fake);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.time_setup_stage ==
+           POMODORO_APPLICATION_TIME_SETUP_SYNC_SUCCESS);
+    fake.now_epoch_seconds++;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.phase == POMODORO_APPLICATION_PHASE_ACTIVE);
+    assert(fake.rendered_view.page == POMODORO_APPLICATION_PAGE_SETTINGS);
+    pomodoro_application_destroy(application);
+}
+
 int main(void)
 {
     test_boot_without_saved_state_shows_default_focus_ready();
@@ -1754,6 +2058,12 @@ int main(void)
     test_invalid_rtc_boot_rebases_saved_running_remaining_time();
     test_recovery_tick_assigns_outage_completion_to_recovery_day();
     test_hardware_controls_remain_available_during_time_setup();
+    test_iphone_sync_confirms_before_writing_and_persists_schedule();
+    test_iphone_sync_assigns_pending_outage_statistics();
+    test_iphone_sync_timeout_and_cancel_destroy_session();
+    test_iphone_sync_rejects_a_four_year_schedule();
+    test_iphone_sync_manual_fallback_and_errors_stop_session();
+    test_iphone_sync_returns_to_settings_after_success();
     puts("pomodoro_application_test: all tests passed");
     return 0;
 }

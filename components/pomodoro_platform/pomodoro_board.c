@@ -240,11 +240,15 @@ bool pomodoro_board_read_time(pomodoro_application_time_t *time)
 }
 
 bool pomodoro_board_resolve_local_date(uint64_t epoch_seconds,
-                                       int8_t utc_offset_quarter_hours,
+                                       int16_t utc_offset_minutes,
                                        pomodoro_date_t *date)
 {
+    if (utc_offset_minutes < -720 || utc_offset_minutes > 840 ||
+        utc_offset_minutes % 15 != 0) {
+        return false;
+    }
     return pomodoro_local_date_from_utc(
-        epoch_seconds, utc_offset_quarter_hours, date);
+        epoch_seconds, (int8_t) (utc_offset_minutes / 15), date);
 }
 
 bool pomodoro_board_write_utc_time(uint64_t utc_epoch_seconds)

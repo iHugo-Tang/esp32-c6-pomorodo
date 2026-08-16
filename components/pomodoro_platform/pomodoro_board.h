@@ -14,7 +14,7 @@ esp_err_t pomodoro_board_initialize_controls(void);
 esp_err_t pomodoro_board_initialize_audio(void);
 bool pomodoro_board_read_time(pomodoro_application_time_t *time);
 bool pomodoro_board_resolve_local_date(uint64_t epoch_seconds,
-                                       int8_t utc_offset_quarter_hours,
+                                       int16_t utc_offset_minutes,
                                        pomodoro_date_t *date);
 bool pomodoro_board_write_utc_time(uint64_t utc_epoch_seconds);
 bool pomodoro_board_set_display_brightness(uint8_t percent);

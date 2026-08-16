@@ -87,9 +87,21 @@ ls /dev/cu.*
 ## 完整设备功能验收清单
 
 2026-08-16 使用 ESP-IDF v5.5.5 成功构建加入 RTC 恢复、Statistics、Settings、
-ES8311 提示音、AXP2101 状态、侧键与 AMOLED 生命周期管理的固件。生成的
-`pomodoro.bin` 为 715,472 字节；尚未将该版本烧录到实机，以下项目留作烧录后的
-人手验收，不能视为已通过：
+ES8311 提示音、AXP2101 状态、侧键、AMOLED 生命周期管理和 iPhone 本地校时的
+固件。最终 `pomodoro.bin` 为 1,397,968 字节（`0x1554d0`），应用分区仍有 56%
+空余。
+
+同日通过普通 `idf.py flash` 更新 `/dev/cu.usbmodem11101`，未执行 `erase-flash`，
+所以没有擦除 `pomodoro` NVS 分区。最终串口启动日志确认 SH8601、CST9217、
+ES8311 和保存状态加载完成，并进入 `Focus Ready`；持续观察 13 秒未出现 panic
+或重启。目标板验证也发现并修复了大块持久化状态占用主任务/计时器任务栈的问题，
+当前日志验证的是将这些工作区移出任务栈后的固件。
+
+`idf.py size` 的最终静态内存结果为 DIRAM 235,346 字节（52.05%），剩余
+216,766 字节；其中 `.bss` 103,664 字节、`.data` 15,700 字节。LVGL 仍使用
+9,600 像素（19,200 字节）的单个局部绘制缓冲区且未启用 PSRAM。
+
+以下项目仍需人手验收，不能视为已通过：
 
 - 让 PCF85063 振荡停止标志保持置位，确认启动只能进入日期/时间设置；输入本地日期、
   时间和 UTC 固定偏移后，断电重启并核对显示值与运行中计时剩余量。
@@ -104,3 +116,24 @@ ES8311 提示音、AXP2101 状态、侧键与 AMOLED 生命周期管理的固件
 - PWR 短按休眠/唤醒显示，长按关机；Running 闲置 2 分钟降至所选亮度的 60%，其他状态
   2 分钟降至 20%、5 分钟关屏。关屏后的第一次触摸只唤醒，第二次才执行控件。
 - 观察静态内容每分钟在 ±2 像素内偏移，确认重置/模式切换等阻塞对话框不随之移动。
+- 从首次设置和 Settings 分别启动 `Sync from iPhone`：扫描随机 WPA2 QR、打开
+  `192.168.4.1`，确认页面明确提交后 RTC/时区才改变；分别观察成功、取消、非法
+  数据和 5 分钟超时后 SoftAP 消失，且设备没有加入路由器或保留凭据。
+- 在导航、音频、绘制和 NVS 保存同时发生时测量 RTC deadline 到 Completion 的
+  偏差；执行长时间运行、重复断电重启及更新前后逐项状态对照。
+
+## 当前自动化验收命令
+
+```sh
+cmake -S test -B build/host
+cmake --build build/host --parallel
+ctest --test-dir build/host --output-on-failure
+. "$HOME/esp/esp-idf/export.sh"
+idf.py build
+idf.py size
+idf.py -p /dev/cu.usbmodem11101 flash
+idf.py -p /dev/cu.usbmodem11101 monitor
+```
+
+普通 `flash` 只更新 bootloader、分区表和 factory 应用地址范围；不要运行
+`erase-flash`，后者会删除保存的产品状态。

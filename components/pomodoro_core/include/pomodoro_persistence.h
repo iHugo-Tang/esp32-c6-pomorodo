@@ -11,7 +11,7 @@
 extern "C" {
 #endif
 
-#define POMODORO_PERSISTED_STATE_VERSION 2U
+#define POMODORO_PERSISTED_STATE_VERSION 3U
 
 typedef struct {
     uint32_t version;
@@ -44,6 +44,7 @@ typedef struct {
 typedef struct {
     pomodoro_journal_io_t io;
     pomodoro_journal_slot_t workspace;
+    pomodoro_persisted_state_t candidate;
 } pomodoro_journal_t;
 
 bool pomodoro_persistence_pack(pomodoro_persisted_state_t *destination,

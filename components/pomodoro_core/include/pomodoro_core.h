@@ -9,7 +9,11 @@ extern "C" {
 #endif
 
 #define POMODORO_SNAPSHOT_VERSION 1U
-#define POMODORO_SETTINGS_VERSION 2U
+#define POMODORO_SETTINGS_VERSION 3U
+#define POMODORO_TIME_ZONE_NAME_CAPACITY 40U
+#define POMODORO_TIME_ZONE_TRANSITION_CAPACITY 16U
+#define POMODORO_TIME_ZONE_MINIMUM_FUTURE_SECONDS \
+    (UINT64_C(365) * 5U * 86400U)
 
 typedef enum {
     POMODORO_MODE_FOCUS = 0,
@@ -50,9 +54,24 @@ typedef struct {
 } pomodoro_settings_t;
 
 typedef struct {
+    uint64_t effective_utc_epoch_seconds;
+    int16_t offset_minutes;
+} pomodoro_utc_offset_transition_t;
+
+typedef struct {
+    bool automatic;
+    char iana_name[POMODORO_TIME_ZONE_NAME_CAPACITY];
+    uint8_t transition_count;
+    uint64_t expires_utc_epoch_seconds;
+    pomodoro_utc_offset_transition_t
+        transitions[POMODORO_TIME_ZONE_TRANSITION_CAPACITY];
+} pomodoro_time_zone_schedule_t;
+
+typedef struct {
     uint32_t version;
     pomodoro_settings_t value;
     uint8_t last_nonzero_volume;
+    pomodoro_time_zone_schedule_t time_zone;
 } pomodoro_persisted_settings_t;
 
 typedef struct {
@@ -79,11 +98,20 @@ typedef struct {
 typedef struct {
     pomodoro_settings_t settings;
     uint8_t last_nonzero_volume;
+    pomodoro_time_zone_schedule_t time_zone;
     pomodoro_snapshot_t timer;
 } pomodoro_model_t;
 
 pomodoro_settings_t pomodoro_default_settings(void);
 bool pomodoro_settings_are_valid(const pomodoro_settings_t *settings);
+bool pomodoro_time_zone_schedule_is_valid(
+    const pomodoro_time_zone_schedule_t *schedule);
+int16_t pomodoro_time_zone_offset_minutes_at(
+    const pomodoro_time_zone_schedule_t *schedule,
+    uint64_t utc_epoch_seconds, int8_t fixed_offset_quarter_hours);
+bool pomodoro_time_zone_schedule_needs_sync(
+    const pomodoro_time_zone_schedule_t *schedule,
+    uint64_t utc_epoch_seconds);
 pomodoro_result_t pomodoro_init(pomodoro_model_t *model,
                                 const pomodoro_settings_t *settings);
 uint32_t pomodoro_duration_seconds(const pomodoro_model_t *model,
