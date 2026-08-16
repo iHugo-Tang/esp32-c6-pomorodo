@@ -2,7 +2,7 @@ idf_component_register(
     SRCS
         "pomodoro_board.c"
         "pomodoro_device_platform.c"
-        "pomodoro_focus_view.c"
+        "pomodoro_main_view.c"
         "pomodoro_nvs_journal.c"
     INCLUDE_DIRS "include"
     REQUIRES

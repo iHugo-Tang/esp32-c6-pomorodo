@@ -27,6 +27,8 @@ static void snapshot_view(pomodoro_application_t *application,
 {
     application->view.mode = application->model.timer.mode;
     application->view.timer_state = application->model.timer.timer_state;
+    application->view.configured_duration_seconds =
+        application->model.timer.configured_duration_seconds;
     application->view.remaining_seconds = time != NULL
         ? pomodoro_remaining_seconds(&application->model, time->epoch_seconds)
         : application->model.timer.remaining_seconds;
@@ -110,6 +112,7 @@ static pomodoro_application_result_t publish_completion(
     const pomodoro_application_time_t *time,
     pomodoro_event_t event)
 {
+    application->view.confirmation = POMODORO_APPLICATION_CONFIRM_NONE;
     if (!pomodoro_statistics_apply(
             &application->statistics,
             &application->model.timer.last_completion,
@@ -134,6 +137,16 @@ static pomodoro_application_result_t publish_completion(
     return audio_played
         ? POMODORO_APPLICATION_OK
         : fail_platform(application, POMODORO_APPLICATION_ERROR_AUDIO);
+}
+
+static pomodoro_application_result_t save_and_render(
+    pomodoro_application_t *application,
+    const pomodoro_application_time_t *time)
+{
+    pomodoro_application_result_t result = save(application);
+    return result == POMODORO_APPLICATION_OK
+        ? render(application, time, POMODORO_EVENT_NONE)
+        : result;
 }
 
 static pomodoro_application_result_t boot(
@@ -192,11 +205,7 @@ static pomodoro_application_result_t start(
     if (pomodoro_start(&application->model, time.epoch_seconds) != POMODORO_OK) {
         return POMODORO_APPLICATION_ERR_INVALID_STATE;
     }
-    result = save(application);
-    if (result != POMODORO_APPLICATION_OK) {
-        return result;
-    }
-    return render(application, &time, POMODORO_EVENT_NONE);
+    return save_and_render(application, &time);
 }
 
 static pomodoro_application_result_t pause_timer(
@@ -215,10 +224,7 @@ static pomodoro_application_result_t pause_timer(
     if (event != POMODORO_EVENT_NONE) {
         return publish_completion(application, &time, event);
     }
-    result = save(application);
-    return result == POMODORO_APPLICATION_OK
-        ? render(application, &time, POMODORO_EVENT_NONE)
-        : result;
+    return save_and_render(application, &time);
 }
 
 static pomodoro_application_result_t resume_timer(
@@ -232,10 +238,7 @@ static pomodoro_application_result_t resume_timer(
     if (pomodoro_resume(&application->model, time.epoch_seconds) != POMODORO_OK) {
         return POMODORO_APPLICATION_ERR_INVALID_STATE;
     }
-    result = save(application);
-    return result == POMODORO_APPLICATION_OK
-        ? render(application, &time, POMODORO_EVENT_NONE)
-        : result;
+    return save_and_render(application, &time);
 }
 
 static pomodoro_application_result_t request_reset(
@@ -266,10 +269,7 @@ static pomodoro_application_result_t confirm_reset(
         return POMODORO_APPLICATION_ERR_INVALID_STATE;
     }
     application->view.confirmation = POMODORO_APPLICATION_CONFIRM_NONE;
-    pomodoro_application_result_t result = save(application);
-    return result == POMODORO_APPLICATION_OK
-        ? render(application, NULL, POMODORO_EVENT_NONE)
-        : result;
+    return save_and_render(application, NULL);
 }
 
 static pomodoro_application_result_t request_mode(
@@ -298,10 +298,7 @@ static pomodoro_application_result_t request_mode(
     if (core_result != POMODORO_OK) {
         return POMODORO_APPLICATION_ERR_INVALID_STATE;
     }
-    pomodoro_application_result_t result = save(application);
-    return result == POMODORO_APPLICATION_OK
-        ? render(application, NULL, POMODORO_EVENT_NONE)
-        : result;
+    return save_and_render(application, NULL);
 }
 
 static pomodoro_application_result_t confirm_mode_switch(
@@ -315,10 +312,7 @@ static pomodoro_application_result_t confirm_mode_switch(
         return POMODORO_APPLICATION_ERR_INVALID_STATE;
     }
     application->view.confirmation = POMODORO_APPLICATION_CONFIRM_NONE;
-    pomodoro_application_result_t result = save(application);
-    return result == POMODORO_APPLICATION_OK
-        ? render(application, NULL, POMODORO_EVENT_NONE)
-        : result;
+    return save_and_render(application, NULL);
 }
 
 static pomodoro_application_result_t tick(
@@ -335,10 +329,7 @@ static pomodoro_application_result_t tick(
             POMODORO_OK) {
             return POMODORO_APPLICATION_ERR_INVALID_STATE;
         }
-        result = save(application);
-        return result == POMODORO_APPLICATION_OK
-            ? render(application, &time, POMODORO_EVENT_NONE)
-            : result;
+        return save_and_render(application, &time);
     }
 
     pomodoro_event_t event = pomodoro_tick(&application->model,
@@ -361,10 +352,7 @@ static pomodoro_application_result_t start_next(
         POMODORO_OK) {
         return POMODORO_APPLICATION_ERR_INVALID_STATE;
     }
-    result = save(application);
-    return result == POMODORO_APPLICATION_OK
-        ? render(application, &time, POMODORO_EVENT_NONE)
-        : result;
+    return save_and_render(application, &time);
 }
 
 static pomodoro_application_result_t cancel_auto_start(
@@ -373,10 +361,10 @@ static pomodoro_application_result_t cancel_auto_start(
     if (pomodoro_cancel_auto_start(&application->model) != POMODORO_OK) {
         return POMODORO_APPLICATION_ERR_INVALID_STATE;
     }
-    pomodoro_application_result_t result = save(application);
-    return result == POMODORO_APPLICATION_OK
-        ? render(application, NULL, POMODORO_EVENT_NONE)
-        : result;
+    if (pomodoro_finish_completion(&application->model) != POMODORO_OK) {
+        return POMODORO_APPLICATION_ERR_INVALID_STATE;
+    }
+    return save_and_render(application, NULL);
 }
 
 static pomodoro_application_result_t not_now(
@@ -385,10 +373,7 @@ static pomodoro_application_result_t not_now(
     if (pomodoro_finish_completion(&application->model) != POMODORO_OK) {
         return POMODORO_APPLICATION_ERR_INVALID_STATE;
     }
-    pomodoro_application_result_t result = save(application);
-    return result == POMODORO_APPLICATION_OK
-        ? render(application, NULL, POMODORO_EVENT_NONE)
-        : result;
+    return save_and_render(application, NULL);
 }
 
 pomodoro_application_result_t pomodoro_application_create(

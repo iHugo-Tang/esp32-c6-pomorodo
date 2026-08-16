@@ -74,6 +74,7 @@ typedef struct {
     pomodoro_mode_t mode;
     pomodoro_timer_state_t timer_state;
     uint32_t remaining_seconds;
+    uint32_t configured_duration_seconds;
     uint8_t set_progress;
     pomodoro_settings_t settings;
     pomodoro_event_t completion_event;

@@ -7,7 +7,7 @@
 #include "esp_lvgl_port.h"
 #include "pomodoro_application.h"
 #include "pomodoro_board.h"
-#include "pomodoro_focus_view.h"
+#include "pomodoro_main_view.h"
 
 typedef struct {
     pomodoro_journal_t journal;
@@ -61,7 +61,7 @@ static bool render_view(void *context, const pomodoro_application_view_t *view)
                  target->last_epoch_seconds, view->remaining_seconds);
         ++target->countdown_log_frames;
     }
-    return pomodoro_focus_view_render(view);
+    return pomodoro_main_view_render(view);
 }
 
 static bool play_completion(void *context, uint8_t volume)
@@ -84,7 +84,7 @@ static void dispatch_action(pomodoro_application_action_t action)
 
 static esp_err_t fail_startup(const char *message, esp_err_t error)
 {
-    pomodoro_focus_view_show_startup_error(message, error);
+    pomodoro_main_view_show_startup_error(message, error);
     return error;
 }
 
@@ -99,9 +99,9 @@ esp_err_t pomodoro_platform_start(void)
     if (result != ESP_OK) {
         return fail_startup("Display initialization failed", result);
     }
-    result = pomodoro_focus_view_create(dispatch_action);
+    result = pomodoro_main_view_create(dispatch_action);
     if (result != ESP_OK) {
-        return fail_startup("Focus view initialization failed", result);
+        return fail_startup("Main view initialization failed", result);
     }
     result = pomodoro_board_initialize_touch();
     if (result != ESP_OK) {
@@ -143,7 +143,7 @@ esp_err_t pomodoro_platform_start(void)
     if (app_result != POMODORO_APPLICATION_OK) {
         return fail_startup("Application boot failed", ESP_FAIL);
     }
-    result = pomodoro_focus_view_start_ticks();
+    result = pomodoro_main_view_start_ticks();
     if (result != ESP_OK) {
         return fail_startup("Countdown tick initialization failed", result);
     }

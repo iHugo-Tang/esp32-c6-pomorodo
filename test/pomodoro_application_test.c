@@ -476,7 +476,7 @@ static void test_active_mode_swipe_requires_confirmation_and_aborts(void)
     pomodoro_application_destroy(application);
 }
 
-static void test_completion_auto_start_can_be_cancelled_or_started_now(void)
+static void test_completion_can_be_started_now(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
@@ -495,16 +495,6 @@ static void test_completion_auto_start_can_be_cancelled_or_started_now(void)
     assert(fake.rendered_view.auto_start_pending);
     assert(fake.rendered_view.auto_start_seconds_remaining == 3U);
 
-    unsigned saves_before_cancel = fake.save_count;
-    assert(pomodoro_application_dispatch(
-               application,
-               POMODORO_APPLICATION_ACTION_CANCEL_AUTO_START) ==
-           POMODORO_APPLICATION_OK);
-    assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
-    assert(!fake.rendered_view.auto_start_pending);
-    assert(fake.rendered_view.settings.auto_start_breaks);
-    assert(fake.save_count == saves_before_cancel + 1U);
-
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_START_NEXT) ==
            POMODORO_APPLICATION_OK);
@@ -512,6 +502,60 @@ static void test_completion_auto_start_can_be_cancelled_or_started_now(void)
     assert(fake.rendered_view.timer_state == POMODORO_TIMER_RUNNING);
     assert(fake.rendered_view.remaining_seconds == 5U * 60U);
     assert(fake.rendered_view.set_progress == 1U);
+    pomodoro_application_destroy(application);
+}
+
+static void test_cancel_auto_start_enters_scheduled_mode_ready(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_epoch_seconds = 100;
+    fake.load_result = POMODORO_APPLICATION_LOAD_EMPTY;
+    pomodoro_application_t *application = boot_application(&fake);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_START) ==
+           POMODORO_APPLICATION_OK);
+    fake.now_epoch_seconds = 1600;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+
+    unsigned saves_before_cancel = fake.save_count;
+    assert(pomodoro_application_dispatch(
+               application,
+               POMODORO_APPLICATION_ACTION_CANCEL_AUTO_START) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.mode == POMODORO_MODE_SHORT_BREAK);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_READY);
+    assert(!fake.rendered_view.auto_start_pending);
+    assert(fake.rendered_view.settings.auto_start_breaks);
+    assert(fake.save_count == saves_before_cancel + 1U);
+    pomodoro_application_destroy(application);
+}
+
+static void test_completion_dismisses_stale_mode_switch_confirmation(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_epoch_seconds = 100;
+    fake.load_result = POMODORO_APPLICATION_LOAD_EMPTY;
+    pomodoro_application_t *application = boot_application(&fake);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_START) ==
+           POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_MODE_NEXT) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.confirmation ==
+           POMODORO_APPLICATION_CONFIRM_MODE_SWITCH);
+
+    fake.now_epoch_seconds = 1600;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
+    assert(fake.rendered_view.confirmation ==
+           POMODORO_APPLICATION_CONFIRM_NONE);
     pomodoro_application_destroy(application);
 }
 
@@ -651,7 +695,9 @@ int main(void)
     test_pause_at_deadline_settles_completion_once();
     test_idle_mode_swipes_do_not_wrap();
     test_active_mode_swipe_requires_confirmation_and_aborts();
-    test_completion_auto_start_can_be_cancelled_or_started_now();
+    test_completion_can_be_started_now();
+    test_cancel_auto_start_enters_scheduled_mode_ready();
+    test_completion_dismisses_stale_mode_switch_confirmation();
     test_auto_start_begins_scheduled_mode_after_three_seconds();
     test_full_set_schedules_three_short_breaks_then_one_long_break();
     test_boot_restarts_completion_countdown_without_offline_chaining();

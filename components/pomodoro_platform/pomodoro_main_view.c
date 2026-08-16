@@ -1,4 +1,4 @@
-#include "pomodoro_focus_view.h"
+#include "pomodoro_main_view.h"
 
 #include <inttypes.h>
 #include <string.h>
@@ -8,7 +8,7 @@
 #include "lvgl.h"
 
 typedef struct {
-    pomodoro_focus_action_handler_t action_handler;
+    pomodoro_main_action_handler_t action_handler;
     pomodoro_application_view_t last_view;
     lv_obj_t *title;
     lv_obj_t *ring;
@@ -22,11 +22,13 @@ typedef struct {
     lv_obj_t *tomato;
     lv_obj_t *cup;
     lv_obj_t *cup_handle;
+    lv_obj_t *cup_steam[2];
     lv_obj_t *completion_title;
     lv_obj_t *completion_body;
     lv_obj_t *completion_countdown;
     lv_obj_t *set_label;
     lv_obj_t *set_markers[4];
+    lv_obj_t *confetti[6];
     lv_obj_t *mode_dots[3];
     lv_obj_t *boundary_feedback;
     lv_obj_t *confirmation_overlay;
@@ -34,10 +36,20 @@ typedef struct {
     lv_obj_t *confirmation_body;
     lv_obj_t *confirmation_button_label;
     lv_timer_t *tick_timer;
-} focus_view_context_t;
+    lv_timer_t *mode_transition_timer;
+    pomodoro_application_action_t pending_mode_action;
+} main_view_context_t;
+
+typedef struct {
+    const char *name;
+    const char *action_name;
+    const char *ready_status;
+    const char *running_status;
+    uint32_t accent;
+} mode_presentation_t;
 
 static const char *TAG = "pomodoro_view";
-static focus_view_context_t view_context;
+static main_view_context_t view_context;
 
 static void dispatch(pomodoro_application_action_t action)
 {
@@ -64,68 +76,46 @@ static const char *application_error_text(pomodoro_application_error_t error)
     }
 }
 
-static const char *mode_name(pomodoro_mode_t mode)
+static mode_presentation_t mode_presentation(pomodoro_mode_t mode)
 {
     switch (mode) {
     case POMODORO_MODE_SHORT_BREAK:
-        return "Short break";
+        return (mode_presentation_t) {
+            .name = "Short break",
+            .action_name = "short break",
+            .ready_status = "Ready for a break",
+            .running_status = "Taking a short break",
+            .accent = 0x4DD17A,
+        };
     case POMODORO_MODE_LONG_BREAK:
-        return "Long break";
+        return (mode_presentation_t) {
+            .name = "Long break",
+            .action_name = "long break",
+            .ready_status = "Ready for a break",
+            .running_status = "Taking a long break",
+            .accent = 0x5B8CFF,
+        };
     default:
-        return "Focus";
+        return (mode_presentation_t) {
+            .name = "Focus",
+            .action_name = "focus",
+            .ready_status = "Ready to focus",
+            .running_status = "Focusing",
+            .accent = 0xFF5C5C,
+        };
     }
 }
 
-static const char *mode_action_name(pomodoro_mode_t mode)
-{
-    switch (mode) {
-    case POMODORO_MODE_SHORT_BREAK:
-        return "short break";
-    case POMODORO_MODE_LONG_BREAK:
-        return "long break";
-    default:
-        return "focus";
-    }
-}
-
-static lv_color_t mode_accent(pomodoro_mode_t mode)
-{
-    switch (mode) {
-    case POMODORO_MODE_SHORT_BREAK:
-        return lv_color_hex(0x4DD17A);
-    case POMODORO_MODE_LONG_BREAK:
-        return lv_color_hex(0x5B8CFF);
-    default:
-        return lv_color_hex(0xFF5C5C);
-    }
-}
-
-static uint32_t configured_duration(const pomodoro_application_view_t *view)
-{
-    switch (view->mode) {
-    case POMODORO_MODE_SHORT_BREAK:
-        return (uint32_t) view->settings.short_break_minutes * 60U;
-    case POMODORO_MODE_LONG_BREAK:
-        return (uint32_t) view->settings.long_break_minutes * 60U;
-    default:
-        return (uint32_t) view->settings.focus_minutes * 60U;
-    }
-}
-
-static const char *timer_status(const pomodoro_application_view_t *view)
+static const char *timer_status(const pomodoro_application_view_t *view,
+                                const mode_presentation_t *presentation)
 {
     if (view->timer_state == POMODORO_TIMER_PAUSED) {
         return "Paused";
     }
     if (view->timer_state == POMODORO_TIMER_READY) {
-        return view->mode == POMODORO_MODE_FOCUS
-            ? "Ready to focus" : "Ready for a break";
+        return presentation->ready_status;
     }
-    if (view->mode == POMODORO_MODE_FOCUS) {
-        return "Focusing";
-    }
-    return view->mode == POMODORO_MODE_SHORT_BREAK
-        ? "Taking a short break" : "Taking a long break";
+    return presentation->running_status;
 }
 
 static void primary_clicked(lv_event_t *event)
@@ -171,6 +161,15 @@ static void confirmation_accepted(lv_event_t *event)
                  : POMODORO_APPLICATION_ACTION_CONFIRM_MODE_SWITCH);
 }
 
+static void mode_transition_finished(lv_timer_t *timer)
+{
+    (void) timer;
+    pomodoro_application_action_t action = view_context.pending_mode_action;
+    view_context.mode_transition_timer = NULL;
+    dispatch(action);
+    lv_obj_fade_in(lv_screen_active(), 60, 0);
+}
+
 static void gesture(lv_event_t *event)
 {
     (void) event;
@@ -178,14 +177,35 @@ static void gesture(lv_event_t *event)
     if (indev == NULL || view_context.last_view.timer_state ==
                              POMODORO_TIMER_COMPLETION ||
         view_context.last_view.confirmation !=
-            POMODORO_APPLICATION_CONFIRM_NONE) {
+            POMODORO_APPLICATION_CONFIRM_NONE ||
+        view_context.mode_transition_timer != NULL) {
         return;
     }
     lv_dir_t direction = lv_indev_get_gesture_dir(indev);
     if (direction == LV_DIR_LEFT) {
-        dispatch(POMODORO_APPLICATION_ACTION_MODE_NEXT);
+        view_context.pending_mode_action = POMODORO_APPLICATION_ACTION_MODE_NEXT;
+        if (view_context.last_view.mode == POMODORO_MODE_LONG_BREAK) {
+            dispatch(view_context.pending_mode_action);
+            return;
+        }
     } else if (direction == LV_DIR_RIGHT) {
-        dispatch(POMODORO_APPLICATION_ACTION_MODE_PREVIOUS);
+        view_context.pending_mode_action =
+            POMODORO_APPLICATION_ACTION_MODE_PREVIOUS;
+        if (view_context.last_view.mode == POMODORO_MODE_FOCUS) {
+            dispatch(view_context.pending_mode_action);
+            return;
+        }
+    } else {
+        return;
+    }
+    lv_obj_fade_out(lv_screen_active(), 60, 0);
+    view_context.mode_transition_timer = lv_timer_create(
+        mode_transition_finished, 60, NULL);
+    if (view_context.mode_transition_timer != NULL) {
+        lv_timer_set_repeat_count(view_context.mode_transition_timer, 1);
+    } else {
+        dispatch(view_context.pending_mode_action);
+        lv_obj_fade_in(lv_screen_active(), 60, 0);
     }
 }
 
@@ -224,6 +244,43 @@ static void create_completion_visuals(lv_obj_t *parent)
     lv_obj_set_style_bg_color(leaf, lv_color_hex(0x4DD17A), 0);
     lv_obj_set_style_radius(leaf, 6, 0);
     lv_obj_align(leaf, LV_ALIGN_TOP_MID, 0, -2);
+    for (uint8_t index = 0; index < 2U; index++) {
+        lv_obj_t *eye = lv_obj_create(view_context.tomato);
+        lv_obj_remove_style_all(eye);
+        lv_obj_set_size(eye, 6, 6);
+        lv_obj_set_style_bg_opa(eye, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(eye, lv_color_hex(0x542020), 0);
+        lv_obj_set_style_radius(eye, LV_RADIUS_CIRCLE, 0);
+        lv_obj_align(eye, LV_ALIGN_CENTER, index == 0U ? -13 : 13, -3);
+    }
+    lv_obj_t *smile = lv_arc_create(view_context.tomato);
+    lv_obj_set_size(smile, 30, 18);
+    lv_arc_set_bg_angles(smile, 20, 160);
+    lv_obj_remove_style(smile, NULL, LV_PART_INDICATOR);
+    lv_obj_remove_style(smile, NULL, LV_PART_KNOB);
+    lv_obj_set_style_arc_width(smile, 3, LV_PART_MAIN);
+    lv_obj_set_style_arc_color(smile, lv_color_hex(0x542020), LV_PART_MAIN);
+    lv_obj_remove_flag(smile, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_align(smile, LV_ALIGN_CENTER, 0, 13);
+
+    static const int16_t confetti_x[6] = {-72, -54, -42, 44, 58, 72};
+    static const int16_t confetti_y[6] = {8, 48, -2, -4, 45, 14};
+    static const uint32_t confetti_color[6] = {
+        0xFFD166, 0x5B8CFF, 0x4DD17A, 0xFFD166, 0xFF5C5C, 0x5B8CFF,
+    };
+    for (uint8_t index = 0; index < 6U; index++) {
+        lv_obj_t *piece = lv_obj_create(parent);
+        view_context.confetti[index] = piece;
+        lv_obj_remove_style_all(piece);
+        lv_obj_set_size(piece, 7, 12);
+        lv_obj_set_style_bg_opa(piece, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(piece,
+                                  lv_color_hex(confetti_color[index]), 0);
+        lv_obj_set_style_radius(piece, 3, 0);
+        lv_obj_align(piece, LV_ALIGN_TOP_MID, confetti_x[index],
+                     confetti_y[index]);
+        lv_obj_add_flag(piece, LV_OBJ_FLAG_HIDDEN);
+    }
 
     view_context.cup = lv_obj_create(parent);
     lv_obj_remove_style_all(view_context.cup);
@@ -241,10 +298,20 @@ static void create_completion_visuals(lv_obj_t *parent)
     lv_obj_set_style_bg_opa(view_context.cup_handle, LV_OPA_TRANSP, 0);
     lv_obj_set_style_radius(view_context.cup_handle, 12, 0);
     lv_obj_align(view_context.cup_handle, LV_ALIGN_TOP_MID, 43, 22);
+    for (uint8_t index = 0; index < 2U; index++) {
+        lv_obj_t *steam = lv_obj_create(parent);
+        view_context.cup_steam[index] = steam;
+        lv_obj_remove_style_all(steam);
+        lv_obj_set_size(steam, 5, 18);
+        lv_obj_set_style_bg_opa(steam, LV_OPA_60, 0);
+        lv_obj_set_style_bg_color(steam, lv_color_hex(0xAAB1BE), 0);
+        lv_obj_set_style_radius(steam, 3, 0);
+        lv_obj_align(steam, LV_ALIGN_TOP_MID, index == 0U ? -18 : 12, -12);
+    }
 }
 
-esp_err_t pomodoro_focus_view_create(
-    pomodoro_focus_action_handler_t action_handler)
+esp_err_t pomodoro_main_view_create(
+    pomodoro_main_action_handler_t action_handler)
 {
     if (action_handler == NULL || !lvgl_port_lock(1000)) {
         return action_handler == NULL ? ESP_ERR_INVALID_ARG : ESP_ERR_TIMEOUT;
@@ -322,6 +389,13 @@ esp_err_t pomodoro_focus_view_create(
         lv_obj_set_style_radius(marker, LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_border_width(marker, 2, 0);
         lv_obj_align(marker, LV_ALIGN_BOTTOM_MID, index * 24 - 5, -48);
+        lv_obj_t *marker_leaf = lv_obj_create(marker);
+        lv_obj_remove_style_all(marker_leaf);
+        lv_obj_set_size(marker_leaf, 7, 4);
+        lv_obj_set_style_bg_opa(marker_leaf, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(marker_leaf, lv_color_hex(0x4DD17A), 0);
+        lv_obj_set_style_radius(marker_leaf, 2, 0);
+        lv_obj_align(marker_leaf, LV_ALIGN_TOP_MID, 0, -2);
     }
     for (uint8_t index = 0; index < 3U; index++) {
         lv_obj_t *dot = lv_obj_create(screen);
@@ -395,6 +469,7 @@ static void render_progress(const pomodoro_application_view_t *view,
 static void render_completion(const pomodoro_application_view_t *view)
 {
     bool focus = view->mode == POMODORO_MODE_FOCUS;
+    mode_presentation_t scheduled = mode_presentation(view->scheduled_mode);
     lv_obj_remove_flag(view_context.completion_group, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(view_context.ring, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(view_context.time, LV_OBJ_FLAG_HIDDEN);
@@ -403,34 +478,48 @@ static void render_completion(const pomodoro_application_view_t *view)
         lv_obj_remove_flag(view_context.tomato, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(view_context.cup, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(view_context.cup_handle, LV_OBJ_FLAG_HIDDEN);
+        for (uint8_t index = 0; index < 2U; index++) {
+            lv_obj_add_flag(view_context.cup_steam[index], LV_OBJ_FLAG_HIDDEN);
+        }
         lv_label_set_text(view_context.completion_title, "Focus complete");
         lv_label_set_text(view_context.completion_body, "Great work! +1");
     } else {
         lv_obj_add_flag(view_context.tomato, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(view_context.cup, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(view_context.cup_handle, LV_OBJ_FLAG_HIDDEN);
+        for (uint8_t index = 0; index < 2U; index++) {
+            lv_obj_remove_flag(view_context.cup_steam[index],
+                               LV_OBJ_FLAG_HIDDEN);
+        }
         lv_label_set_text(view_context.completion_title, "Break over");
         lv_label_set_text(view_context.completion_body,
                           "Ready for another focus?");
     }
+    for (uint8_t index = 0; index < 6U; index++) {
+        if (focus && view->completion_event == POMODORO_EVENT_FOCUS_COMPLETE) {
+            lv_obj_remove_flag(view_context.confetti[index], LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(view_context.confetti[index], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
     if (view->auto_start_pending) {
         lv_label_set_text_fmt(view_context.completion_countdown,
                               "%s starts in %u",
-                              mode_name(view->scheduled_mode),
+                              scheduled.name,
                               view->auto_start_seconds_remaining);
         lv_label_set_text(view_context.primary_label, "Start now");
         lv_label_set_text(view_context.secondary_label, "Cancel auto-start");
     } else {
         lv_label_set_text(view_context.completion_countdown, "");
         lv_label_set_text_fmt(view_context.primary_label, "Start %s",
-                              mode_action_name(view->scheduled_mode));
+                              scheduled.action_name);
         lv_label_set_text(view_context.secondary_label, "Not now");
     }
     lv_obj_remove_flag(view_context.primary_button, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(view_context.secondary_button, LV_OBJ_FLAG_HIDDEN);
 }
 
-bool pomodoro_focus_view_render(const pomodoro_application_view_t *view)
+bool pomodoro_main_view_render(const pomodoro_application_view_t *view)
 {
     if (view == NULL || view_context.time == NULL) {
         return false;
@@ -446,8 +535,9 @@ bool pomodoro_focus_view_render(const pomodoro_application_view_t *view)
         return true;
     }
 
-    lv_color_t accent = mode_accent(view->mode);
-    lv_label_set_text(view_context.title, mode_name(view->mode));
+    mode_presentation_t presentation = mode_presentation(view->mode);
+    lv_color_t accent = lv_color_hex(presentation.accent);
+    lv_label_set_text(view_context.title, presentation.name);
     lv_obj_set_style_arc_color(view_context.ring, accent, LV_PART_INDICATOR);
     lv_obj_set_style_bg_color(view_context.primary_button, accent, 0);
     render_progress(view, accent);
@@ -469,10 +559,11 @@ bool pomodoro_focus_view_render(const pomodoro_application_view_t *view)
         uint32_t seconds = view->remaining_seconds % 60U;
         lv_label_set_text_fmt(view_context.time, "%02" PRIu32 ":%02" PRIu32,
                               minutes, seconds);
-        uint32_t duration = configured_duration(view);
+        uint32_t duration = view->configured_duration_seconds;
         lv_arc_set_value(view_context.ring, duration == 0U ? 0 :
             (int32_t) ((uint64_t) view->remaining_seconds * 1000U / duration));
-        lv_label_set_text(view_context.status, timer_status(view));
+        lv_label_set_text(view_context.status,
+                          timer_status(view, &presentation));
         lv_label_set_text(view_context.primary_label,
                           view->timer_state == POMODORO_TIMER_RUNNING ? "Pause" :
                           view->timer_state == POMODORO_TIMER_PAUSED ? "Resume" :
@@ -500,7 +591,7 @@ bool pomodoro_focus_view_render(const pomodoro_application_view_t *view)
     return true;
 }
 
-esp_err_t pomodoro_focus_view_start_ticks(void)
+esp_err_t pomodoro_main_view_start_ticks(void)
 {
     if (!lvgl_port_lock(1000)) {
         return ESP_ERR_TIMEOUT;
@@ -510,8 +601,8 @@ esp_err_t pomodoro_focus_view_start_ticks(void)
     return view_context.tick_timer != NULL ? ESP_OK : ESP_ERR_NO_MEM;
 }
 
-void pomodoro_focus_view_show_startup_error(const char *message,
-                                            esp_err_t error)
+void pomodoro_main_view_show_startup_error(const char *message,
+                                           esp_err_t error)
 {
     ESP_LOGE(TAG, "%s: %s", message, esp_err_to_name(error));
     if (view_context.status != NULL && lvgl_port_lock(1000)) {
