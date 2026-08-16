@@ -6,7 +6,7 @@
 
 **Status:** ready-for-agent
 
-- [ ] Exact Waveshare-validated LVGL 9, `esp_lvgl_port`, and board-support revisions are pinned for ESP-IDF 5.5.2.
+- [ ] Exact Waveshare-validated LVGL 9, `esp_lvgl_port`, and board-support revisions are pinned for ESP-IDF `>=5.5.2,<5.6`.
 - [ ] The display uses small partial draw buffers and never allocates a full RGB565 framebuffer or full-screen double buffers.
 - [ ] With a valid RTC, the real device renders the English Focus Ready screen and starts only from the explicit Start button.
 - [ ] The ring and `MM:SS` update once per second from an absolute deadline with visible error no greater than one second.

@@ -5,14 +5,14 @@ Design and implement a single-purpose Pomodoro timer for the Waveshare ESP32-C6-
 ## Target hardware and framework
 
 - Board: Waveshare ESP32-C6-Touch-AMOLED-2.16.
-- Display: 480×480 AMOLED using CO5300.
-- Touch: CST9220 capacitive touch.
+- Display: 480×480 AMOLED using SH8601 over QSPI.
+- Touch: CST9217 capacitive touch.
 - Clock: battery-backed PCF85063 RTC.
 - Audio: ES8311 codec and onboard speaker path.
 - Power: AXP2101 PMIC and optional lithium battery.
 - Storage: 16MB internal Flash; do not depend on MicroSD.
 - Memory constraint: 512KB HP SRAM and no PSRAM.
-- Framework: ESP-IDF 5.5.2 with a pinned, Waveshare-validated LVGL 9 version and `esp_lvgl_port`/Waveshare BSP drivers.
+- Framework: ESP-IDF `>=5.5.2,<5.6` with pinned, Waveshare-validated LVGL 9, `esp_lvgl_port`, and Waveshare driver versions.
 - Use small partial LVGL draw buffers. Never allocate a full RGB565 framebuffer or full-screen double buffers.
 - Bluetooth, Thread, Zigbee, microphones, ES7210, IMU, and MicroSD remain uninitialized. Wi-Fi is enabled only for an explicit iPhone time-sync session.
 

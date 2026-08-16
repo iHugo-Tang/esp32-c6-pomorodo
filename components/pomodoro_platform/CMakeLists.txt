@@ -1,5 +1,19 @@
 idf_component_register(
-    SRCS "pomodoro_platform_stub.c" "pomodoro_nvs_journal.c"
+    SRCS
+        "pomodoro_board.c"
+        "pomodoro_device_platform.c"
+        "pomodoro_focus_view.c"
+        "pomodoro_nvs_journal.c"
     INCLUDE_DIRS "include"
-    REQUIRES pomodoro_core nvs_flash
+    REQUIRES
+        pomodoro_app
+        pomodoro_core
+        nvs_flash
+        esp_driver_i2c
+        esp_driver_spi
+        esp_lcd
+        esp_lvgl_port
+        esp_lcd_sh8601
+        esp_lcd_touch_cst9217
+        lvgl
 )

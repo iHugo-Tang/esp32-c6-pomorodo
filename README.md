@@ -10,7 +10,7 @@ The repository currently contains the first executable slice of the product:
 - a CRC-checked atomic persistence payload for settings, timer, and statistics;
 - a dual-slot NVS journal that keeps the previous state recoverable across a
   torn write;
-- an ESP-IDF 5.5.2 application entry point;
+- an ESP-IDF 5.5.x application entry point (5.5.2 or newer, below 5.6);
 - persistence and hardware service boundaries ready for NVS, RTC, display,
   touch, audio, and power implementations;
 - default ESP32-C6 memory/flash configuration and a data-preserving partition
@@ -19,10 +19,12 @@ The repository currently contains the first executable slice of the product:
   recovery rules.
 
 The product specification lives in [`docs/POMODORO_APP_PROMPT.md`](docs/POMODORO_APP_PROMPT.md).
+The successful ESP32-C6 serial communication check is recorded in
+[`docs/HARDWARE_CONNECTION_TEST.md`](docs/HARDWARE_CONNECTION_TEST.md).
 
 ## Requirements
 
-- ESP-IDF 5.5.2 for firmware builds
+- ESP-IDF `>=5.5.2,<5.6` for firmware builds
 - CMake 3.16+ and a C11 compiler for native tests
 
 ## Run native tests
@@ -35,14 +37,14 @@ ctest --test-dir build/host --output-on-failure
 
 ## Build firmware
 
-From an ESP-IDF 5.5.2 shell:
+From an ESP-IDF 5.5.x shell (5.5.2 or newer, below 5.6):
 
 ```sh
 idf.py set-target esp32c6
 idf.py build
 ```
 
-The first hardware integration should implement the interfaces declared in
-`components/pomodoro_platform/include/pomodoro_platform.h`, then add the pinned
-Waveshare-validated LVGL 9 and `esp_lvgl_port` versions. Those versions are not
-guessed here because the product decision requires hardware validation.
+The target integration uses the interfaces declared in
+`components/pomodoro_platform/include/pomodoro_platform.h` with exact,
+Waveshare-validated LVGL 9, `esp_lvgl_port`, display, and touch component
+versions recorded in `main/idf_component.yml` and `dependencies.lock`.
