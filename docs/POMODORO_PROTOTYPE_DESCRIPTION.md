@@ -224,7 +224,7 @@ flowchart LR
 - 圆环内不显示状态描述文案。
 - 圆环完整显示，倒计时为配置值。
 - 主按钮：`Start`。
-- Focus 未开始时的 `Start` 使用 160×48 的紧凑按钮，与 Focus Running 的 `Pause` 保持一致。
+- 三种 Mode 未开始时的 `Start` 均使用 160×48 的紧凑按钮。
 - 圆环和数字不响应点击；只有按钮可启动。
 - 左右滑动直接切换模式，不出现确认。
 
@@ -234,7 +234,7 @@ flowchart LR
 - 圆环从 12 点方向顺时针消退，彩色区域代表剩余时间。
 - Space Mono 倒计时每秒更新。
 - 主按钮：`Pause`。
-- Focus 倒计时中的 `Pause` 使用 160×48 的紧凑按钮，完整落在圆环内；不改变 Paused 状态的 Resume/Reset 布局。
+- 三种 Mode 倒计时中的 `Pause` 均使用 160×48 的紧凑按钮，完整落在圆环内；不改变 Paused 状态的 Resume/Reset 布局。
 - 左右滑动切换模式前显示 D01。
 - 进入 Settings/Statistics 时计时继续；若后台完成，播放声音并自动返回完成态。
 
