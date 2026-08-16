@@ -53,7 +53,7 @@ Center:
 
 - A CircularTimer containing a monospaced, tabular `MM:SS` countdown and the primary action button; do not show a state-description label inside the ring.
 - Only the explicit button triggers Start/Pause/Resume; tapping the ring or digits does nothing.
-- When paused, hide the countdown and show compact `Resume` plus a lower-emphasis `Reset` action, both inside the ring.
+- When paused, hide the countdown and show compact `Resume` plus a lower-emphasis `Reset` action as one vertically centered group inside the ring.
 - Reset requires a confirmation dialog and creates an Aborted Timer.
 - The colored ring represents remaining time. It starts full and disappears clockwise from 12 o’clock, revealing a muted track.
 - The ring updates once per second. Paused state stops progress and may use a low-frequency, low-amplitude breathing effect.

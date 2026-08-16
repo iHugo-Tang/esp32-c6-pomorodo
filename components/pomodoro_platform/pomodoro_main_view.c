@@ -602,10 +602,10 @@ bool pomodoro_main_view_render(const pomodoro_application_view_t *view)
         if (view->timer_state == POMODORO_TIMER_PAUSED) {
             lv_obj_add_flag(view_context.time, LV_OBJ_FLAG_HIDDEN);
             lv_obj_set_size(view_context.primary_button, 160, 48);
-            lv_obj_align(view_context.primary_button, LV_ALIGN_CENTER, 0, -16);
+            lv_obj_align(view_context.primary_button, LV_ALIGN_CENTER, 0, -29);
             lv_label_set_text(view_context.secondary_label, "Reset");
             lv_obj_set_size(view_context.secondary_button, 120, 40);
-            lv_obj_align(view_context.secondary_button, LV_ALIGN_CENTER, 0, 46);
+            lv_obj_align(view_context.secondary_button, LV_ALIGN_CENTER, 0, 33);
             lv_obj_remove_flag(view_context.secondary_button,
                                LV_OBJ_FLAG_HIDDEN);
         } else {
