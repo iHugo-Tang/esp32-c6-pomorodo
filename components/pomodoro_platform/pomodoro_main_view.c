@@ -411,6 +411,8 @@ esp_err_t pomodoro_main_view_create(
 
     view_context.completion_group = lv_obj_create(screen);
     lv_obj_remove_style_all(view_context.completion_group);
+    lv_obj_remove_flag(view_context.completion_group, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(view_context.completion_group, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(view_context.completion_group, 360, 250);
     lv_obj_align(view_context.completion_group, LV_ALIGN_CENTER, 0, -22);
     create_completion_visuals(view_context.completion_group);
