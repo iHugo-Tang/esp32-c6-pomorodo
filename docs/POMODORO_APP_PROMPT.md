@@ -51,9 +51,9 @@ Top app bar:
 
 Center:
 
-- A CircularTimer containing the state label, Space Mono `MM:SS`, and the primary action button.
+- A CircularTimer containing a monospaced, tabular `MM:SS` countdown and the primary action button; do not show a state-description label inside the ring.
 - Only the explicit button triggers Start/Pause/Resume; tapping the ring or digits does nothing.
-- When paused, show `Resume` plus a lower-emphasis `Reset` text action.
+- When paused, hide the countdown and show compact `Resume` plus a lower-emphasis `Reset` action, both inside the ring.
 - Reset requires a confirmation dialog and creates an Aborted Timer.
 - The colored ring represents remaining time. It starts full and disappears clockwise from 12 o’clock, revealing a muted track.
 - The ring updates once per second. Paused state stops progress and may use a low-frequency, low-amplitude breathing effect.
@@ -68,9 +68,9 @@ Bottom:
 
 Each timer has these states:
 
-- Ready: show configured duration and `Start`.
-- Running: calculate remaining time from an absolute deadline; show `Pause`.
-- Paused: preserve remaining time; show `Resume` and `Reset`.
+- Ready: show configured duration and `Start`, without a state-description label.
+- Running: calculate remaining time from an absolute deadline; show `Pause`, without a state-description label.
+- Paused: preserve but hide remaining time; show compact `Resume` and `Reset` controls inside the ring.
 - Completion transition: replace the central timer content with the completion illustration, copy, and actions. Do not use a floating Dialog for normal completion.
 
 Switching modes:

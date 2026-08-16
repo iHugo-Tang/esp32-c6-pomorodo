@@ -221,7 +221,7 @@ flowchart LR
 
 ### 8.3 Ready 状态
 
-- 状态文案：`Ready to focus` 或 `Ready for a break`。
+- 圆环内不显示状态描述文案。
 - 圆环完整显示，倒计时为配置值。
 - 主按钮：`Start`。
 - 圆环和数字不响应点击；只有按钮可启动。
@@ -229,7 +229,7 @@ flowchart LR
 
 ### 8.4 Running 状态
 
-- 状态文案：`Focusing`、`Taking a short break` 或 `Taking a long break`。
+- 圆环内不显示状态描述文案。
 - 圆环从 12 点方向顺时针消退，彩色区域代表剩余时间。
 - Space Mono 倒计时每秒更新。
 - 主按钮：`Pause`。
@@ -238,10 +238,10 @@ flowchart LR
 
 ### 8.5 Paused 状态
 
-- 状态文案：`Paused`。
+- 不显示状态描述文案，并隐藏暂停时的倒计时。
 - 圆环停止，可使用低幅度呼吸效果。
-- 主按钮：`Resume`。
-- 次操作：`Reset`，使用低强调文字按钮。
+- 圆环内使用较小的 `Resume` 主按钮。
+- 圆环内显示较小、低强调的 `Reset` 次操作。
 - 切换模式显示 D01；Reset 显示 D02。
 
 ### 8.6 模式滑动
