@@ -31,17 +31,13 @@ enum {
     COMPLETION_CONFETTI_COUNT =
         sizeof(completion_confetti) / sizeof(completion_confetti[0]),
     TIMER_RING_CENTER_Y = -18,
+    TIMER_TIME_CENTER_Y = -54,
+    TIMER_PRIMARY_CENTER_Y = 19,
     COMPLETION_MANUAL_GROUP_Y = 12,
     COMPLETION_MANUAL_PRIMARY_Y = 83,
     COMPLETION_AUTO_GROUP_Y = -11,
     COMPLETION_AUTO_PRIMARY_Y = 59,
     COMPLETION_AUTO_SECONDARY_Y = 112,
-    TIMER_RING_SIZE = 288,
-    TIMER_RING_CENTER = TIMER_RING_SIZE / 2,
-    TIMER_RING_RADIUS = 137,
-    TIMER_RING_WIDTH = 13,
-    TIMER_RING_STEP_DEGREES = 5,
-    TIMER_RING_POINT_COUNT = 360 / TIMER_RING_STEP_DEGREES + 1,
     SETTINGS_SECTION_TEXT_COLOR = 0xAAB1BE,
     SETTINGS_ITEM_TEXT_COLOR = 0xF5F7FA,
     SETTINGS_VALUE_TEXT_COLOR = 0x9FC2FF,
@@ -102,9 +98,6 @@ typedef struct {
     pomodoro_application_view_t last_view;
     lv_obj_t *title;
     lv_obj_t *ring;
-    lv_obj_t *ring_progress;
-    lv_point_precise_t ring_points[TIMER_RING_POINT_COUNT];
-    lv_point_precise_t ring_progress_points[TIMER_RING_POINT_COUNT + 1];
     lv_obj_t *time;
     lv_obj_t *status;
     lv_obj_t *primary_button;
@@ -187,36 +180,6 @@ typedef struct {
 static const char *TAG = "pomodoro_view";
 static device_view_context_t view_context;
 static lv_font_t countdown_font;
-
-static lv_point_precise_t timer_ring_point(int32_t angle)
-{
-    return (lv_point_precise_t) {
-        .x = TIMER_RING_CENTER +
-            lv_trigo_cos((int16_t) (angle - 90)) * TIMER_RING_RADIUS /
-                LV_TRIGO_SIN_MAX,
-        .y = TIMER_RING_CENTER +
-            lv_trigo_sin((int16_t) (angle - 90)) * TIMER_RING_RADIUS /
-                LV_TRIGO_SIN_MAX,
-    };
-}
-
-static void set_timer_ring_value(uint16_t value)
-{
-    memcpy(view_context.ring_progress_points, view_context.ring_points,
-           sizeof(view_context.ring_points));
-    uint16_t bounded_value = value > 1000U ? 1000U : value;
-    int32_t angle = ((int32_t) bounded_value * 360 + 500) / 1000;
-    uint32_t complete_segments =
-        (uint32_t) angle / TIMER_RING_STEP_DEGREES;
-    uint32_t point_count = complete_segments + 1U;
-    if (angle % TIMER_RING_STEP_DEGREES != 0) {
-        view_context.ring_progress_points[point_count] =
-            timer_ring_point(angle);
-        point_count++;
-    }
-    lv_line_set_points(view_context.ring_progress,
-                       view_context.ring_progress_points, point_count);
-}
 
 static bool countdown_get_glyph_dsc(const lv_font_t *font,
                                     lv_font_glyph_dsc_t *glyph,
@@ -717,35 +680,18 @@ esp_err_t pomodoro_device_view_create(
                                 LV_TEXT_ALIGN_RIGHT, 0);
     lv_obj_align(view_context.top_power_status, LV_ALIGN_TOP_RIGHT, -18, 28);
 
-    view_context.ring = lv_obj_create(screen);
-    lv_obj_remove_style_all(view_context.ring);
-    lv_obj_set_size(view_context.ring, TIMER_RING_SIZE, TIMER_RING_SIZE);
+    view_context.ring = lv_arc_create(screen);
+    lv_obj_set_size(view_context.ring, 288, 288);
     lv_obj_align(view_context.ring, LV_ALIGN_CENTER, 0, TIMER_RING_CENTER_Y);
+    lv_arc_set_rotation(view_context.ring, 270);
+    lv_arc_set_bg_angles(view_context.ring, 0, 360);
+    lv_arc_set_range(view_context.ring, 0, 1000);
+    lv_obj_remove_style(view_context.ring, NULL, LV_PART_KNOB);
     lv_obj_remove_flag(view_context.ring, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_remove_flag(view_context.ring, LV_OBJ_FLAG_SCROLLABLE);
-    for (uint32_t index = 0; index < TIMER_RING_POINT_COUNT; index++) {
-        view_context.ring_points[index] = timer_ring_point(
-            (int32_t) index * TIMER_RING_STEP_DEGREES);
-        view_context.ring_progress_points[index] =
-            view_context.ring_points[index];
-    }
-    lv_obj_t *ring_background = lv_line_create(view_context.ring);
-    lv_obj_set_size(ring_background, TIMER_RING_SIZE, TIMER_RING_SIZE);
-    lv_obj_set_pos(ring_background, 0, 0);
-    lv_line_set_points(ring_background, view_context.ring_points,
-                       TIMER_RING_POINT_COUNT);
-    lv_obj_set_style_line_width(ring_background, TIMER_RING_WIDTH, 0);
-    lv_obj_set_style_line_color(ring_background, lv_color_hex(0x252A33), 0);
-    lv_obj_set_style_line_rounded(ring_background, false, 0);
-    view_context.ring_progress = lv_line_create(view_context.ring);
-    lv_obj_set_size(view_context.ring_progress, TIMER_RING_SIZE,
-                    TIMER_RING_SIZE);
-    lv_obj_set_pos(view_context.ring_progress, 0, 0);
-    lv_line_set_points(view_context.ring_progress,
-                       view_context.ring_progress_points, 1);
-    lv_obj_set_style_line_width(view_context.ring_progress, TIMER_RING_WIDTH,
-                                0);
-    lv_obj_set_style_line_rounded(view_context.ring_progress, false, 0);
+    lv_obj_set_style_arc_width(view_context.ring, 13, LV_PART_MAIN);
+    lv_obj_set_style_arc_color(view_context.ring, lv_color_hex(0x252A33),
+                               LV_PART_MAIN);
+    lv_obj_set_style_arc_width(view_context.ring, 13, LV_PART_INDICATOR);
 
     view_context.status = lv_label_create(screen);
     lv_obj_set_style_text_color(view_context.status, lv_color_hex(0xAAB1BE), 0);
@@ -756,7 +702,7 @@ esp_err_t pomodoro_device_view_create(
     countdown_font.get_glyph_dsc = countdown_get_glyph_dsc;
     countdown_font.kerning = LV_FONT_KERNING_NONE;
     lv_obj_set_style_text_font(view_context.time, &countdown_font, 0);
-    lv_obj_align(view_context.time, LV_ALIGN_CENTER, 0, -25);
+    lv_obj_align(view_context.time, LV_ALIGN_CENTER, 0, TIMER_TIME_CENTER_Y);
 
     view_context.primary_button = make_text_button(screen, primary_clicked,
                                                    "Start");
@@ -764,7 +710,8 @@ esp_err_t pomodoro_device_view_create(
     lv_obj_set_style_text_font(view_context.primary_label,
                                &lv_font_montserrat_24, 0);
     lv_obj_set_size(view_context.primary_button, 220, 56);
-    lv_obj_align(view_context.primary_button, LV_ALIGN_CENTER, 0, 48);
+    lv_obj_align(view_context.primary_button, LV_ALIGN_CENTER, 0,
+                 TIMER_PRIMARY_CENTER_Y);
     view_context.secondary_button = make_text_button(screen, secondary_clicked,
                                                      "Reset");
     view_context.secondary_label = lv_obj_get_child(view_context.secondary_button, 0);
@@ -1779,7 +1726,7 @@ bool pomodoro_device_view_render(const pomodoro_application_view_t *view)
         lv_label_set_text(view_context.status, application_error_text(view->error));
         lv_obj_add_flag(view_context.primary_button, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(view_context.secondary_button, LV_OBJ_FLAG_HIDDEN);
-        set_timer_ring_value(0);
+        lv_arc_set_value(view_context.ring, 0);
         lv_label_set_text(view_context.time, "--:--");
         ESP_LOGE(TAG, "Application platform error: %d", view->error);
         return true;
@@ -1796,7 +1743,7 @@ bool pomodoro_device_view_render(const pomodoro_application_view_t *view)
     mode_presentation_t presentation = mode_presentation(view->mode);
     lv_color_t accent = lv_color_hex(presentation.accent);
     lv_label_set_text(view_context.title, presentation.name);
-    lv_obj_set_style_line_color(view_context.ring_progress, accent, 0);
+    lv_obj_set_style_arc_color(view_context.ring, accent, LV_PART_INDICATOR);
     lv_obj_set_style_bg_color(view_context.primary_button, accent, 0);
     render_progress(view, accent);
     if (view->mode_boundary_feedback) {
@@ -1818,9 +1765,8 @@ bool pomodoro_device_view_render(const pomodoro_application_view_t *view)
         lv_label_set_text_fmt(view_context.time, "%02" PRIu32 ":%02" PRIu32,
                               minutes, seconds);
         uint32_t duration = view->configured_duration_seconds;
-        set_timer_ring_value(duration == 0U ? 0 :
-            (uint16_t) ((uint64_t) view->remaining_seconds * 1000U /
-                        duration));
+        lv_arc_set_value(view_context.ring, duration == 0U ? 0 :
+            (int32_t) ((uint64_t) view->remaining_seconds * 1000U / duration));
         lv_label_set_text(view_context.primary_label,
                           view->timer_state == POMODORO_TIMER_RUNNING ? "Pause" :
                           view->timer_state == POMODORO_TIMER_PAUSED ? "Resume" :
@@ -1839,7 +1785,8 @@ bool pomodoro_device_view_render(const pomodoro_application_view_t *view)
                                LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_set_size(view_context.primary_button, 160, 48);
-            lv_obj_align(view_context.primary_button, LV_ALIGN_CENTER, 0, 48);
+            lv_obj_align(view_context.primary_button, LV_ALIGN_CENTER, 0,
+                         TIMER_PRIMARY_CENTER_Y);
         }
     }
 
@@ -1867,7 +1814,7 @@ void pomodoro_device_view_show_startup_error(const char *message,
         lv_label_set_text(view_context.time, "--:--");
         lv_obj_add_flag(view_context.primary_button, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(view_context.secondary_button, LV_OBJ_FLAG_HIDDEN);
-        set_timer_ring_value(0);
+        lv_arc_set_value(view_context.ring, 0);
         lvgl_port_unlock();
     }
 }
