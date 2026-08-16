@@ -11,7 +11,10 @@ void app_main(void)
     pomodoro_model_t model;
     pomodoro_settings_t settings = pomodoro_default_settings();
 
-    pomodoro_init(&model, &settings);
+    if (pomodoro_init(&model, &settings) != POMODORO_OK) {
+        ESP_LOGE(TAG, "Default settings are invalid");
+        return;
+    }
 
     const pomodoro_platform_t *platform = pomodoro_platform_get();
     if (platform == NULL) {

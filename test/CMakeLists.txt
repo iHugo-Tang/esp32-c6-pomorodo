@@ -7,6 +7,8 @@ add_executable(
     pomodoro_core_test
     pomodoro_core_test.c
     ../components/pomodoro_core/pomodoro_core.c
+    ../components/pomodoro_core/pomodoro_statistics.c
+    ../components/pomodoro_core/pomodoro_persistence.c
 )
 target_include_directories(
     pomodoro_core_test PRIVATE

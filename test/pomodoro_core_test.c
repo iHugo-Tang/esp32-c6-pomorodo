@@ -1,4 +1,6 @@
 #include "pomodoro_core.h"
+#include "pomodoro_statistics.h"
+#include "pomodoro_persistence.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -7,10 +9,10 @@ static pomodoro_model_t fresh_model(void)
 {
     pomodoro_model_t model;
     pomodoro_settings_t settings = pomodoro_default_settings();
-    settings.focus_minutes = 1;
+    settings.focus_minutes = 5;
     settings.short_break_minutes = 1;
-    settings.long_break_minutes = 1;
-    pomodoro_init(&model, &settings);
+    settings.long_break_minutes = 5;
+    assert(pomodoro_init(&model, &settings) == POMODORO_OK);
     return model;
 }
 
@@ -19,11 +21,10 @@ static void test_focus_completes_once(void)
     pomodoro_model_t model = fresh_model();
 
     assert(pomodoro_start(&model, 100) == POMODORO_OK);
-    assert(pomodoro_tick(&model, 159) == POMODORO_EVENT_NONE);
-    assert(pomodoro_tick(&model, 160) == POMODORO_EVENT_FOCUS_COMPLETE);
+    assert(pomodoro_tick(&model, 399) == POMODORO_EVENT_NONE);
+    assert(pomodoro_tick(&model, 400) == POMODORO_EVENT_FOCUS_COMPLETE);
     assert(pomodoro_tick(&model, 200) == POMODORO_EVENT_NONE);
-    assert(model.today_completed_pomodoros == 1);
-    assert(model.today_completed_focus_seconds == 60);
+    assert(model.timer.last_completion.configured_duration_seconds == 300);
     assert(model.timer.set_progress == 1);
 }
 
@@ -33,11 +34,11 @@ static void test_pause_resume_excludes_paused_time(void)
 
     assert(pomodoro_start(&model, 100) == POMODORO_OK);
     assert(pomodoro_pause(&model, 120) == POMODORO_OK);
-    assert(model.timer.remaining_seconds == 40);
+    assert(model.timer.remaining_seconds == 280);
     assert(pomodoro_tick(&model, 500) == POMODORO_EVENT_NONE);
     assert(pomodoro_resume(&model, 500) == POMODORO_OK);
-    assert(pomodoro_tick(&model, 539) == POMODORO_EVENT_NONE);
-    assert(pomodoro_tick(&model, 540) == POMODORO_EVENT_FOCUS_COMPLETE);
+    assert(pomodoro_tick(&model, 779) == POMODORO_EVENT_NONE);
+    assert(pomodoro_tick(&model, 780) == POMODORO_EVENT_FOCUS_COMPLETE);
 }
 
 static void test_abort_does_not_count(void)
@@ -49,7 +50,6 @@ static void test_abort_does_not_count(void)
            POMODORO_ERR_CONFIRMATION_REQUIRED);
     assert(pomodoro_confirm_mode_switch(&model, POMODORO_MODE_SHORT_BREAK) ==
            POMODORO_OK);
-    assert(model.today_completed_pomodoros == 0);
     assert(model.timer.set_progress == 0);
     assert(model.timer.timer_state == POMODORO_TIMER_READY);
 }
@@ -57,7 +57,7 @@ static void test_abort_does_not_count(void)
 static void complete_focus(pomodoro_model_t *model, uint64_t start)
 {
     assert(pomodoro_start(model, start) == POMODORO_OK);
-    assert(pomodoro_tick(model, start + 60) == POMODORO_EVENT_FOCUS_COMPLETE);
+    assert(pomodoro_tick(model, start + 300) == POMODORO_EVENT_FOCUS_COMPLETE);
 }
 
 static void test_fourth_focus_schedules_long_break(void)
@@ -84,7 +84,7 @@ static void test_long_break_resets_set(void)
 
     assert(pomodoro_request_mode(&model, POMODORO_MODE_LONG_BREAK) == POMODORO_OK);
     assert(pomodoro_start(&model, 10) == POMODORO_OK);
-    assert(pomodoro_tick(&model, 70) == POMODORO_EVENT_BREAK_COMPLETE);
+    assert(pomodoro_tick(&model, 310) == POMODORO_EVENT_BREAK_COMPLETE);
     assert(model.timer.set_progress == 0);
 }
 
@@ -106,15 +106,89 @@ static void test_restore_settles_expired_timer_exactly_once(void)
     pomodoro_event_t event = POMODORO_EVENT_NONE;
 
     assert(pomodoro_start(&before, 100) == POMODORO_OK);
-    assert(pomodoro_restore(&after, &before.timer, 200, &event) == POMODORO_OK);
+    assert(pomodoro_restore(&after, &before.timer, 500, &event) == POMODORO_OK);
     assert(event == POMODORO_EVENT_FOCUS_COMPLETE);
-    assert(after.today_completed_pomodoros == 1);
+    assert(after.timer.last_completion.settlement_sequence == 1);
 
     pomodoro_snapshot_t settled = after.timer;
     pomodoro_model_t restored_again = fresh_model();
-    assert(pomodoro_restore(&restored_again, &settled, 300, &event) == POMODORO_OK);
+    assert(pomodoro_restore(&restored_again, &settled, 600, &event) == POMODORO_OK);
     assert(event == POMODORO_EVENT_NONE);
-    assert(restored_again.today_completed_pomodoros == 0);
+    assert(restored_again.timer.last_completion.settlement_sequence == 1);
+}
+
+static void test_pause_at_deadline_settles_immediately(void)
+{
+    pomodoro_model_t model = fresh_model();
+
+    assert(pomodoro_start(&model, 100) == POMODORO_OK);
+    assert(pomodoro_pause(&model, 400) == POMODORO_OK);
+    assert(model.timer.timer_state == POMODORO_TIMER_COMPLETION);
+    assert(model.timer.set_progress == 1);
+}
+
+static void test_settings_validation(void)
+{
+    pomodoro_model_t model;
+    pomodoro_settings_t settings = pomodoro_default_settings();
+
+    settings.volume = 6;
+    assert(pomodoro_init(&model, &settings) == POMODORO_ERR_INVALID_ARGUMENT);
+    settings = pomodoro_default_settings();
+    settings.focus_minutes = 4;
+    assert(pomodoro_init(&model, &settings) == POMODORO_ERR_INVALID_ARGUMENT);
+}
+
+static void test_auto_start_can_be_due_or_cancelled(void)
+{
+    pomodoro_model_t model = fresh_model();
+
+    complete_focus(&model, 100);
+    assert(!pomodoro_auto_start_is_due(&model, 402));
+    assert(pomodoro_auto_start_is_due(&model, 403));
+    assert(pomodoro_cancel_auto_start(&model) == POMODORO_OK);
+    assert(!pomodoro_auto_start_is_due(&model, 500));
+    assert(model.settings.auto_start_breaks);
+}
+
+static void test_statistics_are_deduplicated_and_pending_is_assigned(void)
+{
+    pomodoro_statistics_store_t statistics;
+    pomodoro_model_t model = fresh_model();
+    pomodoro_date_t date = {.year = 2026, .month = 8, .day = 15};
+
+    pomodoro_statistics_init(&statistics);
+    complete_focus(&model, 100);
+    assert(pomodoro_statistics_apply(&statistics, &model.timer.last_completion,
+                                     false, (pomodoro_date_t) {0}));
+    assert(statistics.pending_completed_pomodoros == 1);
+    assert(!pomodoro_statistics_apply(&statistics, &model.timer.last_completion,
+                                      false, (pomodoro_date_t) {0}));
+    assert(statistics.pending_completed_pomodoros == 1);
+    assert(pomodoro_statistics_assign_pending(&statistics, date));
+    const pomodoro_daily_statistics_t *day = pomodoro_statistics_find(&statistics, date);
+    assert(day != NULL);
+    assert(day->completed_pomodoros == 1);
+    assert(day->completed_focus_seconds == 300);
+}
+
+static void test_persistence_detects_corruption(void)
+{
+    pomodoro_model_t model = fresh_model();
+    pomodoro_model_t restored;
+    pomodoro_statistics_store_t statistics;
+    pomodoro_statistics_store_t restored_statistics;
+    pomodoro_persisted_state_t persisted;
+
+    pomodoro_statistics_init(&statistics);
+    assert(pomodoro_persistence_pack(&persisted, &model, &statistics));
+    assert(pomodoro_persistence_unpack(&persisted, &restored,
+                                       &restored_statistics));
+    assert(restored.settings.daily_goal == model.settings.daily_goal);
+
+    persisted.timer.remaining_seconds++;
+    assert(!pomodoro_persistence_unpack(&persisted, &restored,
+                                        &restored_statistics));
 }
 
 int main(void)
@@ -126,6 +200,11 @@ int main(void)
     test_long_break_resets_set();
     test_skipping_long_break_resets_on_next_focus_start();
     test_restore_settles_expired_timer_exactly_once();
+    test_pause_at_deadline_settles_immediately();
+    test_settings_validation();
+    test_auto_start_can_be_due_or_cancelled();
+    test_statistics_are_deduplicated_and_pending_is_assigned();
+    test_persistence_detects_corruption();
     puts("pomodoro_core_test: all tests passed");
     return 0;
 }

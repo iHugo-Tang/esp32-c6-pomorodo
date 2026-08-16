@@ -17,9 +17,29 @@ static void prepare_ready(pomodoro_model_t *model, pomodoro_mode_t mode)
     model->timer.remaining_seconds = model->timer.configured_duration_seconds;
     model->timer.deadline_epoch_seconds = 0;
     model->timer.settled = false;
+    model->timer.completion_transition_deadline_epoch_seconds = 0;
+    model->timer.auto_start_cancelled = false;
 }
 
-static pomodoro_event_t settle(pomodoro_model_t *model)
+static pomodoro_mode_t next_mode(const pomodoro_model_t *model)
+{
+    if (model->timer.mode != POMODORO_MODE_FOCUS) {
+        return POMODORO_MODE_FOCUS;
+    }
+    return model->timer.set_progress == 4U
+        ? POMODORO_MODE_LONG_BREAK
+        : POMODORO_MODE_SHORT_BREAK;
+}
+
+static bool auto_start_enabled(const pomodoro_model_t *model)
+{
+    return model->timer.mode == POMODORO_MODE_FOCUS
+        ? model->settings.auto_start_breaks
+        : model->settings.auto_start_focus;
+}
+
+static pomodoro_event_t settle(pomodoro_model_t *model,
+                               uint64_t now_epoch_seconds)
 {
     if (model->timer.settled) {
         return POMODORO_EVENT_NONE;
@@ -29,14 +49,19 @@ static pomodoro_event_t settle(pomodoro_model_t *model)
     model->timer.settlement_sequence++;
     model->timer.remaining_seconds = 0;
     model->timer.timer_state = POMODORO_TIMER_COMPLETION;
+    model->timer.completion_transition_deadline_epoch_seconds =
+        auto_start_enabled(model) ? now_epoch_seconds + 3U : 0U;
+    model->timer.auto_start_cancelled = false;
+    model->timer.last_completion = (pomodoro_completion_record_t) {
+        .settlement_sequence = model->timer.settlement_sequence,
+        .mode = model->timer.mode,
+        .configured_duration_seconds = model->timer.configured_duration_seconds,
+    };
 
     if (model->timer.mode == POMODORO_MODE_FOCUS) {
         if (model->timer.set_progress < 4U) {
             model->timer.set_progress++;
         }
-        model->today_completed_pomodoros++;
-        model->today_completed_focus_seconds +=
-            model->timer.configured_duration_seconds;
         return POMODORO_EVENT_FOCUS_COMPLETE;
     }
 
@@ -60,17 +85,39 @@ pomodoro_settings_t pomodoro_default_settings(void)
     };
 }
 
-void pomodoro_init(pomodoro_model_t *model,
-                   const pomodoro_settings_t *settings)
+bool pomodoro_settings_are_valid(const pomodoro_settings_t *settings)
+{
+    return settings != NULL &&
+           settings->focus_minutes >= 5U && settings->focus_minutes <= 60U &&
+           settings->short_break_minutes >= 1U &&
+           settings->short_break_minutes <= 30U &&
+           settings->long_break_minutes >= 5U &&
+           settings->long_break_minutes <= 60U &&
+           settings->daily_goal >= 1U && settings->daily_goal <= 16U &&
+           settings->volume <= 5U &&
+           settings->brightness_percent >= 10U &&
+           settings->brightness_percent <= 100U &&
+           settings->brightness_percent % 5U == 0U;
+}
+
+pomodoro_result_t pomodoro_init(pomodoro_model_t *model,
+                                const pomodoro_settings_t *settings)
 {
     if (model == NULL) {
-        return;
+        return POMODORO_ERR_INVALID_ARGUMENT;
     }
 
+    pomodoro_settings_t resolved = settings != NULL
+        ? *settings
+        : pomodoro_default_settings();
+    if (!pomodoro_settings_are_valid(&resolved)) {
+        return POMODORO_ERR_INVALID_ARGUMENT;
+    }
     memset(model, 0, sizeof(*model));
-    model->settings = settings != NULL ? *settings : pomodoro_default_settings();
+    model->settings = resolved;
     model->timer.version = POMODORO_SNAPSHOT_VERSION;
     prepare_ready(model, POMODORO_MODE_FOCUS);
+    return POMODORO_OK;
 }
 
 uint32_t pomodoro_duration_seconds(const pomodoro_model_t *model,
@@ -144,6 +191,10 @@ pomodoro_result_t pomodoro_pause(pomodoro_model_t *model,
     }
     if (model->timer.timer_state != POMODORO_TIMER_RUNNING) {
         return POMODORO_ERR_INVALID_STATE;
+    }
+    if (now_epoch_seconds >= model->timer.deadline_epoch_seconds) {
+        (void) settle(model, now_epoch_seconds);
+        return POMODORO_OK;
     }
 
     model->timer.remaining_seconds =
@@ -226,7 +277,7 @@ pomodoro_event_t pomodoro_tick(pomodoro_model_t *model,
             pomodoro_remaining_seconds(model, now_epoch_seconds);
         return POMODORO_EVENT_NONE;
     }
-    return settle(model);
+    return settle(model, now_epoch_seconds);
 }
 
 pomodoro_result_t pomodoro_finish_completion(pomodoro_model_t *model)
@@ -238,14 +289,46 @@ pomodoro_result_t pomodoro_finish_completion(pomodoro_model_t *model)
         return POMODORO_ERR_INVALID_STATE;
     }
 
-    pomodoro_mode_t next = POMODORO_MODE_FOCUS;
-    if (model->timer.mode == POMODORO_MODE_FOCUS) {
-        next = model->timer.set_progress == 4U
-            ? POMODORO_MODE_LONG_BREAK
-            : POMODORO_MODE_SHORT_BREAK;
-    }
-    prepare_ready(model, next);
+    prepare_ready(model, next_mode(model));
     return POMODORO_OK;
+}
+
+pomodoro_result_t pomodoro_cancel_auto_start(pomodoro_model_t *model)
+{
+    if (model == NULL) {
+        return POMODORO_ERR_INVALID_ARGUMENT;
+    }
+    if (model->timer.timer_state != POMODORO_TIMER_COMPLETION ||
+        model->timer.completion_transition_deadline_epoch_seconds == 0U) {
+        return POMODORO_ERR_INVALID_STATE;
+    }
+    model->timer.auto_start_cancelled = true;
+    model->timer.completion_transition_deadline_epoch_seconds = 0;
+    return POMODORO_OK;
+}
+
+bool pomodoro_auto_start_is_due(const pomodoro_model_t *model,
+                                uint64_t now_epoch_seconds)
+{
+    return model != NULL &&
+           model->timer.timer_state == POMODORO_TIMER_COMPLETION &&
+           !model->timer.auto_start_cancelled &&
+           model->timer.completion_transition_deadline_epoch_seconds != 0U &&
+           now_epoch_seconds >=
+               model->timer.completion_transition_deadline_epoch_seconds;
+}
+
+pomodoro_result_t pomodoro_start_next(pomodoro_model_t *model,
+                                      uint64_t now_epoch_seconds)
+{
+    if (model == NULL) {
+        return POMODORO_ERR_INVALID_ARGUMENT;
+    }
+    if (model->timer.timer_state != POMODORO_TIMER_COMPLETION) {
+        return POMODORO_ERR_INVALID_STATE;
+    }
+    prepare_ready(model, next_mode(model));
+    return pomodoro_start(model, now_epoch_seconds);
 }
 
 pomodoro_result_t pomodoro_restore(pomodoro_model_t *model,
@@ -267,7 +350,7 @@ pomodoro_result_t pomodoro_restore(pomodoro_model_t *model,
     }
     if (snapshot->timer_state == POMODORO_TIMER_RUNNING &&
         now_epoch_seconds >= snapshot->deadline_epoch_seconds) {
-        pomodoro_event_t settled_event = settle(model);
+        pomodoro_event_t settled_event = settle(model, now_epoch_seconds);
         if (event != NULL) {
             *event = settled_event;
         }

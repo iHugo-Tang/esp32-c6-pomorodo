@@ -2,8 +2,9 @@
 #define POMODORO_PLATFORM_H
 
 #include <stdbool.h>
-#include <stddef.h>
 #include <stdint.h>
+
+#include "pomodoro_persistence.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -16,8 +17,8 @@ typedef struct {
 } pomodoro_clock_service_t;
 
 typedef struct {
-    bool (*load)(void *context, const char *key, void *value, size_t size);
-    bool (*save)(void *context, const char *key, const void *value, size_t size);
+    bool (*load_state)(void *context, pomodoro_persisted_state_t *state);
+    bool (*save_state)(void *context, const pomodoro_persisted_state_t *state);
 } pomodoro_storage_service_t;
 
 typedef struct {
