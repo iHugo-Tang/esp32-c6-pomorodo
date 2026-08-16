@@ -423,6 +423,8 @@ esp_err_t pomodoro_main_view_create(
     view_context.completion_body = lv_label_create(view_context.completion_group);
     lv_obj_set_style_text_color(view_context.completion_body,
                                 lv_color_hex(0xAAB1BE), 0);
+    lv_obj_set_style_text_align(view_context.completion_body,
+                                LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(view_context.completion_body, LV_ALIGN_TOP_MID, 0, 118);
     view_context.completion_countdown = lv_label_create(
         view_context.completion_group);
@@ -554,7 +556,10 @@ static void render_completion(const pomodoro_application_view_t *view)
             lv_obj_add_flag(view_context.cup_steam[index], LV_OBJ_FLAG_HIDDEN);
         }
         lv_label_set_text(view_context.completion_title, "Focus complete");
-        lv_label_set_text(view_context.completion_body, "Great work! +1");
+        lv_label_set_text(view_context.completion_body,
+                          view->daily_goal_reached
+                              ? "Great work! +1\nDaily goal reached!"
+                              : "Great work! +1");
     } else {
         lv_obj_add_flag(view_context.tomato, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(view_context.cup, LV_OBJ_FLAG_HIDDEN);
@@ -568,12 +573,18 @@ static void render_completion(const pomodoro_application_view_t *view)
                           "Ready for another focus?");
     }
     for (uint8_t index = 0; index < COMPLETION_CONFETTI_COUNT; index++) {
-        if (focus && view->completion_event == POMODORO_EVENT_FOCUS_COMPLETE) {
+        if (view->daily_goal_reached) {
             lv_obj_remove_flag(view_context.confetti[index], LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(view_context.confetti[index], LV_OBJ_FLAG_HIDDEN);
         }
     }
+    lv_obj_align(view_context.completion_title, LV_ALIGN_TOP_MID, 0,
+                 view->daily_goal_reached ? 74 : 82);
+    lv_obj_align(view_context.completion_body, LV_ALIGN_TOP_MID, 0,
+                 view->daily_goal_reached ? 108 : 118);
+    lv_obj_align(view_context.completion_countdown, LV_ALIGN_TOP_MID, 0,
+                 view->daily_goal_reached ? 154 : 150);
     if (view->auto_start_pending) {
         lv_obj_align(view_context.completion_group, LV_ALIGN_CENTER, 0,
                      COMPLETION_AUTO_GROUP_Y);

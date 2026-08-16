@@ -9,8 +9,17 @@ struct pomodoro_application {
     pomodoro_model_t model;
     pomodoro_statistics_store_t statistics;
     pomodoro_application_view_t view;
+    bool daily_goal_reached_for_completion;
     bool booted;
 };
+
+static uint16_t completed_pomodoros_on(
+    const pomodoro_statistics_store_t *statistics, pomodoro_date_t date)
+{
+    const pomodoro_daily_statistics_t *day =
+        pomodoro_statistics_find(statistics, date);
+    return day != NULL ? day->completed_pomodoros : 0U;
+}
 
 static bool platform_is_valid(const pomodoro_application_platform_t *platform)
 {
@@ -35,6 +44,11 @@ static void snapshot_view(pomodoro_application_t *application,
     application->view.set_progress = application->model.timer.set_progress;
     application->view.settings = application->model.settings;
     application->view.completion_event = completion_event;
+    if (application->model.timer.timer_state != POMODORO_TIMER_COMPLETION) {
+        application->daily_goal_reached_for_completion = false;
+    }
+    application->view.daily_goal_reached =
+        application->daily_goal_reached_for_completion;
     application->view.scheduled_mode =
         pomodoro_scheduled_next_mode(&application->model);
     application->view.auto_start_pending =
@@ -113,12 +127,20 @@ static pomodoro_application_result_t publish_completion(
     pomodoro_event_t event)
 {
     application->view.confirmation = POMODORO_APPLICATION_CONFIRM_NONE;
+    uint16_t completed_before = time->rtc_is_valid
+        ? completed_pomodoros_on(&application->statistics, time->local_date)
+        : 0U;
+    bool reaches_daily_goal =
+        event == POMODORO_EVENT_FOCUS_COMPLETE && time->rtc_is_valid &&
+        completed_before < application->model.settings.daily_goal &&
+        completed_before + 1U >= application->model.settings.daily_goal;
     if (!pomodoro_statistics_apply(
             &application->statistics,
             &application->model.timer.last_completion,
             time->rtc_is_valid, time->local_date)) {
         return POMODORO_APPLICATION_ERR_INVALID_STATE;
     }
+    application->daily_goal_reached_for_completion = reaches_daily_goal;
     pomodoro_application_result_t result = save(application);
     if (result != POMODORO_APPLICATION_OK) {
         return result;
@@ -180,6 +202,18 @@ static pomodoro_application_result_t boot(
                     POMODORO_OK || ignored_event != POMODORO_EVENT_NONE) {
                 return POMODORO_APPLICATION_ERR_INVALID_STATE;
             }
+            const pomodoro_daily_statistics_t *today = time.rtc_is_valid
+                ? pomodoro_statistics_find(&application->statistics,
+                                           time.local_date)
+                : NULL;
+            application->daily_goal_reached_for_completion =
+                application->model.timer.last_completion.mode ==
+                    POMODORO_MODE_FOCUS &&
+                application->model.timer.last_completion.settlement_sequence ==
+                    application->statistics.last_applied_settlement_sequence &&
+                today != NULL &&
+                today->completed_pomodoros ==
+                    application->model.settings.daily_goal;
         }
     } else {
         pomodoro_settings_t settings = pomodoro_default_settings();

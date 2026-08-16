@@ -173,6 +173,7 @@ static void test_start_and_deadline_emit_one_focus_completion(void)
     assert(fake.break_completion_event_count == 0);
     assert(fake.rendered_view.completion_event ==
            POMODORO_EVENT_FOCUS_COMPLETE);
+    assert(!fake.rendered_view.daily_goal_reached);
 
     fake.now_epoch_seconds = 1700;
     assert(pomodoro_application_dispatch(
@@ -185,6 +186,47 @@ static void test_start_and_deadline_emit_one_focus_completion(void)
     assert(fake.break_audio_count == 0);
     assert(fake.focus_completion_event_count == 1);
     assert(fake.rendered_view.completion_event == POMODORO_EVENT_NONE);
+    pomodoro_application_destroy(application);
+}
+
+static void test_daily_goal_celebration_is_exposed_until_completion_resolves(void)
+{
+    fake_platform_t fake;
+    pomodoro_model_t model;
+    pomodoro_statistics_store_t statistics;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_epoch_seconds = 100;
+    fake.load_result = POMODORO_APPLICATION_LOAD_LOADED;
+    pomodoro_settings_t settings = pomodoro_default_settings();
+    settings.daily_goal = 1;
+    settings.auto_start_breaks = false;
+    assert(pomodoro_init(&model, &settings) == POMODORO_OK);
+    pomodoro_statistics_init(&statistics);
+    assert(pomodoro_persistence_pack(&fake.persisted, &model, &statistics));
+
+    pomodoro_application_t *application = boot_application(&fake);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_START) ==
+           POMODORO_APPLICATION_OK);
+    fake.now_epoch_seconds = 1600;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
+    assert(fake.rendered_view.daily_goal_reached);
+
+    fake.now_epoch_seconds = 1601;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
+    assert(fake.rendered_view.daily_goal_reached);
+
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_START_NEXT) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.mode == POMODORO_MODE_SHORT_BREAK);
+    assert(!fake.rendered_view.daily_goal_reached);
     pomodoro_application_destroy(application);
 }
 
@@ -687,6 +729,7 @@ int main(void)
 {
     test_boot_without_saved_state_shows_default_focus_ready();
     test_start_and_deadline_emit_one_focus_completion();
+    test_daily_goal_celebration_is_exposed_until_completion_resolves();
     test_save_failure_exposes_error_and_current_timer_state();
     test_boot_platform_failures_are_visible();
     test_boot_with_saved_state_uses_persisted_settings();

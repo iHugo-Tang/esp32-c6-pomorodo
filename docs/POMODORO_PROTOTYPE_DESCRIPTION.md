@@ -261,7 +261,7 @@ flowchart LR
 ### UI 元素
 
 1. 小型微笑番茄插画。
-2. 少量彩带；约 1 秒停止。
+2. 普通 Focus complete 不显示彩纸；仅首次达到 Daily Goal 时显示少量彩纸。
 3. 标题：`Focus complete`。
 4. 正文：`Great work! +1`，旁边使用番茄图标而非 Emoji 字符。
 5. 若首次达到 Daily Goal，追加 `Daily goal reached!`。

@@ -118,9 +118,9 @@ When auto-start is off:
 
 Completion visuals:
 
-- Focus: a small smiling tomato illustration, limited confetti, `Focus complete`, `Great work! +1`.
+- Focus: a small smiling tomato illustration, no confetti, `Focus complete`, `Great work! +1`.
 - Break: a small steaming cup illustration, `Break over`, `Ready for another focus?`.
-- On the first Pomodoro that reaches the Daily Goal, add `Daily goal reached!` and slightly richer confetti. Do not create a second modal or repeat the extra celebration for later Pomodoros.
+- On the first Pomodoro that reaches the Daily Goal, add `Daily goal reached!` and limited confetti. Do not create a second modal or repeat the extra celebration for later Pomodoros.
 - Completion graphics are flat, rounded, app-owned vector/bitmap assets on transparent backgrounds. Avoid photos, 3D rendering, brands, and Emoji.
 
 ## Navigation and Android-style behavior

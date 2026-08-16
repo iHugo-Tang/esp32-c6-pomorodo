@@ -78,6 +78,7 @@ typedef struct {
     uint8_t set_progress;
     pomodoro_settings_t settings;
     pomodoro_event_t completion_event;
+    bool daily_goal_reached;
     pomodoro_application_confirmation_t confirmation;
     pomodoro_mode_t pending_mode;
     bool mode_boundary_feedback;
