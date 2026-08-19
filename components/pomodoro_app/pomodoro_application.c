@@ -1203,6 +1203,8 @@ pomodoro_application_result_t pomodoro_application_dispatch(
                 application->model.settings.volume;
             application->model.settings.volume = 0U;
         }
+        application->volume_feedback_deadline_epoch_seconds =
+            application->last_time.epoch_seconds + 2U;
         return save_and_render(application, &application->last_time);
     }
     if (action == POMODORO_APPLICATION_ACTION_TOGGLE_DISPLAY) {

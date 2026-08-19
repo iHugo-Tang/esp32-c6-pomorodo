@@ -102,11 +102,11 @@ flowchart LR
 高度建议 56–64 px，内容置于安全区内。
 
 - 主屏左侧：模式图标 + `Focus`、`Short break` 或 `Long break`。
-- 主屏右侧，从左到右：Battery、Sound、Statistics、Settings。
-- Battery 为状态元素，不表现成普通按钮；Sound、Statistics、Settings 使用 48×48 px IconButton 触控区。
+- 主屏右侧，从左到右：Battery、Statistics、Settings。
+- Battery 为状态元素，不表现成普通按钮；Statistics、Settings 使用 48×48 px IconButton 触控区。
 - 子页面左侧：Back IconButton + 页面标题。
 - 子页面支持左边缘右滑返回；手势起点位于左侧 32 px，提交距离约 72 px。
-- 完成态三秒自动开始倒计时期间，顶部交互暂时禁用。
+- 完成态三秒自动开始倒计时期间，顶部交互与右下角 Sound 按钮暂时禁用。
 
 ### 4.2 颜色与状态
 
@@ -214,11 +214,12 @@ flowchart LR
 
 ### 8.1 共同布局
 
-1. 顶部栏：Mode + Battery + Sound + Statistics + Settings。
+1. 顶部栏：Mode + Battery + Statistics + Settings。
 2. 中央约 300 px CircularTimer。
 3. 圆环内从上到下：状态文案、`MM:SS`、主按钮；Paused 时增加 Reset 文本操作。
 4. 底部第一行：`Set N/4` + 4 个番茄轮廓标记。
 5. 底部第二行：三个不可点击的模式分页点。
+6. 右下角 48×48 px Sound IconButton，距边缘至少 24 px 安全边距。
 
 ### 8.2 Mode 视觉变体
 
@@ -261,6 +262,16 @@ flowchart LR
 - 向左进入下一项，向右返回上一项。
 - 不首尾循环；边界处使用轻微回弹或短位移反馈。
 - 由于无 PSRAM，达到手势阈值后使用约 120 ms 的黑色遮罩淡入/淡出，不改变根 screen 的透明度，也不绘制全屏跟手动画。
+
+### 8.7 Sound 按钮
+
+- 固定于主屏右下角，48×48 px，边缘安全边距至少 24 px。
+- 音量非零显示扬声器图标，静音显示静音图标。
+- Ready、Running、Paused 与完成态均可见；非 Main 页面与平台错误状态隐藏。
+- 点击切换声音：静音或恢复最后一个非零音量，并显示 O01 Volume overlay 两秒。
+- 不暂停或干扰计时；声音关闭不改变完成态的视觉反馈。
+- 三秒自动开始倒计时期间按钮禁用；模态确认遮罩显示期间不可点击。
+- 与 Settings 的 Sound switch、实体音量键共享同一声音状态，重启后保留。
 
 ## 9. S11 — Focus complete
 
@@ -366,7 +377,7 @@ flowchart LR
 
 #### Sound
 
-- `Sound` — Switch，与顶部快捷键同步，默认 On。
+- `Sound` — Switch，与 Main 右下角 Sound 按钮同步，默认 On。
 - `Volume` — 只读值，例如 `3/5`。
 - 辅助文案：`Use the side buttons to adjust volume.`
 
@@ -466,14 +477,14 @@ flowchart LR
 
 ### 入口
 
-- 正常运行时按 `+/KEY` 或 `BOOT/-`。
+- 正常运行时按 `+/KEY` 或 `BOOT/-`，或点击 Main 右下角 Sound 按钮。
 
 ### UI 元素
 
 - 屏幕上方或中央偏上显示小型 Raised Surface。
 - 扬声器图标 + 5 段音量条 + 数字，例如 `3/5`。
-- 音量 0 显示静音图标，并同步顶部 Sound 状态。
-- 约 1.5 秒无继续按键后淡出。
+- 音量 0 显示静音图标，并同步 Main Sound 按钮状态。
+- 约两秒无继续操作后自动消失。
 - 覆盖层不暂停计时、不截断完成态声音之外的流程。
 
 ## 17. O02 — Battery low message
@@ -514,12 +525,12 @@ flowchart LR
 - Ready 的模式滑动不显示 Dialog。
 - Paused 才出现 Reset，且必须经过 D02。
 - 模式分页点不可点击。
-- 自动开始三秒期间禁用顶部导航和模式滑动。
+- 自动开始三秒期间禁用顶部导航、模式滑动和 Sound 按钮。
 - `Cancel auto-start` 不改变 Settings 中的开关。
 - 第四个 Focus 完成显示 4/4；Long break 完成显示 0/4。
 - 在 4/4 跳过 Long break 并开始 Focus 时，开始瞬间显示 0/4。
 - Settings/Stats 打开时 Timer 继续运行，完成后自动返回 Main 完成态。
-- 实体音量键在所有非启动阶段都可调节音量；PWR 短按只控制屏幕睡眠/唤醒。
+- 实体音量键在所有非启动阶段都可调节音量，Main Sound 按钮与 Settings Sound switch 保持同步；PWR 短按只控制屏幕睡眠/唤醒。
 - 所有页面覆盖变暗、熄屏、首次触摸只唤醒和 AMOLED 像素偏移说明。
 - Main、菜单、Statistics、Settings、Numeric Stepper、Dialog 与覆盖层在四个 UI Orientation 下保持可读且触摸位置正确。
 - 旋转期间页面、滚动位置、Dialog 和 Timer 状态不变；进行中的触摸不会被中途旋转打断。

@@ -1136,16 +1136,23 @@ static void test_volume_buttons_and_sound_toggle_persist_last_nonzero_volume(voi
     fake_enable_journal(&fake);
     pomodoro_application_t *application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_START) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_RUNNING);
+    assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_VOLUME_UP) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.settings.volume == 4U);
     assert(fake.rendered_view.last_nonzero_volume == 4U);
     assert(fake.rendered_view.volume_feedback_visible);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_RUNNING);
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TOGGLE_SOUND) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.settings.volume == 0U);
     assert(fake.rendered_view.last_nonzero_volume == 4U);
+    assert(fake.rendered_view.volume_feedback_visible);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_RUNNING);
     pomodoro_application_destroy(application);
 
     application = boot_application(&fake);
@@ -1155,7 +1162,8 @@ static void test_volume_buttons_and_sound_toggle_persist_last_nonzero_volume(voi
                application, POMODORO_APPLICATION_ACTION_TOGGLE_SOUND) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.settings.volume == 4U);
-    fake.now_epoch_seconds += 3U;
+    assert(fake.rendered_view.volume_feedback_visible);
+    fake.now_epoch_seconds += 2U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);

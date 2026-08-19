@@ -47,8 +47,7 @@ The main timer screen is centered, has no scrolling, and respects a minimum 24px
 Top app bar:
 
 - Left: current mode icon and mode name.
-- Right: battery/power state, Sound shortcut, Statistics icon, Settings icon.
-- The Sound shortcut and Settings Sound switch control the same state.
+- Right: battery/power state, Statistics icon, Settings icon.
 
 Center:
 
@@ -64,6 +63,15 @@ Bottom:
 - First row: `Set N/4` plus four tomato outline markers. Completed markers are filled with the Focus accent.
 - Second row: three non-interactive mode pagination dots.
 - Pagination dots are display-only and cannot be tapped.
+
+Sound button:
+
+- A fixed 48×48 Sound button sits in the bottom-right corner with at least a 24px safe margin.
+- It shows a speaker icon when sound is on and a mute icon when muted.
+- It stays visible in Ready, Running, Paused, and Completion; it is hidden on other pages and in platform error states.
+- Tapping it toggles sound, restoring the last non-zero volume when enabling, persists the change, and keeps the Settings Sound switch and physical volume buttons synchronized.
+- A tap shows the two-second volume overlay and never pauses or disturbs the timer; sound off leaves completion visual feedback intact.
+- It is disabled during the three-second automatic-start countdown and cannot be activated through a blocking confirmation dialog.
 
 ## Timer state machine
 
@@ -154,6 +162,7 @@ Sections, in order:
    - Auto-start focus
 4. Sound
    - Sound switch
+   - The Sound switch and the Main Sound button control the same state.
    - Current volume, for example `3/5`
    - `Use the side buttons to adjust volume`
 5. Display
@@ -257,9 +266,9 @@ RTC failure:
 - `+/KEY`: increase prompt volume.
 - `BOOT/-`: decrease prompt volume during normal runtime; preserve its bootloader/download behavior during startup.
 - Volume range 0–5, default 3. Persist the last volume.
-- Volume 0 is muted and synchronizes the Sound icon/switch.
+- Volume 0 is muted and synchronizes the Sound icon, switch, and Main button.
 - Sound toggling restores the last non-zero volume.
-- Show a temporary on-screen volume overlay after a side-button change.
+- Show a temporary on-screen volume overlay after a side-button change or a Main Sound-button toggle.
 - `PWR`: short press sleeps/wakes the display; long press powers off according to board behavior.
 
 Transient status overlay implementation:
