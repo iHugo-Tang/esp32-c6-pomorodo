@@ -159,6 +159,7 @@ typedef struct {
     lv_obj_t *status_overlay;
     lv_obj_t *rtc_warning;
     lv_obj_t *battery_warning;
+    lv_obj_t *orientation_warning;
     lv_obj_t *volume_feedback;
     lv_obj_t *volume_icon;
     lv_obj_t *volume_segments[5];
@@ -1109,6 +1110,8 @@ esp_err_t pomodoro_device_view_create(
     lv_obj_remove_flag(view_context.status_overlay, LV_OBJ_FLAG_SCROLLABLE);
     view_context.rtc_warning = lv_label_create(view_context.status_overlay);
     view_context.battery_warning = lv_label_create(view_context.status_overlay);
+    view_context.orientation_warning =
+        lv_label_create(view_context.status_overlay);
     view_context.volume_feedback = lv_obj_create(view_context.status_overlay);
     lv_obj_set_size(view_context.volume_feedback, LV_PCT(100), 42);
     lv_obj_set_style_bg_color(view_context.volume_feedback,
@@ -1138,6 +1141,7 @@ esp_err_t pomodoro_device_view_create(
                                 LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_add_flag(view_context.rtc_warning, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(view_context.battery_warning, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(view_context.orientation_warning, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(view_context.volume_feedback, LV_OBJ_FLAG_HIDDEN);
 
     lvgl_port_unlock();
@@ -1819,4 +1823,24 @@ void pomodoro_device_view_show_startup_error(const char *message,
         lv_arc_set_value(view_context.ring, 0);
         lvgl_port_unlock();
     }
+}
+
+static void hide_orientation_warning(lv_timer_t *timer)
+{
+    (void) timer;
+    lv_obj_add_flag(view_context.orientation_warning, LV_OBJ_FLAG_HIDDEN);
+}
+
+void pomodoro_device_view_show_orientation_warning(void)
+{
+    if (!lvgl_port_lock(1000)) {
+        return;
+    }
+    lv_label_set_text(view_context.orientation_warning,
+                      "Auto-rotate unavailable");
+    lv_obj_remove_flag(view_context.orientation_warning, LV_OBJ_FLAG_HIDDEN);
+    lv_timer_t *timer =
+        lv_timer_create(hide_orientation_warning, 3000, NULL);
+    lv_timer_set_repeat_count(timer, 1);
+    lvgl_port_unlock();
 }

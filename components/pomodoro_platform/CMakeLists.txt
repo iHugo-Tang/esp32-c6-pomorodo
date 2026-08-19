@@ -3,6 +3,7 @@ idf_component_register(
         "pomodoro_board.c"
         "pomodoro_device_platform.c"
         "pomodoro_device_view.c"
+        "pomodoro_orientation.c"
         "pomodoro_time_sync_server.c"
         "pomodoro_nvs_journal.c"
     INCLUDE_DIRS "include"

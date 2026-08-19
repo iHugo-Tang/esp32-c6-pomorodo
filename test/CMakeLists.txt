@@ -39,3 +39,17 @@ target_compile_features(pomodoro_application_test PRIVATE c_std_11)
 target_compile_options(pomodoro_application_test PRIVATE -Wall -Wextra -Werror -pedantic)
 
 add_test(NAME pomodoro_application_test COMMAND pomodoro_application_test)
+
+add_executable(
+    pomodoro_orientation_test
+    pomodoro_orientation_test.c
+    ../components/pomodoro_platform/pomodoro_orientation.c
+)
+target_include_directories(
+    pomodoro_orientation_test PRIVATE
+    ../components/pomodoro_platform
+)
+target_compile_features(pomodoro_orientation_test PRIVATE c_std_11)
+target_compile_options(pomodoro_orientation_test PRIVATE -Wall -Wextra -Werror -pedantic)
+
+add_test(NAME pomodoro_orientation_test COMMAND pomodoro_orientation_test)

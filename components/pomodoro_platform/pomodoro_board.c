@@ -56,10 +56,21 @@
 #define AXP2101_POWER_SHORT_PRESS_BIT 0x08U
 #define AXP2101_POWER_LONG_PRESS_BIT 0x04U
 
+#define QMI8658_ADDRESS 0x6BU
+#define QMI8658_WHO_AM_I_REG 0x00U
+#define QMI8658_CTRL1_REG 0x02U
+#define QMI8658_CTRL2_REG 0x03U
+#define QMI8658_CTRL7_REG 0x08U
+#define QMI8658_AX_L_REG 0x35U
+#define QMI8658_WHO_AM_I_VALUE 0x05U
+#define QMI8658_ACCEL_LSB_PER_G 4096.0f /* ±8g full scale */
+#define QMI8658_ACCEL_CTRL2 0x27U        /* ±8g, 62.5Hz output rate */
+
 typedef struct {
     i2c_master_bus_handle_t i2c_bus;
     i2c_master_dev_handle_t pmic;
     i2c_master_dev_handle_t rtc;
+    i2c_master_dev_handle_t imu;
     esp_lcd_panel_io_handle_t panel_io;
     esp_lcd_panel_handle_t panel;
     esp_lcd_touch_handle_t touch;
@@ -576,6 +587,84 @@ esp_err_t pomodoro_board_initialize_i2c(void)
     return result;
 }
 
+esp_err_t pomodoro_board_initialize_orientation(void)
+{
+    if (board.imu == NULL) {
+        i2c_device_config_t config = {
+            .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+            .device_address = QMI8658_ADDRESS,
+            .scl_speed_hz = 400000,
+        };
+        esp_err_t result = i2c_master_bus_add_device(board.i2c_bus, &config,
+                                                     &board.imu);
+        if (result != ESP_OK) {
+            return result;
+        }
+    }
+    uint8_t who_am_i;
+    if (read_register(board.imu, QMI8658_WHO_AM_I_REG, &who_am_i, 1) !=
+            ESP_OK ||
+        who_am_i != QMI8658_WHO_AM_I_VALUE) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    esp_err_t result = write_register(board.imu, QMI8658_CTRL1_REG, 0x60U);
+    if (result == ESP_OK) {
+        result = write_register(board.imu, QMI8658_CTRL2_REG,
+                                QMI8658_ACCEL_CTRL2);
+    }
+    if (result == ESP_OK) {
+        /* Accelerometer enabled; gyroscope and gestures stay disabled. */
+        result = write_register(board.imu, QMI8658_CTRL7_REG, 0x01U);
+    }
+    if (result != ESP_OK) {
+        return result;
+    }
+    ESP_LOGI(TAG, "QMI8658 accelerometer initialized");
+    return ESP_OK;
+}
+
+bool pomodoro_board_read_acceleration(pomodoro_orientation_accel_t *accel)
+{
+    uint8_t raw[6];
+    if (accel == NULL || board.imu == NULL ||
+        read_register(board.imu, QMI8658_AX_L_REG, raw, sizeof(raw)) !=
+            ESP_OK) {
+        return false;
+    }
+    int16_t raw_x = (int16_t) ((uint16_t) raw[1] << 8U | raw[0]);
+    int16_t raw_y = (int16_t) ((uint16_t) raw[3] << 8U | raw[2]);
+    float ax_g = (float) raw_x / QMI8658_ACCEL_LSB_PER_G;
+    float ay_g = (float) raw_y / QMI8658_ACCEL_LSB_PER_G;
+    /* Calibrated on target board: sensor axes match the screen frame
+     * (gx=screen right, gy=screen down). Top edge up reads gy~+1g,
+     * right edge down reads gx~+1g. */
+    accel->gx_g = ax_g;
+    accel->gy_g = ay_g;
+    return true;
+}
+
+bool pomodoro_board_is_touch_active(void)
+{
+    return board.touch_input != NULL &&
+           lv_indev_get_state(board.touch_input) == LV_INDEV_STATE_PRESSED;
+}
+
+void pomodoro_board_set_display_rotation(pomodoro_ui_orientation_t orientation)
+{
+    if (board.display == NULL) {
+        return;
+    }
+    lv_display_rotation_t rotation = LV_DISPLAY_ROTATION_0;
+    if (orientation == POMODORO_UI_ORIENTATION_90) {
+        rotation = LV_DISPLAY_ROTATION_90;
+    } else if (orientation == POMODORO_UI_ORIENTATION_180) {
+        rotation = LV_DISPLAY_ROTATION_180;
+    } else if (orientation == POMODORO_UI_ORIENTATION_270) {
+        rotation = LV_DISPLAY_ROTATION_270;
+    }
+    lv_display_set_rotation(board.display, rotation);
+}
+
 static esp_err_t reset_display_power(void)
 {
     uint8_t enables;
@@ -657,6 +746,7 @@ esp_err_t pomodoro_board_initialize_display(void)
         .flags = {
             .buff_dma = true,
             .swap_bytes = true,
+            .sw_rotate = true,
         },
     };
     board.display = lvgl_port_add_disp(&display_config);

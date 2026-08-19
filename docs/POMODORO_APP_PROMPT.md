@@ -9,12 +9,13 @@ Design and implement a single-purpose Pomodoro timer for the Waveshare ESP32-C6-
 - Touch: CST9217 capacitive touch.
 - Clock: battery-backed PCF85063 RTC.
 - Audio: ES8311 codec and onboard speaker path.
+- Orientation: QMI8658 accelerometer; leave its gyroscope disabled.
 - Power: AXP2101 PMIC and optional lithium battery.
 - Storage: 16MB internal Flash; do not depend on MicroSD.
 - Memory constraint: 512KB HP SRAM and no PSRAM.
 - Framework: ESP-IDF `>=5.5.2,<5.6` with pinned, Waveshare-validated LVGL 9, `esp_lvgl_port`, and Waveshare driver versions.
 - Use small partial LVGL draw buffers. Never allocate a full RGB565 framebuffer or full-screen double buffers.
-- Bluetooth, Thread, Zigbee, microphones, ES7210, IMU, and MicroSD remain uninitialized. Wi-Fi is enabled only for an explicit iPhone time-sync session.
+- Bluetooth, Thread, Zigbee, microphones, ES7210, the QMI8658 gyroscope, and MicroSD remain uninitialized. Wi-Fi is enabled only for an explicit iPhone time-sync session.
 
 ## Product language
 
@@ -303,6 +304,19 @@ Battery UI:
 - Apply an unobtrusive ±2px periodic pixel shift to static content.
 - User interaction immediately restores chosen brightness.
 
+## UI Orientation
+
+- Use only the QMI8658 accelerometer to rotate the complete UI and touch coordinates together among `0°`, `90°`, `180°`, and `270°`. Do not enable the gyroscope or IMU gestures.
+- Treat the current fixed display direction as `0°`; calibrate the QMI8658-to-display axis mapping on the target board.
+- Sample acceleration at approximately 10Hz. A candidate direction is valid only when its screen-plane gravity component is at least `0.70g` and exceeds the other screen-plane axis by at least `0.15g`.
+- Switch after six consecutive valid samples for the same direction. An invalid or diagonal sample clears the candidate count but preserves the current UI Orientation.
+- Never rotate during an active touch. Apply a stable pending direction after release without animation and redraw the complete display.
+- Continue direction sampling while the display is off so wake uses the latest stable UI Orientation.
+- UI Orientation is always automatic: provide no setting or direction lock, do not persist it, and do not expose it to the Pomodoro state machine. Rotation preserves the current page, dialog, scroll position, and timer state.
+- Enable `esp_lvgl_port` software rotation because the target SH8601 driver cannot perform every required hardware transform. Keep partial draw buffers and verify the additional rotation buffer, free memory, frame time, and touch latency on the target board.
+- Boot immediately in `0°` and rotate after the first stable direction is available.
+- After three consecutive accelerometer read failures, preserve the last UI Orientation and retry initialization every five seconds. Once per boot, show `Auto-rotate unavailable` as a non-blocking three-second status message; recovery is silent.
+
 ## Visual system
 
 Fixed dark theme; no theme switcher.
@@ -372,6 +386,6 @@ Firmware updates:
 - Accounts, login, cloud sync, analytics, remote notifications, notification shade.
 - Internet access, background Wi-Fi, saved Wi-Fi credentials, OTA.
 - Vibration or haptics.
-- Microphone, voice assistant, IMU gestures, screen rotation, Bluetooth, Thread/Zigbee, MicroSD features.
+- Microphone, voice assistant, IMU gestures, gyroscope-driven behavior, Bluetooth, Thread/Zigbee, MicroSD features.
 - Long-term statistics UI beyond the trailing seven-day chart.
 - Clearing statistics from Settings.

@@ -15,6 +15,7 @@
 - 所有主页面使用统一顶部栏。子页面左侧显示 Back；主屏不显示 Back。
 - 完成态是主屏中央内容的状态替换，不是独立浮层 Dialog。
 - Dialog 仅用于放弃运行中计时和 Reset 确认。
+- 全部页面、Dialog 与覆盖层共享同一 UI Orientation，并与触摸坐标一起自动旋转；不为不同方向制作重排版式。
 
 ## 2. 页面清单
 
@@ -36,6 +37,7 @@
 | D02 | Reset timer confirmation | 模态 Dialog | Paused 中点击 Reset | Confirm 回 Ready；Cancel 回 Paused |
 | O01 | Volume overlay | 临时覆盖层 | 实体 `+` 或 `-` | 自动消失 |
 | O02 | Battery low message | 临时提示层 | 电量首次低于约 15% | 自动消失，不中止计时 |
+| O03 | Auto-rotate unavailable | 临时提示层 | IMU 连续读取失败 | 三秒后自动消失，不中止计时 |
 | E01 | RTC invalid state | 页面替换/阻断态 | 开机或运行中检测到 RTC 无效 | Sync 或手动设置时间 |
 
 ## 3. 页面导航图
@@ -121,6 +123,13 @@ flowchart LR
 - Ready、Paused、等待操作的完成态：2 分钟变暗，5 分钟熄屏。
 - 静态内容每分钟进行不易察觉的 ±2 px 像素偏移。
 - 熄屏后第一次触摸只唤醒，不执行底层按钮。
+
+### 4.4 UI Orientation
+
+- 原型使用同一套 480×480 布局表达 `0°`、`90°`、`180°`、`270°` 四个方向，不创建横屏或竖屏重排变体。
+- 整个页面、Dialog、覆盖层与触摸坐标同步旋转；当前页面、滚动位置和计时状态保持不变。
+- 设备方向稳定约 600ms 后直接切换，不使用旋转动画；触摸进行中延迟到手指释放。
+- 平放、接近对角线或方向不稳定时保持当前方向。熄屏期间仍更新方向，唤醒时直接显示最新稳定方向。
 
 ## 5. P00 — First-run time setup
 
@@ -474,7 +483,13 @@ flowchart LR
 - 不使用阻断 Dialog，不停止或暂停计时。
 - 同一低电量周期只提示一次，避免重复干扰。
 
-## 18. E01 — RTC invalid state
+## 18. O03 — Auto-rotate unavailable
+
+- IMU 连续三次读取失败时，从顶部栏下方显示轻量提示：`Auto-rotate unavailable`。
+- 提示三秒后自动消失，不使用阻断 Dialog，不停止或暂停计时。
+- 每次开机最多显示一次；IMU 恢复后不显示成功提示。
+
+## 19. E01 — RTC invalid state
 
 ### 开机时
 
@@ -488,7 +503,7 @@ flowchart LR
 - Statistics 使用异常空状态。
 - 用户进入时间设置并恢复 RTC 后，待处理记录归入恢复时的 Statistics Day。
 
-## 19. 原型连线与交互检查清单
+## 20. 原型连线与交互检查清单
 
 - P00 的两个入口都能最终到达 Main，且没有 Skip。
 - P01/P02 从首次设置与 Settings 进入时拥有不同返回目标。
@@ -506,8 +521,11 @@ flowchart LR
 - Settings/Stats 打开时 Timer 继续运行，完成后自动返回 Main 完成态。
 - 实体音量键在所有非启动阶段都可调节音量；PWR 短按只控制屏幕睡眠/唤醒。
 - 所有页面覆盖变暗、熄屏、首次触摸只唤醒和 AMOLED 像素偏移说明。
+- Main、菜单、Statistics、Settings、Numeric Stepper、Dialog 与覆盖层在四个 UI Orientation 下保持可读且触摸位置正确。
+- 旋转期间页面、滚动位置、Dialog 和 Timer 状态不变；进行中的触摸不会被中途旋转打断。
+- 平放、临界方向、熄屏唤醒和 IMU 故障分别体现保持方向、延迟切换与非阻断回退行为。
 
-## 20. 建议输出的原型画板
+## 21. 建议输出的原型画板
 
 为了覆盖所有关键交互，设计工具中至少建立以下画板：
 

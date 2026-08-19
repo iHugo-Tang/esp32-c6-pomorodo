@@ -9,6 +9,7 @@
 #include "pomodoro_application.h"
 #include "pomodoro_board.h"
 #include "pomodoro_device_view.h"
+#include "pomodoro_orientation.h"
 #include "pomodoro_time_sync_server.h"
 
 typedef struct {
@@ -24,6 +25,9 @@ typedef struct {
     uint8_t volume_up_debounce;
     uint8_t volume_down_debounce;
     uint8_t power_poll_divider;
+    uint8_t orientation_sample_divider;
+    bool pending_rotation;
+    pomodoro_orientation_resolver_t orientation;
 } runtime_context_t;
 
 static const char *TAG = "pomodoro_runtime";
@@ -203,6 +207,52 @@ static void debounce_volume_button(bool sample, bool *candidate,
     }
 }
 
+static bool apply_orientation(pomodoro_ui_orientation_t orientation)
+{
+    if (!lvgl_port_lock(50)) {
+        ESP_LOGW(TAG, "Rotation lock timed out");
+        return false;
+    }
+    pomodoro_board_set_display_rotation(orientation);
+    lvgl_port_unlock();
+    return true;
+}
+
+static void sample_orientation(runtime_context_t *target)
+{
+    if (target->pending_rotation) {
+        if (apply_orientation(target->orientation.current)) {
+            target->pending_rotation = false;
+        } else {
+            return;
+        }
+    }
+    pomodoro_orientation_accel_t accel;
+    bool read_succeeded = pomodoro_board_read_acceleration(&accel);
+    pomodoro_orientation_event_t event;
+    pomodoro_orientation_resolver_sample(
+        &target->orientation, read_succeeded,
+        read_succeeded ? &accel : NULL,
+        pomodoro_board_is_touch_active(), &event);
+    if (event.orientation_changed) {
+        ESP_LOGI(TAG, "UI orientation -> %d", (int) event.orientation);
+        if (!apply_orientation(event.orientation)) {
+            target->pending_rotation = true;
+        }
+    }
+    if (event.warning_started) {
+        pomodoro_device_view_show_orientation_warning();
+    }
+    if (event.retry_sensor) {
+        esp_err_t result = pomodoro_board_initialize_orientation();
+        pomodoro_orientation_resolver_report_reinit(&target->orientation,
+                                                    result == ESP_OK);
+        if (result != ESP_OK) {
+            ESP_LOGW(TAG, "Orientation sensor re-initialization failed");
+        }
+    }
+}
+
 static void poll_controls(void *context)
 {
     runtime_context_t *target = context;
@@ -220,6 +270,10 @@ static void poll_controls(void *context)
                            &target->volume_down_stable,
                            &target->volume_down_debounce,
                            POMODORO_APPLICATION_ACTION_VOLUME_DOWN);
+    if (++target->orientation_sample_divider >= 2U) {
+        target->orientation_sample_divider = 0U;
+        sample_orientation(target);
+    }
     if (++target->power_poll_divider < 4U) {
         return;
     }
@@ -272,6 +326,10 @@ esp_err_t pomodoro_platform_start(void)
     result = pomodoro_board_initialize_audio();
     if (result != ESP_OK) {
         return fail_startup("Audio initialization failed", result);
+    }
+    pomodoro_orientation_resolver_init(&runtime.orientation);
+    if (pomodoro_board_initialize_orientation() != ESP_OK) {
+        ESP_LOGW(TAG, "Orientation sensor unavailable; timer keeps running");
     }
     pomodoro_application_time_t boot_time;
     if (!pomodoro_board_read_time(&boot_time)) {
