@@ -685,7 +685,7 @@ esp_err_t pomodoro_device_view_create(
                               lv_color_hex(0x1A1F27), 0);
     lv_obj_set_style_text_color(view_context.sound_button,
                                 lv_color_hex(0xF5F7FA), 0);
-    lv_obj_align(view_context.sound_button, LV_ALIGN_BOTTOM_RIGHT, -24, -24);
+    lv_obj_align(view_context.sound_button, LV_ALIGN_BOTTOM_RIGHT, -26, -26);
     view_context.top_power_status = lv_label_create(screen);
     lv_obj_set_width(view_context.top_power_status, 120);
     lv_obj_set_style_text_align(view_context.top_power_status,
@@ -1843,6 +1843,7 @@ void pomodoro_device_view_show_startup_error(const char *message,
         lv_label_set_text(view_context.time, "--:--");
         lv_obj_add_flag(view_context.primary_button, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(view_context.secondary_button, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(view_context.sound_button, LV_OBJ_FLAG_HIDDEN);
         lv_arc_set_value(view_context.ring, 0);
         lvgl_port_unlock();
     }
