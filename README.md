@@ -52,6 +52,27 @@ idf.py set-target esp32c6
 idf.py build
 ```
 
+## Flash firmware while OpenCode is running
+
+The project USB port is shared between the OpenCode Status plugin and firmware
+flashing. To flash without interrupting OpenCode, use the supported wrapper,
+which reserves the port cooperatively:
+
+```sh
+tools/flash.sh -p /dev/cu.usbmodem11101
+```
+
+The wrapper writes `.pomodoro/flash-reservation` (containing its PID) before
+opening the port, waits up to `POMODORO_FLASH_RELEASE_TIMEOUT_S` (default 8 s)
+for the OpenCode Status plugin to release the serial link, runs `idf.py flash`,
+and always removes the reservation on success, failure, interruption, or
+timeout. It never sends stop or termination signals to OpenCode. The port can
+also be given via `POMODORO_PORT` or auto-detected when exactly one
+`/dev/cu.usbmodem*` exists.
+
+After changing anything under `.opencode/plugins/`, fully quit and restart
+OpenCode before verifying, so the updated plugin is loaded.
+
 The target integration uses the interfaces declared in
 `components/pomodoro_platform/include/pomodoro_platform.h` with exact,
 Waveshare-validated LVGL 9, `esp_lvgl_port`, display, and touch component

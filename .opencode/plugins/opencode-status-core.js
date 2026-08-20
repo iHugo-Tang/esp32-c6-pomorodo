@@ -139,6 +139,29 @@ export function createProtocol() {
   }
 }
 
+// Cooperative USB port reservation. The flashing command writes a
+// project-scoped marker containing its PID before opening the port; the plugin
+// polls it and releases the serial link for the duration. Pure transitions so
+// the plugin can be wired to timers and fs without losing testability.
+export function createReservation() {
+  let held = false
+  return {
+    update(exists, pidAlive = true) {
+      const next = exists && pidAlive
+      const transition = {
+        acquired: next && !held,
+        released: held && !next,
+        held: next,
+      }
+      held = next
+      return transition
+    },
+    held() {
+      return held
+    },
+  }
+}
+
 // Resolves a mask to a display state following the documented priority.
 export function resolveState(mask) {
   if (mask & BIT.ERROR) return "error"

@@ -163,10 +163,12 @@ ctest --test-dir build/host --output-on-failure
 . "$HOME/esp/esp-idf/export.sh"
 idf.py build
 idf.py size
-idf.py -p /dev/cu.usbmodem11101 flash
+tools/flash.sh -p /dev/cu.usbmodem11101
 idf.py -p /dev/cu.usbmodem11101 monitor
 ```
 
+`tools/flash.sh` 保留 USB 端口（写入 `.pomodoro/flash-reservation`），等 OpenCode
+Status 插件释放串口后再执行 `idf.py flash`，并在成功、失败、超时或中断时清理保留；
 普通 `flash` 只更新 bootloader、分区表和 factory 应用地址范围；不要运行
 `erase-flash`，后者会删除保存的产品状态。
 

@@ -5,6 +5,7 @@ import {
   BIT,
   createAggregator,
   createProtocol,
+  createReservation,
   resolveState,
   serializeState,
   serializeAck,
@@ -96,5 +97,24 @@ ok(protocol.setEnabled(true) === "OC1 STATE 2 8",
 // Serialization format matches the device contract.
 ok(serializeState(14, 5) === "OC1 STATE 14 5", "state serialization")
 ok(serializeAck(14, 1) === "OC1 ACK 14 1", "ack serialization")
+
+// Cooperative USB port reservation transitions.
+const res = createReservation()
+ok(res.held() === false, "reservation starts released")
+let rt = res.update(false)
+ok(rt.held === false && !rt.acquired && !rt.released, "no-op while released")
+rt = res.update(true, true)
+ok(rt.held && rt.acquired && !rt.released, "acquired when marker appears")
+ok(res.held() === true, "held after acquire")
+rt = res.update(true, true)
+ok(rt.held && !rt.acquired && !rt.released, "still held, no edge")
+rt = res.update(true, false)
+ok(!rt.held && rt.released, "stale marker PID releases the port")
+rt = res.update(true, true)
+ok(rt.acquired, "fresh marker re-acquires")
+rt = res.update(false)
+ok(rt.released && !rt.held, "released when marker is removed")
+rt = res.update(false)
+ok(!rt.acquired && !rt.released && !rt.held, "no-op after release")
 
 console.log(`opencode-status check: ${checks} checks passed`)

@@ -4,10 +4,12 @@
 
 import { spawn, spawnSync } from "node:child_process"
 import fs from "node:fs"
-import { createProtocol } from "./opencode-status-core.js"
+import path from "node:path"
+import { createProtocol, createReservation } from "./opencode-status-core.js"
 
 const HEARTBEAT_MS = 3000
 const RECONNECT_MS = 2000
+const RESERVATION_POLL_MS = 500
 
 export const OpenCodeStatusPlugin = async ({ project, client, directory }) => {
   const log = (message) => {
@@ -19,6 +21,8 @@ export const OpenCodeStatusPlugin = async ({ project, client, directory }) => {
   }
 
   const protocol = createProtocol()
+  const reservation = createReservation()
+  const reservationPath = path.join(directory, ".pomodoro", "flash-reservation")
   let port = null
   let outFd = -1
   let reader = null
@@ -112,6 +116,7 @@ export const OpenCodeStatusPlugin = async ({ project, client, directory }) => {
   function connect() {
     reconnectTimer = null
     if (port) return
+    if (reservation.held()) return
     const candidate = resolvePort()
     if (!candidate) {
       scheduleReconnect()
@@ -144,6 +149,34 @@ export const OpenCodeStatusPlugin = async ({ project, client, directory }) => {
       // A plugin bug must never fail an OpenCode task.
     }
   }
+
+  function pollReservation() {
+    let exists = false
+    let pidAlive = true
+    try {
+      exists = fs.existsSync(reservationPath)
+      if (exists) {
+        const pid = Number(fs.readFileSync(reservationPath, "utf8").trim())
+        if (Number.isInteger(pid) && pid > 0) {
+          try { process.kill(pid, 0) } catch { pidAlive = false }
+        }
+      }
+    } catch {
+      exists = false
+    }
+    const transition = reservation.update(exists, pidAlive)
+    if (transition.acquired) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+      close()
+      log("USB port reserved by flashing; released serial link")
+    } else if (transition.released) {
+      log("USB port reservation released; reconnecting")
+      scheduleReconnect()
+    }
+  }
+
+  setInterval(pollReservation, RESERVATION_POLL_MS)
 
   connect()
 
