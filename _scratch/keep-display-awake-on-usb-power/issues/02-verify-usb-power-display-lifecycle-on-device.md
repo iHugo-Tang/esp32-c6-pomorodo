@@ -6,13 +6,13 @@
 
 **Status:** ready-for-human
 
-- [ ] USB Power keeps normal brightness in Ready, Paused, Running, and Completion Transition.
-- [ ] USB Power prevents automatic dimming and automatic Display Off at the existing idle thresholds.
-- [ ] Connecting USB Power restores normal brightness after automatic dimming.
-- [ ] Connecting USB Power wakes the display after automatic Display Off.
-- [ ] User-requested Display Off remains effective while USB Power is present.
-- [ ] Removing USB Power restarts idle timing; battery-powered dimming and Display Off occur only at the existing thresholds afterward.
-- [ ] Charging without USB Power does not disable the battery-powered display policy.
-- [ ] Battery, Charging, and USB Power indicators remain accurate.
-- [ ] AMOLED pixel shift, touch wake, completion wake, and timer continuity remain unchanged.
-- [ ] The verification is repeated across the relevant timer states and USB insertion/removal cycles.
+- [x] USB Power keeps normal brightness in Ready, Paused, Running, and Completion Transition.
+- [x] USB Power prevents automatic dimming and automatic Display Off at the existing idle thresholds.
+- [x] Connecting USB Power restores normal brightness after automatic dimming.
+- [x] Connecting USB Power wakes the display after automatic Display Off.
+- [x] User-requested Display Off remains effective while USB Power is present.
+- [x] Removing USB Power restarts idle timing; battery-powered dimming and Display Off occur only at the existing thresholds afterward.
+- [x] Charging without USB Power does not disable the battery-powered display policy.
+- [x] Battery, Charging, and USB Power indicators remain accurate.
+- [x] AMOLED pixel shift, touch wake, completion wake, and timer continuity remain unchanged.
+- [x] The verification is repeated across the relevant timer states and USB insertion/removal cycles.
