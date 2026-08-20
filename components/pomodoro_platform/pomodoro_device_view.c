@@ -207,8 +207,7 @@ static void dispatch(pomodoro_application_action_t action)
 
 static void touch_pressed(lv_event_t *event)
 {
-    if (view_context.touch_handler == NULL ||
-        !view_context.touch_handler()) {
+    if (!view_context.touch_handler()) {
         return;
     }
     lv_indev_t *indev = lv_event_get_current_target(event);
@@ -661,8 +660,9 @@ esp_err_t pomodoro_device_view_create(
     pomodoro_device_action_handler_t action_handler,
     pomodoro_device_touch_handler_t touch_handler)
 {
-    if (action_handler == NULL || !lvgl_port_lock(1000)) {
-        return action_handler == NULL
+    if (action_handler == NULL || touch_handler == NULL ||
+        !lvgl_port_lock(1000)) {
+        return action_handler == NULL || touch_handler == NULL
             ? ESP_ERR_INVALID_ARG
             : ESP_ERR_TIMEOUT;
     }

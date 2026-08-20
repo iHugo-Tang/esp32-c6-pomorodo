@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** done
+**Status:** ready-for-human
 
 - [x] Touching blank space, a button, or the start of a swipe restores the chosen brightness.
 - [x] A touch on a dimmed but awake display restores brightness and still performs the intended action.
