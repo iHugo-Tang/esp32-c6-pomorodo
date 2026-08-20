@@ -17,6 +17,8 @@ esp_err_t pomodoro_device_view_create(
     pomodoro_device_touch_handler_t touch_handler);
 bool pomodoro_device_view_render(const pomodoro_application_view_t *view);
 esp_err_t pomodoro_device_view_start_ticks(void);
+/* Binds touch input callbacks after the pointer indev is created. */
+esp_err_t pomodoro_device_view_bind_touch(void);
 void pomodoro_device_view_show_startup_error(const char *message,
                                              esp_err_t error);
 void pomodoro_device_view_show_orientation_warning(void);

@@ -371,6 +371,10 @@ esp_err_t pomodoro_platform_start(void)
     if (app_result != POMODORO_APPLICATION_OK) {
         return fail_startup("Application boot failed", ESP_FAIL);
     }
+    result = pomodoro_device_view_bind_touch();
+    if (result != ESP_OK) {
+        return fail_startup("Touch input binding failed", result);
+    }
     result = pomodoro_device_view_start_ticks();
     if (result != ESP_OK) {
         return fail_startup("Countdown tick initialization failed", result);

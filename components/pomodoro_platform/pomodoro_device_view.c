@@ -675,14 +675,6 @@ esp_err_t pomodoro_device_view_create(
     lv_obj_remove_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(screen, gesture, LV_EVENT_GESTURE, NULL);
     lv_obj_add_event_cb(screen, gesture, LV_EVENT_PRESSED, NULL);
-    for (lv_indev_t *indev = lv_indev_get_next(NULL); indev != NULL;
-         indev = lv_indev_get_next(indev)) {
-        if (lv_indev_get_type(indev) == LV_INDEV_TYPE_POINTER) {
-            lv_indev_set_gesture_min_distance(indev, 72);
-            lv_indev_add_event_cb(indev, touch_pressed, LV_EVENT_PRESSED,
-                                  NULL);
-        }
-    }
 
     view_context.title = lv_label_create(screen);
     lv_obj_set_width(view_context.title, 260);
@@ -1848,6 +1840,25 @@ esp_err_t pomodoro_device_view_start_ticks(void)
     view_context.tick_timer = lv_timer_create(tick, 1000, NULL);
     lvgl_port_unlock();
     return view_context.tick_timer != NULL ? ESP_OK : ESP_ERR_NO_MEM;
+}
+
+esp_err_t pomodoro_device_view_bind_touch(void)
+{
+    if (!lvgl_port_lock(1000)) {
+        return ESP_ERR_TIMEOUT;
+    }
+    bool bound = false;
+    for (lv_indev_t *indev = lv_indev_get_next(NULL); indev != NULL;
+         indev = lv_indev_get_next(indev)) {
+        if (lv_indev_get_type(indev) == LV_INDEV_TYPE_POINTER) {
+            lv_indev_set_gesture_min_distance(indev, 72);
+            lv_indev_add_event_cb(indev, touch_pressed, LV_EVENT_PRESSED,
+                                  NULL);
+            bound = true;
+        }
+    }
+    lvgl_port_unlock();
+    return bound ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
 void pomodoro_device_view_show_startup_error(const char *message,
