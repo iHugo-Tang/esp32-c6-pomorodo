@@ -49,6 +49,7 @@ typedef struct {
     pomodoro_application_device_status_t device_status;
     unsigned display_awake_count;
     bool display_awake;
+    bool fail_display_awake;
     unsigned power_off_count;
     unsigned start_time_sync_count;
     unsigned stop_time_sync_count;
@@ -145,7 +146,7 @@ static bool fake_set_display_awake(void *context, bool awake)
     fake_platform_t *fake = context;
     fake->display_awake_count++;
     fake->display_awake = awake;
-    return true;
+    return !fake->fail_display_awake;
 }
 
 static bool fake_power_off(void *context)
@@ -1261,6 +1262,28 @@ static void test_display_lifecycle_dims_sleeps_and_consumes_wake_touch(void)
     assert(pomodoro_application_handle_touch(application, &consumed) ==
            POMODORO_APPLICATION_OK);
     assert(!consumed);
+    pomodoro_application_destroy(application);
+}
+
+static void test_wake_touch_stays_consumed_when_recovery_fails(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_epoch_seconds = 100U;
+    fake_enable_journal(&fake);
+    pomodoro_application_t *application = boot_application(&fake);
+    fake.now_epoch_seconds = 400U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(!fake.rendered_view.display_awake);
+    assert(!fake.display_awake);
+
+    fake.fail_display_awake = true;
+    bool consumed = false;
+    assert(pomodoro_application_handle_touch(application, &consumed) ==
+           POMODORO_APPLICATION_ERR_PLATFORM);
+    assert(consumed);
     pomodoro_application_destroy(application);
 }
 
@@ -2412,6 +2435,7 @@ int main(void)
     test_volume_buttons_and_sound_toggle_persist_last_nonzero_volume();
     test_battery_status_and_one_shot_warning_do_not_cancel_timer();
     test_display_lifecycle_dims_sleeps_and_consumes_wake_touch();
+    test_wake_touch_stays_consumed_when_recovery_fails();
     test_running_dims_to_sixty_percent_and_completion_wakes_display();
     test_power_controls_do_not_change_timer_state();
     test_boot_with_saved_state_uses_persisted_settings();

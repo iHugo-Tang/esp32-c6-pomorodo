@@ -1,6 +1,6 @@
 # Restore Brightness on Any Touch
 
-Status: ready-for-agent
+Status: ready-for-human
 
 ## Problem Statement
 

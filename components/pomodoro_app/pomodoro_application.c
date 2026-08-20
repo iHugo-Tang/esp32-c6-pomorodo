@@ -1085,15 +1085,6 @@ pomodoro_application_result_t pomodoro_application_dispatch(
         return POMODORO_APPLICATION_ERR_INVALID_STATE;
     }
     application->view.mode_boundary_feedback = false;
-    if (action != POMODORO_APPLICATION_ACTION_TICK &&
-        action != POMODORO_APPLICATION_ACTION_TOGGLE_DISPLAY &&
-        action != POMODORO_APPLICATION_ACTION_POWER_OFF) {
-        pomodoro_application_result_t interaction =
-            record_interaction(application);
-        if (interaction != POMODORO_APPLICATION_OK) {
-            return interaction;
-        }
-    }
     if (action == POMODORO_APPLICATION_ACTION_START) {
         return start(application);
     }

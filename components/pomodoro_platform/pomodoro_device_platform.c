@@ -167,7 +167,6 @@ static bool dispatch_touch(void)
         runtime.application, &consumed);
     if (result != POMODORO_APPLICATION_OK) {
         ESP_LOGE(TAG, "Touch handling failed: %d", result);
-        return false;
     }
     return consumed;
 }
