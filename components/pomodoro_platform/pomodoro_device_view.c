@@ -53,6 +53,8 @@ static const struct {
     {POMODORO_APPLICATION_ACTION_OPEN_SHORT_BREAK_MINUTES, "Short break"},
     {POMODORO_APPLICATION_ACTION_OPEN_LONG_BREAK_MINUTES, "Long break"},
     {POMODORO_APPLICATION_ACTION_OPEN_DAILY_GOAL, "Daily goal"},
+    {POMODORO_APPLICATION_ACTION_OPEN_POMODORO_COMPLETION_TRANSITION,
+     "Pomodoro completion"},
     {POMODORO_APPLICATION_ACTION_TOGGLE_AUTO_BREAK, "Auto breaks"},
     {POMODORO_APPLICATION_ACTION_TOGGLE_AUTO_FOCUS, "Auto focus"},
     {POMODORO_APPLICATION_ACTION_TOGGLE_SOUND, "Sound"},
@@ -123,7 +125,7 @@ typedef struct {
     lv_obj_t *statistics_goal_bar;
     lv_obj_t *settings_switches;
     lv_obj_t *settings_today_value;
-    lv_obj_t *settings_timer_values[4];
+    lv_obj_t *settings_timer_values[5];
     lv_obj_t *settings_volume_value;
     lv_obj_t *settings_brightness_value;
     lv_obj_t *settings_idle_brightness_value;
@@ -1025,6 +1027,10 @@ esp_err_t pomodoro_device_view_create(
         view_context.settings_switches, "Daily goal",
         POMODORO_APPLICATION_ACTION_OPEN_DAILY_GOAL,
         &view_context.settings_timer_values[3]);
+    (void) make_setting_action_row(
+        view_context.settings_switches, "Pomodoro completion",
+        POMODORO_APPLICATION_ACTION_OPEN_POMODORO_COMPLETION_TRANSITION,
+        &view_context.settings_timer_values[4]);
     (void) make_settings_section_label(view_context.settings_switches,
                                        "AUTOMATION", true);
     (void) make_setting_switch_row(
@@ -1441,6 +1447,8 @@ static const char *numeric_setting_name(
         return "Long break";
     case POMODORO_APPLICATION_SETTING_DAILY_GOAL:
         return "Daily goal";
+    case POMODORO_APPLICATION_SETTING_POMODORO_COMPLETION_TRANSITION_SECONDS:
+        return "Pomodoro completion";
     case POMODORO_APPLICATION_SETTING_BRIGHTNESS_PERCENT:
         return "Brightness";
     case POMODORO_APPLICATION_SETTING_IDLE_BRIGHTNESS_PERCENT:
@@ -1626,6 +1634,8 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
                           view->settings.long_break_minutes);
     lv_label_set_text_fmt(view_context.settings_timer_values[3], "%u",
                           view->settings.daily_goal);
+    lv_label_set_text_fmt(view_context.settings_timer_values[4], "%u sec",
+                          view->settings.pomodoro_completion_transition_seconds);
     lv_label_set_text_fmt(
         view_context.settings_volume_value,
         "Volume %u/5 - Use the side buttons to adjust volume",

@@ -967,6 +967,26 @@ static void test_numeric_stepper_discards_back_and_saves_confirm(void)
     assert(fake.rendered_view.settings.focus_minutes == 26U);
     assert(fake.rendered_view.remaining_seconds == 26U * 60U);
     assert(fake.save_count == saves_before_back + 1U);
+
+    assert(pomodoro_application_dispatch(
+               application,
+               POMODORO_APPLICATION_ACTION_OPEN_POMODORO_COMPLETION_TRANSITION) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.numeric_setting ==
+           POMODORO_APPLICATION_SETTING_POMODORO_COMPLETION_TRANSITION_SECONDS);
+    assert(fake.rendered_view.numeric_draft_value == 10U);
+    assert(fake.rendered_view.numeric_minimum == 1U);
+    assert(fake.rendered_view.numeric_maximum == 60U);
+    assert(fake.rendered_view.numeric_step == 1U);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_NUMERIC_DECREMENT) ==
+           POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_NUMERIC_CONFIRM) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.settings
+               .pomodoro_completion_transition_seconds == 9U);
+    assert(fake.save_count == saves_before_back + 2U);
     pomodoro_application_destroy(application);
 }
 
@@ -1870,7 +1890,7 @@ static void test_completion_can_be_started_now(void)
     assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
     assert(fake.rendered_view.scheduled_mode == POMODORO_MODE_SHORT_BREAK);
     assert(fake.rendered_view.auto_start_pending);
-    assert(fake.rendered_view.auto_start_seconds_remaining == 3U);
+    assert(fake.rendered_view.auto_start_seconds_remaining == 10U);
 
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_START_NEXT) ==
@@ -1936,7 +1956,7 @@ static void test_completion_dismisses_stale_mode_switch_confirmation(void)
     pomodoro_application_destroy(application);
 }
 
-static void test_auto_start_begins_scheduled_mode_after_three_seconds(void)
+static void test_auto_start_begins_scheduled_mode_after_ten_seconds(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
@@ -1951,13 +1971,13 @@ static void test_auto_start_begins_scheduled_mode_after_three_seconds(void)
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
 
-    fake.now_wall_time_seconds = 1602;
+    fake.now_wall_time_seconds = 1609;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
     assert(fake.rendered_view.auto_start_seconds_remaining == 1U);
-    fake.now_wall_time_seconds = 1603;
+    fake.now_wall_time_seconds = 1610;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -2045,13 +2065,13 @@ static void test_boot_restarts_completion_countdown_without_offline_chaining(voi
 
     pomodoro_application_t *application = boot_application(&fake);
     assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
-    assert(fake.rendered_view.auto_start_seconds_remaining == 3U);
-    fake.now_wall_time_seconds = 5002U;
+    assert(fake.rendered_view.auto_start_seconds_remaining == 10U);
+    fake.now_wall_time_seconds = 5009U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
-    fake.now_wall_time_seconds = 5003U;
+    fake.now_wall_time_seconds = 5010U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -2220,16 +2240,21 @@ static void test_confirmed_settings_save_and_survive_reboot(void)
     pomodoro_application_t *application = boot_application(&fake);
     pomodoro_settings_t settings = fake.rendered_view.settings;
     settings.daily_goal = 12U;
+    settings.pomodoro_completion_transition_seconds = 12U;
     unsigned saves_before_confirmation = fake.save_count;
 
     assert(pomodoro_application_confirm_settings(application, &settings) ==
            POMODORO_APPLICATION_OK);
     assert(fake.save_count == saves_before_confirmation + 1U);
     assert(fake.rendered_view.settings.daily_goal == 12U);
+    assert(fake.rendered_view.settings
+               .pomodoro_completion_transition_seconds == 12U);
     pomodoro_application_destroy(application);
 
     application = boot_application(&fake);
     assert(fake.rendered_view.settings.daily_goal == 12U);
+    assert(fake.rendered_view.settings
+               .pomodoro_completion_transition_seconds == 12U);
     assert(fake.save_count == saves_before_confirmation + 1U);
     pomodoro_application_destroy(application);
 }
@@ -2907,7 +2932,7 @@ static void test_opencode_status_switch_persists_and_disables(void)
     pomodoro_application_destroy(application);
 }
 
-static void test_opencode_status_migration_defaults_on(void)
+static void test_pomodoro_completion_transition_migration_defaults_to_ten_seconds(void)
 {
     fake_platform_t fake;
     pomodoro_model_t model;
@@ -2918,12 +2943,13 @@ static void test_opencode_status_migration_defaults_on(void)
     pomodoro_settings_t settings = pomodoro_default_settings();
     settings.daily_goal = 12U;
     settings.opencode_status_enabled = false;
+    settings.pomodoro_completion_transition_seconds = 1U;
     assert(pomodoro_init(&model, &settings) == POMODORO_OK);
     pomodoro_statistics_init(&statistics);
     pomodoro_persisted_state_t old_format;
     assert(pomodoro_persistence_pack(&old_format, &model, &statistics));
     old_format.settings.version = POMODORO_SETTINGS_VERSION - 1U;
-    old_format.settings.value.opencode_status_enabled = false;
+    old_format.settings.value.pomodoro_completion_transition_seconds = 0U;
     old_format.checksum = pomodoro_test_crc32(
         &old_format, offsetof(pomodoro_persisted_state_t, checksum));
     pomodoro_journal_slot_t slot = {
@@ -2937,10 +2963,13 @@ static void test_opencode_status_migration_defaults_on(void)
 
     pomodoro_application_t *application = boot_application(&fake);
     assert(fake.rendered_view.phase == POMODORO_APPLICATION_PHASE_ACTIVE);
-    assert(fake.rendered_view.settings.opencode_status_enabled);
+    assert(!fake.rendered_view.settings.opencode_status_enabled);
+    assert(fake.rendered_view.settings
+               .pomodoro_completion_transition_seconds == 10U);
     assert(fake.rendered_view.settings.daily_goal == 12U);
     assert(fake.rendered_view.settings.focus_minutes == 25U);
-    assert(fake.memory_journal.slots[1].state.settings.value.opencode_status_enabled);
+    assert(fake.memory_journal.slots[1].state.settings.value
+               .pomodoro_completion_transition_seconds == 10U);
     assert(fake.memory_journal.slots[1].state.settings.version ==
            POMODORO_SETTINGS_VERSION);
     assert(fake.memory_journal.slots[1].state.settings.value.daily_goal == 12U);
@@ -2997,7 +3026,7 @@ int main(void)
     test_completion_can_be_started_now();
     test_cancel_auto_start_enters_scheduled_mode_ready();
     test_completion_dismisses_stale_mode_switch_confirmation();
-    test_auto_start_begins_scheduled_mode_after_three_seconds();
+    test_auto_start_begins_scheduled_mode_after_ten_seconds();
     test_full_set_schedules_three_short_breaks_then_one_long_break();
     test_boot_restarts_completion_countdown_without_offline_chaining();
     test_reboot_restores_running_timer_from_rtc_deadline();
@@ -3025,7 +3054,7 @@ int main(void)
     test_opencode_status_renders_priority_and_wakes_display();
     test_opencode_status_ack_reveals_next_priority();
     test_opencode_status_switch_persists_and_disables();
-    test_opencode_status_migration_defaults_on();
+    test_pomodoro_completion_transition_migration_defaults_to_ten_seconds();
     puts("pomodoro_application_test: all tests passed");
     return 0;
 }

@@ -28,6 +28,16 @@ static bool settings_version_is_supported(uint32_t version)
            version == POMODORO_SETTINGS_VERSION - 1U;
 }
 
+static bool persisted_settings_are_valid(
+    const pomodoro_persisted_settings_t *settings)
+{
+    pomodoro_settings_t value = settings->value;
+    if (settings->version == POMODORO_SETTINGS_VERSION - 1U) {
+        value.pomodoro_completion_transition_seconds = 10U;
+    }
+    return pomodoro_settings_are_valid(&value);
+}
+
 static bool state_is_valid(const pomodoro_persisted_state_t *state)
 {
     return state != NULL &&
@@ -35,7 +45,7 @@ static bool state_is_valid(const pomodoro_persisted_state_t *state)
            settings_version_is_supported(state->settings.version) &&
            state->timer.version == POMODORO_SNAPSHOT_VERSION &&
            state->statistics.version == POMODORO_STATISTICS_VERSION &&
-           pomodoro_settings_are_valid(&state->settings.value) &&
+           persisted_settings_are_valid(&state->settings) &&
            state->settings.last_nonzero_volume >= 1U &&
            state->settings.last_nonzero_volume <= 5U &&
            state->checksum == state_checksum(state);
@@ -82,7 +92,7 @@ bool pomodoro_persistence_migrate(pomodoro_persisted_state_t *state)
     }
     if (state->settings.version != POMODORO_SETTINGS_VERSION) {
         state->settings.version = POMODORO_SETTINGS_VERSION;
-        state->settings.value.opencode_status_enabled = true;
+        state->settings.value.pomodoro_completion_transition_seconds = 10U;
         state->checksum = state_checksum(state);
     }
     return true;
@@ -113,9 +123,6 @@ bool pomodoro_persistence_unpack(pomodoro_persisted_state_t *source,
         model->last_nonzero_volume = model->settings.volume > 0U
             ? model->settings.volume
             : 3U;
-    }
-    if (!was_current) {
-        model->settings.opencode_status_enabled = true;
     }
     *statistics = source->statistics;
     if (was_migrated != NULL) {

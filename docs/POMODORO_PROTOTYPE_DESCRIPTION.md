@@ -98,7 +98,7 @@ flowchart LR
 - Battery 为状态元素，不表现成普通按钮；Statistics、Settings 使用 48×48 px IconButton 触控区。
 - 子页面左侧：Back IconButton + 页面标题。
 - 子页面支持左边缘右滑返回；手势起点位于左侧 32 px，提交距离约 72 px。
-- 完成态三秒自动开始倒计时期间，顶部交互与右下角 Sound 按钮暂时禁用。
+- 完成态自动开始倒计时期间，顶部交互与右下角 Sound 按钮暂时禁用。
 
 ### 4.2 颜色与状态
 
@@ -229,7 +229,7 @@ flowchart LR
 - Ready、Running、Paused 与完成态均可见；非 Main 页面与平台错误状态隐藏。
 - 点击切换声音：静音或恢复最后一个非零音量，并显示 O01 Volume overlay 两秒。
 - 不暂停或干扰计时；声音关闭不改变完成态的视觉反馈。
-- 三秒自动开始倒计时期间按钮禁用；模态确认遮罩显示期间不可点击。
+- 自动开始倒计时期间按钮禁用；模态确认遮罩显示期间不可点击。
 - 与 Settings 的 Sound switch、实体音量键共享同一声音状态，重启后保留。
 
 ## 8. S11 — Focus complete
@@ -248,11 +248,11 @@ flowchart LR
 
 ### 自动开始开启
 
-- 显示：`Short break starts in 3` 或 `Long break starts in 3`。
+- 显示：`Short break starts in N` 或 `Long break starts in N`，其中 `N` 为当前 Pomodoro Completion Transition 的剩余秒数。
 - 主按钮：`Start now`。
 - 次操作：`Cancel auto-start`。
 - 取消只影响本次，进入下一 Mode 的 Ready 状态。
-- 三秒内其他导航与模式手势禁用。
+- 自动开始倒计时期间其他导航与模式手势禁用。
 
 ### 自动开始关闭
 
@@ -481,12 +481,12 @@ flowchart LR
 - P02 五个滚轮（Year/Month/Day/Hour/Minute）范围正确且年月改变收敛日期。
 - Main 的 Statistics 与 Settings IconButton 都可操作。
 - Stats Back 能返回正确来源。
-- 四个 NumericStepper 共享模板但范围正确。
+- 五个 NumericStepper 共享模板但范围正确。
 - Running/Paused 的模式滑动必须先经过 D01。
 - Ready 的模式滑动不显示 Dialog。
 - Paused 才出现 Reset，且必须经过 D02。
 - 模式分页点不可点击。
-- 自动开始三秒期间禁用顶部导航、模式滑动和 Sound 按钮。
+- 自动开始倒计时期间禁用顶部导航、模式滑动和 Sound 按钮。
 - `Cancel auto-start` 不改变 Settings 中的开关。
 - 第四个 Focus 完成显示 4/4；Long break 完成显示 0/4。
 - 在 4/4 跳过 Long break 并开始 Focus 时，开始瞬间显示 0/4。

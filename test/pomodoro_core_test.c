@@ -22,12 +22,14 @@ static pomodoro_model_t fresh_model(void)
 static void test_focus_completes_once(void)
 {
     pomodoro_model_t model = fresh_model();
+    model.settings.pomodoro_completion_transition_seconds = 7U;
 
     assert(pomodoro_start(&model, 100) == POMODORO_OK);
     assert(pomodoro_tick(&model, 399) == POMODORO_EVENT_NONE);
     assert(pomodoro_tick(&model, 400) == POMODORO_EVENT_FOCUS_COMPLETE);
     assert(pomodoro_tick(&model, 200) == POMODORO_EVENT_NONE);
     assert(model.timer.last_completion.configured_duration_seconds == 300);
+    assert(model.timer.completion_transition_deadline_wall_time_seconds == 407);
     assert(model.timer.set_progress == 1);
 }
 
@@ -102,12 +104,14 @@ static void test_fourth_focus_schedules_long_break(void)
 static void test_long_break_resets_set(void)
 {
     pomodoro_model_t model = fresh_model();
+    model.settings.auto_start_focus = true;
     model.timer.set_progress = 3;
 
     assert(pomodoro_request_mode(&model, POMODORO_MODE_LONG_BREAK) == POMODORO_OK);
     assert(pomodoro_start(&model, 10) == POMODORO_OK);
     assert(pomodoro_tick(&model, 310) == POMODORO_EVENT_BREAK_COMPLETE);
     assert(model.timer.set_progress == 0);
+    assert(model.timer.completion_transition_deadline_wall_time_seconds == 313);
 }
 
 static void test_skipping_long_break_resets_on_next_focus_start(void)
@@ -183,8 +187,8 @@ static void test_completion_countdown_restarts_after_reboot(void)
     complete_focus(&before, 100);
     assert(pomodoro_auto_start_is_due(&before, 1000));
     assert(pomodoro_restore(&after, &before.timer, 1000, &event) == POMODORO_OK);
-    assert(!pomodoro_auto_start_is_due(&after, 1002));
-    assert(pomodoro_auto_start_is_due(&after, 1003));
+    assert(!pomodoro_auto_start_is_due(&after, 1009));
+    assert(pomodoro_auto_start_is_due(&after, 1010));
 }
 
 static void test_settings_validation(void)
@@ -196,6 +200,11 @@ static void test_settings_validation(void)
     assert(pomodoro_init(&model, &settings) == POMODORO_ERR_INVALID_ARGUMENT);
     settings = pomodoro_default_settings();
     settings.focus_minutes = 4;
+    assert(pomodoro_init(&model, &settings) == POMODORO_ERR_INVALID_ARGUMENT);
+    settings = pomodoro_default_settings();
+    settings.pomodoro_completion_transition_seconds = 0U;
+    assert(pomodoro_init(&model, &settings) == POMODORO_ERR_INVALID_ARGUMENT);
+    settings.pomodoro_completion_transition_seconds = 61U;
     assert(pomodoro_init(&model, &settings) == POMODORO_ERR_INVALID_ARGUMENT);
 
     settings = pomodoro_default_settings();
@@ -209,8 +218,8 @@ static void test_auto_start_can_be_due_or_cancelled(void)
     pomodoro_model_t model = fresh_model();
 
     complete_focus(&model, 100);
-    assert(!pomodoro_auto_start_is_due(&model, 402));
-    assert(pomodoro_auto_start_is_due(&model, 403));
+    assert(!pomodoro_auto_start_is_due(&model, 409));
+    assert(pomodoro_auto_start_is_due(&model, 410));
     assert(pomodoro_cancel_auto_start(&model) == POMODORO_OK);
     assert(!pomodoro_auto_start_is_due(&model, 500));
     assert(model.settings.auto_start_breaks);

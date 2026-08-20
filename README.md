@@ -15,8 +15,8 @@ The repository currently contains an executable device slice of the product:
   pause/resume/reset controls, completion transitions, and Set Progress;
 - non-wrapping touch gestures with confirmation before an active timer is
   discarded;
-- three-second auto-start transitions with Start now and Cancel auto-start
-  controls that preserve the configured automation settings;
+- configurable 1–60-second Pomodoro and fixed three-second break auto-start
+  transitions with Start now and Cancel auto-start controls;
 - persistence and hardware service boundaries for NVS, RTC, display, touch,
   audio, and power implementations;
 - manual local date and time setup, used whenever the RTC has no valid time,

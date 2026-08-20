@@ -45,7 +45,7 @@ _Avoid_：番茄、页面
 _Avoid_：完成、跳过
 
 **Completion Transition**：
-一次计时自然结束后、下一模式开始前的反馈阶段。启用自动开始时该阶段持续三秒，用户仍可立即开始或取消自动开始。
+一次计时自然结束后、下一模式开始前的反馈阶段。启用自动开始时，Pomodoro 的该阶段默认持续十秒且可在设置中调整为一至六十秒，休息的该阶段固定持续三秒；用户仍可立即开始或取消自动开始。Daily Goal 达成反馈属于同一个 Pomodoro Completion Transition，不是独立完成阶段。
 _Avoid_：完成模式、完成页面
 
 **UI Orientation**：

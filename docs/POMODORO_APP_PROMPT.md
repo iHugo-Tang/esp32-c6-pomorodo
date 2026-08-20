@@ -119,10 +119,11 @@ Settings defaults:
 
 - Auto-start breaks: on.
 - Auto-start focus: off.
+- Pomodoro completion: 10 seconds, adjustable from 1 to 60 seconds.
 
 When the relevant auto-start setting is on:
 
-- Show the completion state for three seconds.
+- Show Pomodoro completion for the configured duration and break completion for three seconds.
 - Show a visible countdown to the scheduled next mode.
 - Offer `Start now` and `Cancel auto-start`.
 - Cancel affects this transition only and does not change the global setting.

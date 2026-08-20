@@ -41,6 +41,13 @@ static bool auto_start_enabled(const pomodoro_model_t *model)
         : model->settings.auto_start_focus;
 }
 
+static uint8_t completion_transition_seconds(const pomodoro_model_t *model)
+{
+    return model->timer.mode == POMODORO_MODE_FOCUS
+        ? model->settings.pomodoro_completion_transition_seconds
+        : 3U;
+}
+
 static pomodoro_event_t settle(pomodoro_model_t *model,
                                uint64_t now_wall_time_seconds)
 {
@@ -53,7 +60,9 @@ static pomodoro_event_t settle(pomodoro_model_t *model,
     model->timer.remaining_seconds = 0;
     model->timer.timer_state = POMODORO_TIMER_COMPLETION;
     model->timer.completion_transition_deadline_wall_time_seconds =
-        auto_start_enabled(model) ? now_wall_time_seconds + 3U : 0U;
+        auto_start_enabled(model)
+            ? now_wall_time_seconds + completion_transition_seconds(model)
+            : 0U;
     model->timer.auto_start_cancelled = false;
     model->timer.last_completion = (pomodoro_completion_record_t) {
         .settlement_sequence = model->timer.settlement_sequence,
@@ -87,6 +96,7 @@ pomodoro_settings_t pomodoro_default_settings(void)
         .brightness_percent = 70,
         .idle_brightness_percent = 20,
         .opencode_status_enabled = true,
+        .pomodoro_completion_transition_seconds = 10,
     };
 }
 
@@ -105,7 +115,9 @@ bool pomodoro_settings_are_valid(const pomodoro_settings_t *settings)
            settings->brightness_percent % 5U == 0U &&
            settings->idle_brightness_percent >= 10U &&
            settings->idle_brightness_percent <= 100U &&
-           settings->idle_brightness_percent % 5U == 0U;
+           settings->idle_brightness_percent % 5U == 0U &&
+           settings->pomodoro_completion_transition_seconds >= 1U &&
+           settings->pomodoro_completion_transition_seconds <= 60U;
 }
 
 pomodoro_result_t pomodoro_init(pomodoro_model_t *model,
@@ -387,7 +399,7 @@ pomodoro_result_t pomodoro_restore(pomodoro_model_t *model,
                !snapshot->auto_start_cancelled &&
                snapshot->completion_transition_deadline_wall_time_seconds != 0U) {
         model->timer.completion_transition_deadline_wall_time_seconds =
-            now_wall_time_seconds + 3U;
+            now_wall_time_seconds + completion_transition_seconds(model);
     }
     return POMODORO_OK;
 }
