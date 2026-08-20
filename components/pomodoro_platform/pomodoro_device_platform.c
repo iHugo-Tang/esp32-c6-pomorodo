@@ -27,6 +27,8 @@ typedef struct {
     uint8_t power_poll_divider;
     uint8_t orientation_sample_divider;
     bool pending_rotation;
+    bool pending_power_action_set;
+    pomodoro_application_action_t pending_power_action;
     pomodoro_orientation_resolver_t orientation;
 } runtime_context_t;
 
@@ -171,11 +173,10 @@ static bool dispatch_touch(void)
     return consumed;
 }
 
-static void dispatch_hardware_action(pomodoro_application_action_t action)
+static bool try_dispatch_hardware_action(pomodoro_application_action_t action)
 {
     if (!lvgl_port_lock(50)) {
-        ESP_LOGW(TAG, "Hardware action lock timed out");
-        return;
+        return false;
     }
     pomodoro_application_result_t result =
         pomodoro_application_dispatch(runtime.application, action);
@@ -183,6 +184,30 @@ static void dispatch_hardware_action(pomodoro_application_action_t action)
     if (result != POMODORO_APPLICATION_OK) {
         ESP_LOGE(TAG, "Hardware action %d failed: %d", action, result);
     }
+    return true;
+}
+
+static void dispatch_hardware_action(pomodoro_application_action_t action)
+{
+    if (!try_dispatch_hardware_action(action)) {
+        ESP_LOGW(TAG, "Hardware action lock timed out");
+    }
+}
+
+static void retry_pending_power_action(runtime_context_t *target)
+{
+    if (target->pending_power_action_set &&
+        try_dispatch_hardware_action(target->pending_power_action)) {
+        target->pending_power_action_set = false;
+    }
+}
+
+static void queue_power_action(runtime_context_t *target,
+                               pomodoro_application_action_t action)
+{
+    target->pending_power_action = action;
+    target->pending_power_action_set = true;
+    retry_pending_power_action(target);
 }
 
 static void debounce_volume_button(bool sample, bool *candidate,
@@ -254,10 +279,16 @@ static void sample_orientation(runtime_context_t *target)
 static void poll_controls(void *context)
 {
     runtime_context_t *target = context;
+    if (target == NULL) {
+        return;
+    }
+    if (target->pending_power_action_set) {
+        retry_pending_power_action(target);
+        return;
+    }
     bool increase;
     bool decrease;
-    if (target == NULL ||
-        !pomodoro_board_read_volume_buttons(&increase, &decrease)) {
+    if (!pomodoro_board_read_volume_buttons(&increase, &decrease)) {
         return;
     }
     debounce_volume_button(increase, &target->volume_up_candidate,
@@ -280,10 +311,10 @@ static void poll_controls(void *context)
     bool long_press;
     if (pomodoro_board_read_power_events(&short_press, &long_press)) {
         if (long_press) {
-            dispatch_hardware_action(POMODORO_APPLICATION_ACTION_POWER_OFF);
+            queue_power_action(target, POMODORO_APPLICATION_ACTION_POWER_OFF);
         } else if (short_press) {
-            dispatch_hardware_action(
-                POMODORO_APPLICATION_ACTION_TOGGLE_DISPLAY);
+            queue_power_action(target,
+                               POMODORO_APPLICATION_ACTION_TOGGLE_DISPLAY);
         }
     }
 }

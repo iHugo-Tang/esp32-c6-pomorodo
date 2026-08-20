@@ -1265,6 +1265,48 @@ static void test_display_lifecycle_dims_sleeps_and_consumes_wake_touch(void)
     pomodoro_application_destroy(application);
 }
 
+static void test_auto_display_off_then_first_pwr_press_wakes_and_resets_idle(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_epoch_seconds = 100U;
+    fake_enable_journal(&fake);
+    pomodoro_application_t *application = boot_application(&fake);
+
+    fake.now_epoch_seconds = 400U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(!fake.rendered_view.display_awake);
+    assert(!fake.display_awake);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_READY);
+
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TOGGLE_DISPLAY) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.display_awake);
+    assert(fake.display_awake);
+    assert(fake.rendered_view.effective_brightness_percent == 70U);
+    assert(fake.brightness_percent == 70U);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_READY);
+    assert(fake.rendered_view.remaining_seconds == 25U * 60U);
+
+    fake.now_epoch_seconds = 519U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.display_awake);
+    assert(fake.rendered_view.effective_brightness_percent == 70U);
+
+    fake.now_epoch_seconds = 520U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.display_awake);
+    assert(fake.rendered_view.effective_brightness_percent == 14U);
+    pomodoro_application_destroy(application);
+}
+
 static void test_wake_touch_stays_consumed_when_recovery_fails(void)
 {
     fake_platform_t fake;
@@ -2435,6 +2477,7 @@ int main(void)
     test_volume_buttons_and_sound_toggle_persist_last_nonzero_volume();
     test_battery_status_and_one_shot_warning_do_not_cancel_timer();
     test_display_lifecycle_dims_sleeps_and_consumes_wake_touch();
+    test_auto_display_off_then_first_pwr_press_wakes_and_resets_idle();
     test_wake_touch_stays_consumed_when_recovery_fails();
     test_running_dims_to_sixty_percent_and_completion_wakes_display();
     test_power_controls_do_not_change_timer_state();
