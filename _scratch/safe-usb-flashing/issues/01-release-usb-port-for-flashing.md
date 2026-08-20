@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** complete
+**Status:** ready-for-agent
 
 - [x] The flashing command creates a project-scoped reservation before opening the USB port.
 - [x] The OpenCode Status plugin observes the reservation and closes both its reader process and serial write handle.

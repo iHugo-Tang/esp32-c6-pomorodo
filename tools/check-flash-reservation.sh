@@ -20,10 +20,12 @@ FAKE_PORT="$CHECK_ROOT/fake-port"
 RESERVATION="$CHECK_ROOT/.pomodoro/flash-reservation"
 SAW_RESERVATION="$CHECK_ROOT/reservation-seen"
 FLASH_LOG="$CHECK_ROOT/flash.log"
+IDF_ARGS_LOG="$CHECK_ROOT/idf-args.log"
 
 cat > "$CHECK_ROOT/fakebin/idf.py" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+printf '%s\n' "$*" > "${IDF_ARGS_LOG:-/dev/null}"
 if [ -f "${FAKE_RESERVATION:-}" ]; then
   printf 'reservation-present\n' >> "${RESERVATION_CHECK:-/dev/null}"
 else
@@ -40,6 +42,7 @@ run_flash() {
     FAKE_IDF_EXIT="${1:-0}" \
     FAKE_RESERVATION="$RESERVATION" \
     RESERVATION_CHECK="$SAW_RESERVATION" \
+    IDF_ARGS_LOG="$IDF_ARGS_LOG" \
     POMODORO_FLASH_RELEASE_TIMEOUT_S=2 \
     "$CHECK_ROOT/tools/flash.sh" -p "$FAKE_PORT" > "$FLASH_LOG" 2>&1
   local status=$?
@@ -59,6 +62,8 @@ fail() {
 
 # 1. Success: reservation is present while flashing and removed afterward.
 run_flash 0 || fail "successful flash exited non-zero"
+grep -Fqx -- "-p $FAKE_PORT flash" "$IDF_ARGS_LOG" \
+  || fail "idf.py arguments were not ordered as '-p PORT flash'"
 grep -q "reservation-present" "$SAW_RESERVATION" \
   || fail "reservation was not present during flashing"
 [ ! -e "$RESERVATION" ] || fail "reservation left behind after success"

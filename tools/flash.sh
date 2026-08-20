@@ -64,4 +64,4 @@ if [ -n "$PORT" ]; then
   wait_for_release "$PORT" || exit 1
 fi
 
-idf.py flash "$@"
+idf.py "$@" flash
