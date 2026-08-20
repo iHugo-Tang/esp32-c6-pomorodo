@@ -308,10 +308,11 @@ Battery UI:
 
 - Running timer: after two minutes without touch, dim to 60% of the chosen brightness but remain visible.
 - Ready, paused, or waiting completion state: after two minutes dim to the configured Idle brightness multiplier of chosen brightness; after five minutes turn the display off.
-- First touch while off wakes the display only and does not execute the underlying action.
+- Any effective screen touch (blank space, a button, or a swipe start) restores the chosen brightness and restarts the idle window from the touch.
+- A touch on a dimmed but awake display restores brightness and still performs the pressed button or gesture.
+- First touch while off wakes the display only and is consumed for the whole contact: it does not execute the underlying click, gesture, or value change; the next touch operates normally.
 - Timer completion wakes the display and plays sound if enabled.
 - Apply an unobtrusive ±2px periodic pixel shift to static content.
-- User interaction immediately restores chosen brightness.
 
 ## UI Orientation
 

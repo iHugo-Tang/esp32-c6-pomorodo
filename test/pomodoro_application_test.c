@@ -1220,14 +1220,32 @@ static void test_display_lifecycle_dims_sleeps_and_consumes_wake_touch(void)
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.display_awake);
     assert(fake.rendered_view.effective_brightness_percent == 14U);
+
+    bool consumed = true;
+    assert(pomodoro_application_handle_touch(application, &consumed) ==
+           POMODORO_APPLICATION_OK);
+    assert(!consumed);
+    assert(fake.rendered_view.display_awake);
+    assert(fake.rendered_view.effective_brightness_percent == 70U);
+
+    fake.now_epoch_seconds = 330U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.effective_brightness_percent == 70U);
     fake.now_epoch_seconds = 400U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.display_awake);
+    assert(fake.rendered_view.effective_brightness_percent == 14U);
+    fake.now_epoch_seconds = 600U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
     assert(!fake.rendered_view.display_awake);
     assert(!fake.display_awake);
 
-    bool consumed = false;
     assert(pomodoro_application_handle_touch(application, &consumed) ==
            POMODORO_APPLICATION_OK);
     assert(consumed);

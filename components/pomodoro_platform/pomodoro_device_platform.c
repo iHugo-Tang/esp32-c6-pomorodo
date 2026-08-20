@@ -151,26 +151,25 @@ static bool play_break_completion(void *context, uint8_t volume)
 
 static void dispatch_action(pomodoro_application_action_t action)
 {
-    bool consumed = false;
-    pomodoro_application_result_t result = POMODORO_APPLICATION_OK;
-    if (action != POMODORO_APPLICATION_ACTION_TICK) {
-        result = pomodoro_application_handle_touch(runtime.application,
-                                                    &consumed);
-        if (result != POMODORO_APPLICATION_OK) {
-            ESP_LOGE(TAG, "Touch wake failed: %d", result);
-            return;
-        }
-        if (consumed) {
-            return;
-        }
-    }
-    result =
+    pomodoro_application_result_t result =
         pomodoro_application_dispatch(runtime.application, action);
     if (result != POMODORO_APPLICATION_OK) {
         ESP_LOGE(TAG, "Application action %d failed: %d", action, result);
     } else if (action == POMODORO_APPLICATION_ACTION_START) {
         ESP_LOGI(TAG, "Start touch accepted");
     }
+}
+
+static bool dispatch_touch(void)
+{
+    bool consumed = false;
+    pomodoro_application_result_t result = pomodoro_application_handle_touch(
+        runtime.application, &consumed);
+    if (result != POMODORO_APPLICATION_OK) {
+        ESP_LOGE(TAG, "Touch handling failed: %d", result);
+        return false;
+    }
+    return consumed;
 }
 
 static void dispatch_hardware_action(pomodoro_application_action_t action)
@@ -307,7 +306,7 @@ esp_err_t pomodoro_platform_start(void)
     if (result != ESP_OK) {
         return fail_startup("Display initialization failed", result);
     }
-    result = pomodoro_device_view_create(dispatch_action);
+    result = pomodoro_device_view_create(dispatch_action, dispatch_touch);
     if (result != ESP_OK) {
         return fail_startup("Main view initialization failed", result);
     }

@@ -95,6 +95,7 @@ enum {
 
 typedef struct {
     pomodoro_device_action_handler_t action_handler;
+    pomodoro_device_touch_handler_t touch_handler;
     pomodoro_application_view_t last_view;
     lv_obj_t *title;
     lv_obj_t *ring;
@@ -201,6 +202,18 @@ static void dispatch(pomodoro_application_action_t action)
 {
     if (view_context.action_handler != NULL) {
         view_context.action_handler(action);
+    }
+}
+
+static void touch_pressed(lv_event_t *event)
+{
+    if (view_context.touch_handler == NULL ||
+        !view_context.touch_handler()) {
+        return;
+    }
+    lv_indev_t *indev = lv_event_get_current_target(event);
+    if (indev != NULL) {
+        lv_indev_wait_release(indev);
     }
 }
 
@@ -645,7 +658,8 @@ static void create_completion_visuals(lv_obj_t *parent)
 }
 
 esp_err_t pomodoro_device_view_create(
-    pomodoro_device_action_handler_t action_handler)
+    pomodoro_device_action_handler_t action_handler,
+    pomodoro_device_touch_handler_t touch_handler)
 {
     if (action_handler == NULL || !lvgl_port_lock(1000)) {
         return action_handler == NULL
@@ -654,6 +668,7 @@ esp_err_t pomodoro_device_view_create(
     }
     memset(&view_context, 0, sizeof(view_context));
     view_context.action_handler = action_handler;
+    view_context.touch_handler = touch_handler;
     lv_obj_t *screen = lv_screen_active();
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x07090D), 0);
     lv_obj_set_style_text_color(screen, lv_color_hex(0xF5F7FA), 0);
@@ -664,6 +679,8 @@ esp_err_t pomodoro_device_view_create(
          indev = lv_indev_get_next(indev)) {
         if (lv_indev_get_type(indev) == LV_INDEV_TYPE_POINTER) {
             lv_indev_set_gesture_min_distance(indev, 72);
+            lv_indev_add_event_cb(indev, touch_pressed, LV_EVENT_PRESSED,
+                                  NULL);
         }
     }
 
