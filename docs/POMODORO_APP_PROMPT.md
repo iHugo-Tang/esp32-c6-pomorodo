@@ -66,7 +66,7 @@ Bottom:
 
 Sound button:
 
-- A fixed 48×48 Sound button sits in the bottom-right corner with at least a 24px safe margin.
+- A fixed 48×48 Sound button sits in the bottom-right corner with at least a 24px safe margin; its icon has the same 28×28 px visual size as the OpenCode status indicator.
 - It shows a speaker icon when sound is on and a mute icon when muted.
 - It stays visible in Ready, Running, Paused, and the Completion Transition; it is hidden on other pages and in platform error states.
 - Tapping it toggles sound, restoring the last non-zero volume when enabling, persists the change, and keeps the Settings Sound switch and physical volume buttons synchronized.

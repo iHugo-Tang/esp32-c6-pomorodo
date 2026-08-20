@@ -168,7 +168,7 @@ flowchart LR
 3. 圆环内从上到下：状态文案、`MM:SS`、主按钮；Paused 时增加 Reset 文本操作。
 4. 底部第一行：`Set N/4` + 4 个番茄轮廓标记。
 5. 底部第二行：三个不可点击的模式分页点。
-6. 右下角 48×48 px Sound IconButton，距边缘至少 24 px 安全边距。
+6. 右下角 48×48 px Sound IconButton，图标可视尺寸为 28×28 px，与左侧 OpenCode Status 圆点相同，距边缘至少 24 px 安全边距。
 7. 左下角 28×28 px OpenCode Status 圆点，距左边 26 px，并与右侧声音按钮竖直居中对齐，使用 44×44 px 透明触控区。
 
 ### 8.2 OpenCode Status
@@ -224,7 +224,7 @@ flowchart LR
 
 ### 8.8 Sound 按钮
 
-- 固定于主屏右下角，48×48 px，边缘安全边距至少 24 px。
+- 固定于主屏右下角，48×48 px 触控区内使用 28×28 px 图标，与左侧 OpenCode Status 圆点可视尺寸相同，边缘安全边距至少 24 px。
 - 音量非零显示扬声器图标，静音显示静音图标。
 - Ready、Running、Paused 与完成态均可见；非 Main 页面与平台错误状态隐藏。
 - 点击切换声音：静音或恢复最后一个非零音量，并显示 O01 Volume overlay 两秒。

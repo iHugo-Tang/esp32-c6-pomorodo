@@ -768,11 +768,13 @@ esp_err_t pomodoro_device_view_create(
         screen, POMODORO_APPLICATION_ACTION_TOGGLE_SOUND,
         LV_SYMBOL_VOLUME_MID);
     lv_obj_set_size(view_context.sound_button, 48, 48);
-    lv_obj_set_style_radius(view_context.sound_button, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(view_context.sound_button,
-                              lv_color_hex(0x1A1F27), 0);
+    lv_obj_set_style_bg_opa(view_context.sound_button, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(view_context.sound_button, 0, 0);
+    lv_obj_set_style_shadow_width(view_context.sound_button, 0, 0);
     lv_obj_set_style_text_color(view_context.sound_button,
                                 lv_color_hex(0xF5F7FA), 0);
+    lv_obj_set_style_text_font(lv_obj_get_child(view_context.sound_button, 0),
+                               &lv_font_montserrat_28, 0);
     lv_obj_align(view_context.sound_button, LV_ALIGN_BOTTOM_RIGHT, -26, -26);
     view_context.top_power_status = lv_label_create(screen);
     lv_obj_set_width(view_context.top_power_status, 120);
