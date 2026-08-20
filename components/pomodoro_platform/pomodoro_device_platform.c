@@ -130,10 +130,16 @@ static bool play_break_completion(void *context, uint8_t volume)
            pomodoro_board_play_completion_tone(false, volume);
 }
 
-static void dispatch_action(pomodoro_application_action_t action)
+static void dispatch_action(pomodoro_application_action_t action,
+                            uint16_t steps)
 {
-    pomodoro_application_result_t result =
-        pomodoro_application_dispatch(runtime.application, action);
+    bool manual_time_action =
+        action >= POMODORO_APPLICATION_ACTION_MANUAL_YEAR_DOWN &&
+        action <= POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_UP;
+    pomodoro_application_result_t result = manual_time_action
+        ? pomodoro_application_adjust_manual_time(
+              runtime.application, action, steps)
+        : pomodoro_application_dispatch(runtime.application, action);
     if (result != POMODORO_APPLICATION_OK) {
         ESP_LOGE(TAG, "Application action %d failed: %d", action, result);
     } else if (action == POMODORO_APPLICATION_ACTION_START) {

@@ -230,6 +230,9 @@ pomodoro_application_result_t pomodoro_application_confirm_settings(
 pomodoro_application_result_t pomodoro_application_confirm_manual_time(
     pomodoro_application_t *application,
     const pomodoro_application_manual_time_t *manual_time);
+pomodoro_application_result_t pomodoro_application_adjust_manual_time(
+    pomodoro_application_t *application,
+    pomodoro_application_action_t action, uint16_t steps);
 pomodoro_application_result_t pomodoro_application_open_numeric_setting(
     pomodoro_application_t *application,
     pomodoro_application_numeric_setting_t setting);

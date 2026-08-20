@@ -2139,14 +2139,20 @@ static void test_manual_draft_ranges_are_bounded(void)
         .minute = 59U,
     };
     assert(pomodoro_manual_time_adjust(
-        &draft, POMODORO_APPLICATION_ACTION_MANUAL_YEAR_UP));
+        &draft, POMODORO_APPLICATION_ACTION_MANUAL_YEAR_UP, 1U));
     assert(draft.local_date.year == 2069U);
     assert(pomodoro_manual_time_adjust(
-        &draft, POMODORO_APPLICATION_ACTION_MANUAL_HOUR_UP));
-    assert(draft.hour == 0U);
+        &draft, POMODORO_APPLICATION_ACTION_MANUAL_HOUR_UP, 1U));
+    assert(draft.hour == 23U);
     assert(pomodoro_manual_time_adjust(
-        &draft, POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_UP));
-    assert(draft.minute == 0U);
+        &draft, POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_UP, 1U));
+    assert(draft.minute == 59U);
+    assert(pomodoro_manual_time_adjust(
+        &draft, POMODORO_APPLICATION_ACTION_MANUAL_MONTH_UP, 1U));
+    assert(draft.local_date.month == 12U);
+    assert(pomodoro_manual_time_adjust(
+        &draft, POMODORO_APPLICATION_ACTION_MANUAL_DAY_UP, 1U));
+    assert(draft.local_date.day == 31U);
 
     draft = (pomodoro_application_manual_time_t) {
         .local_date = {.year = 2020, .month = 1, .day = 1},
@@ -2154,8 +2160,36 @@ static void test_manual_draft_ranges_are_bounded(void)
         .minute = 0U,
     };
     assert(pomodoro_manual_time_adjust(
-        &draft, POMODORO_APPLICATION_ACTION_MANUAL_YEAR_DOWN));
+        &draft, POMODORO_APPLICATION_ACTION_MANUAL_YEAR_DOWN, 1U));
     assert(draft.local_date.year == 2020U);
+    assert(pomodoro_manual_time_adjust(
+        &draft, POMODORO_APPLICATION_ACTION_MANUAL_MONTH_DOWN, 1U));
+    assert(draft.local_date.month == 1U);
+    assert(pomodoro_manual_time_adjust(
+        &draft, POMODORO_APPLICATION_ACTION_MANUAL_DAY_DOWN, 1U));
+    assert(draft.local_date.day == 1U);
+    assert(pomodoro_manual_time_adjust(
+        &draft, POMODORO_APPLICATION_ACTION_MANUAL_HOUR_DOWN, 1U));
+    assert(draft.hour == 0U);
+    assert(pomodoro_manual_time_adjust(
+        &draft, POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_DOWN, 1U));
+    assert(draft.minute == 0U);
+}
+
+static void test_manual_time_batch_renders_once(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.rtc_is_invalid = true;
+    pomodoro_application_t *application = boot_application(&fake);
+    unsigned renders_before = fake.render_count;
+    assert(pomodoro_application_adjust_manual_time(
+               application,
+               POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_UP, 59U) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.manual_time_draft.minute == 59U);
+    assert(fake.render_count == renders_before + 1U);
+    pomodoro_application_destroy(application);
 }
 
 static void test_year_month_change_converges_day(void)
@@ -2166,32 +2200,44 @@ static void test_year_month_change_converges_day(void)
         .minute = 0U,
     };
     assert(pomodoro_manual_time_adjust(
-        &draft, POMODORO_APPLICATION_ACTION_MANUAL_MONTH_UP));
+        &draft, POMODORO_APPLICATION_ACTION_MANUAL_MONTH_UP, 1U));
     assert(draft.local_date.month == 2U);
     assert(draft.local_date.day == 29U);
 
     draft.local_date = (pomodoro_date_t) {.year = 2023, .month = 1, .day = 31};
     assert(pomodoro_manual_time_adjust(
-        &draft, POMODORO_APPLICATION_ACTION_MANUAL_MONTH_UP));
+        &draft, POMODORO_APPLICATION_ACTION_MANUAL_MONTH_UP, 1U));
     assert(draft.local_date.month == 2U);
     assert(draft.local_date.day == 28U);
 
     draft.local_date = (pomodoro_date_t) {.year = 2024, .month = 4, .day = 31};
     assert(pomodoro_manual_time_adjust(
-        &draft, POMODORO_APPLICATION_ACTION_MANUAL_MONTH_UP));
+        &draft, POMODORO_APPLICATION_ACTION_MANUAL_MONTH_UP, 1U));
     assert(draft.local_date.month == 5U);
     assert(draft.local_date.day == 31U);
     draft.local_date = (pomodoro_date_t) {.year = 2024, .month = 4, .day = 30};
     assert(pomodoro_manual_time_adjust(
-        &draft, POMODORO_APPLICATION_ACTION_MANUAL_YEAR_UP));
+        &draft, POMODORO_APPLICATION_ACTION_MANUAL_YEAR_UP, 1U));
     assert(draft.local_date.year == 2025U);
     assert(draft.local_date.day == 30U);
 
     draft.local_date = (pomodoro_date_t) {.year = 2024, .month = 12, .day = 31};
     assert(pomodoro_manual_time_adjust(
-        &draft, POMODORO_APPLICATION_ACTION_MANUAL_MONTH_UP));
-    assert(draft.local_date.month == 1U);
+        &draft, POMODORO_APPLICATION_ACTION_MANUAL_MONTH_UP, 1U));
+    assert(draft.local_date.month == 12U);
     assert(draft.local_date.day == 31U);
+
+    draft.local_date = (pomodoro_date_t) {.year = 2024, .month = 1, .day = 31};
+    assert(pomodoro_manual_time_adjust(
+        &draft, POMODORO_APPLICATION_ACTION_MANUAL_MONTH_UP, 11U));
+    assert(draft.local_date.month == 12U);
+    assert(draft.local_date.day == 31U);
+
+    draft.local_date = (pomodoro_date_t) {.year = 2024, .month = 2, .day = 29};
+    assert(pomodoro_manual_time_adjust(
+        &draft, POMODORO_APPLICATION_ACTION_MANUAL_YEAR_UP, 4U));
+    assert(draft.local_date.year == 2028U);
+    assert(draft.local_date.day == 29U);
 }
 
 static void test_local_midnight_decides_statistics_day(void)
@@ -2424,6 +2470,7 @@ int main(void)
     test_settings_confirm_returns_to_settings();
     test_build_date_fallback_is_valid_with_noontime();
     test_manual_draft_ranges_are_bounded();
+    test_manual_time_batch_renders_once();
     test_year_month_change_converges_day();
     test_local_midnight_decides_statistics_day();
     puts("pomodoro_application_test: all tests passed");

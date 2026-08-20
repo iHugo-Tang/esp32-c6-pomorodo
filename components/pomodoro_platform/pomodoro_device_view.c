@@ -185,7 +185,7 @@ static bool countdown_get_glyph_dsc(const lv_font_t *font,
 static void dispatch(pomodoro_application_action_t action)
 {
     if (view_context.action_handler != NULL) {
-        view_context.action_handler(action);
+        view_context.action_handler(action, 1U);
     }
 }
 
@@ -316,8 +316,8 @@ static void manual_roller_changed(lv_event_t *event)
         pomodoro_application_action_t action =
             manual_roller_action(index, delta > 0);
         int16_t steps = delta > 0 ? delta : -delta;
-        for (int16_t step = 0; step < steps; step++) {
-            dispatch(action);
+        if (view_context.action_handler != NULL) {
+            view_context.action_handler(action, (uint16_t) steps);
         }
         return;
     }
@@ -327,15 +327,13 @@ static void render_manual_rollers(const pomodoro_application_view_t *view)
 {
     view_context.manual_roller_rendering = true;
     for (uint8_t index = 0; index < 5U; index++) {
-        manual_roller_options(index, view_context.manual_roller_options,
-                              sizeof(view_context.manual_roller_options));
-        lv_roller_set_options(view_context.manual_rollers[index],
-                              view_context.manual_roller_options,
-                              LV_ROLLER_MODE_NORMAL);
         int16_t value = manual_roller_value(view, index);
         int16_t selected = value - manual_roller_minimum(index);
-        lv_roller_set_selected(view_context.manual_rollers[index], selected,
-                               LV_ANIM_OFF);
+        if (lv_roller_get_selected(view_context.manual_rollers[index]) !=
+            (uint16_t) selected) {
+            lv_roller_set_selected(view_context.manual_rollers[index],
+                                   selected, LV_ANIM_OFF);
+        }
         lv_obj_remove_flag(view_context.manual_rollers[index],
                            LV_OBJ_FLAG_HIDDEN);
     }
@@ -1053,6 +1051,11 @@ esp_err_t pomodoro_device_view_create(
     for (uint8_t index = 0; index < 5U; index++) {
         view_context.manual_rollers[index] = lv_roller_create(
             manual_roller_container);
+        manual_roller_options(index, view_context.manual_roller_options,
+                              sizeof(view_context.manual_roller_options));
+        lv_roller_set_options(view_context.manual_rollers[index],
+                              view_context.manual_roller_options,
+                              LV_ROLLER_MODE_NORMAL);
         lv_obj_set_width(view_context.manual_rollers[index], 70);
         lv_obj_set_height(view_context.manual_rollers[index], 120);
         lv_roller_set_visible_row_count(view_context.manual_rollers[index], 3);

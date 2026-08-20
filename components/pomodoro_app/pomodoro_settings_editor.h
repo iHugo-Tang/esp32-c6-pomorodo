@@ -21,6 +21,6 @@ void pomodoro_numeric_editor_apply(const pomodoro_numeric_editor_t *editor,
                                    pomodoro_settings_t *settings);
 bool pomodoro_manual_time_adjust(
     pomodoro_application_manual_time_t *draft,
-    pomodoro_application_action_t action);
+    pomodoro_application_action_t action, uint16_t steps);
 
 #endif

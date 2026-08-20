@@ -7,7 +7,7 @@
 #include "pomodoro_application.h"
 
 typedef void (*pomodoro_device_action_handler_t)(
-    pomodoro_application_action_t action);
+    pomodoro_application_action_t action, uint16_t steps);
 
 /* Returns true when the contact is consumed and LVGL must wait for release. */
 typedef bool (*pomodoro_device_touch_handler_t)(void);

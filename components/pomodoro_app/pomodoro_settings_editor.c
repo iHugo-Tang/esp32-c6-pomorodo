@@ -106,9 +106,9 @@ void pomodoro_numeric_editor_apply(const pomodoro_numeric_editor_t *editor,
 
 bool pomodoro_manual_time_adjust(
     pomodoro_application_manual_time_t *draft,
-    pomodoro_application_action_t action)
+    pomodoro_application_action_t action, uint16_t steps)
 {
-    if (draft == NULL) {
+    if (draft == NULL || steps == 0U) {
         return false;
     }
     int delta = action == POMODORO_APPLICATION_ACTION_MANUAL_YEAR_UP ||
@@ -116,34 +116,33 @@ bool pomodoro_manual_time_adjust(
             action == POMODORO_APPLICATION_ACTION_MANUAL_DAY_UP ||
             action == POMODORO_APPLICATION_ACTION_MANUAL_HOUR_UP ||
             action == POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_UP
-        ? 1
-        : -1;
+        ? (int) steps
+        : -(int) steps;
     if (action == POMODORO_APPLICATION_ACTION_MANUAL_YEAR_DOWN ||
         action == POMODORO_APPLICATION_ACTION_MANUAL_YEAR_UP) {
         int value = (int) draft->local_date.year + delta;
-        if (value >= 2020 && value <= 2069) {
-            draft->local_date.year = (uint16_t) value;
-        }
+        draft->local_date.year = (uint16_t) (value < 2020 ? 2020 :
+                                             value > 2069 ? 2069 : value);
         converge_day(draft);
     } else if (action == POMODORO_APPLICATION_ACTION_MANUAL_MONTH_DOWN ||
                action == POMODORO_APPLICATION_ACTION_MANUAL_MONTH_UP) {
         int value = (int) draft->local_date.month + delta;
-        draft->local_date.month = (uint8_t) (value < 1 ? 12 :
-                                             value > 12 ? 1 : value);
+        draft->local_date.month = (uint8_t) (value < 1 ? 1 :
+                                             value > 12 ? 12 : value);
         converge_day(draft);
     } else if (action == POMODORO_APPLICATION_ACTION_MANUAL_DAY_DOWN ||
                action == POMODORO_APPLICATION_ACTION_MANUAL_DAY_UP) {
         int value = (int) draft->local_date.day + delta;
-        draft->local_date.day = (uint8_t) (value < 1 ? 31 :
-                                           value > 31 ? 1 : value);
+        draft->local_date.day = (uint8_t) (value < 1 ? 1 :
+                                           value > 31 ? 31 : value);
     } else if (action == POMODORO_APPLICATION_ACTION_MANUAL_HOUR_DOWN ||
                action == POMODORO_APPLICATION_ACTION_MANUAL_HOUR_UP) {
         int value = (int) draft->hour + delta;
-        draft->hour = (uint8_t) (value < 0 ? 23 : value > 23 ? 0 : value);
+        draft->hour = (uint8_t) (value < 0 ? 0 : value > 23 ? 23 : value);
     } else if (action == POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_DOWN ||
                action == POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_UP) {
         int value = (int) draft->minute + delta;
-        draft->minute = (uint8_t) (value < 0 ? 59 : value > 59 ? 0 : value);
+        draft->minute = (uint8_t) (value < 0 ? 0 : value > 59 ? 59 : value);
     } else {
         return false;
     }

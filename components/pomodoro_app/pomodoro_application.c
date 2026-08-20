@@ -854,11 +854,8 @@ pomodoro_application_result_t pomodoro_application_dispatch(
         }
         if (action >= POMODORO_APPLICATION_ACTION_MANUAL_YEAR_DOWN &&
             action <= POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_UP) {
-            if (!pomodoro_manual_time_adjust(
-                    &application->manual_time_draft, action)) {
-                return POMODORO_APPLICATION_ERR_INVALID_STATE;
-            }
-            return render(application, NULL, POMODORO_EVENT_NONE);
+            return pomodoro_application_adjust_manual_time(
+                application, action, 1U);
         }
         if (action == POMODORO_APPLICATION_ACTION_MANUAL_TIME_CONFIRM) {
             return pomodoro_application_confirm_manual_time(
@@ -1140,6 +1137,26 @@ pomodoro_application_result_t pomodoro_application_confirm_brightness(
     settings.brightness_percent = percent;
     application->brightness_preview_percent = 0U;
     return pomodoro_application_confirm_settings(application, &settings);
+}
+
+pomodoro_application_result_t pomodoro_application_adjust_manual_time(
+    pomodoro_application_t *application,
+    pomodoro_application_action_t action, uint16_t steps)
+{
+    if (application == NULL || steps == 0U) {
+        return POMODORO_APPLICATION_ERR_INVALID_ARGUMENT;
+    }
+    if (!application->booted ||
+        application->view.phase != POMODORO_APPLICATION_PHASE_TIME_SETUP ||
+        action < POMODORO_APPLICATION_ACTION_MANUAL_YEAR_DOWN ||
+        action > POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_UP) {
+        return POMODORO_APPLICATION_ERR_INVALID_STATE;
+    }
+    if (!pomodoro_manual_time_adjust(
+            &application->manual_time_draft, action, steps)) {
+        return POMODORO_APPLICATION_ERR_INVALID_STATE;
+    }
+    return render(application, NULL, POMODORO_EVENT_NONE);
 }
 
 pomodoro_application_result_t pomodoro_application_confirm_settings(
