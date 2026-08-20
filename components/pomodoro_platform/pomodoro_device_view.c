@@ -591,6 +591,7 @@ static lv_obj_t *make_setting_switch_row(
     pomodoro_application_action_t action, lv_obj_t **toggle)
 {
     lv_obj_t *row = lv_obj_create(parent);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(row, LV_PCT(100), 58);
     lv_obj_set_style_bg_color(row, lv_color_hex(0x1A1F27), 0);
     lv_obj_set_style_border_width(row, 0, 0);
@@ -1622,7 +1623,8 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
 
 static void render_status_overlay(const pomodoro_application_view_t *view)
 {
-    if (view->rtc_is_valid) {
+    if (view->rtc_is_valid ||
+        view->phase == POMODORO_APPLICATION_PHASE_TIME_SETUP) {
         lv_obj_add_flag(view_context.rtc_warning, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_label_set_text(view_context.rtc_warning,
