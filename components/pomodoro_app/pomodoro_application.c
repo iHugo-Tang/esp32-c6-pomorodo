@@ -32,6 +32,7 @@ struct pomodoro_application {
     uint64_t last_interaction_wall_time_seconds;
     bool display_awake;
     bool display_manually_asleep;
+    bool usb_power_was_active;
     uint8_t effective_brightness_percent;
     pomodoro_application_manual_time_t manual_time_draft;
     bool time_setup_can_cancel;
@@ -271,6 +272,12 @@ static pomodoro_application_result_t read_time(
         return fail_platform(application, POMODORO_APPLICATION_ERROR_DISPLAY);
     }
     application->device_status = status;
+    if (application->usb_power_was_active &&
+        !application->device_status.usb_power) {
+        application->last_interaction_wall_time_seconds =
+            time->wall_time_seconds;
+    }
+    application->usb_power_was_active = application->device_status.usb_power;
     if (status.low_battery && !application->low_battery_warning_shown) {
         application->low_battery_warning_shown = true;
         application->low_battery_warning_deadline_wall_time_seconds =
@@ -329,7 +336,8 @@ static pomodoro_application_result_t update_display_lifecycle(
     pomodoro_display_policy_result_t policy = pomodoro_display_policy_resolve(
         application->model.timer.timer_state, idle_seconds,
         chosen_brightness,
-        application->model.settings.idle_brightness_percent);
+        application->model.settings.idle_brightness_percent,
+        application->device_status.usb_power);
     return set_display_state(application, policy.awake,
                              policy.brightness_percent);
 }

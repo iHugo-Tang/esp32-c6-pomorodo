@@ -1358,6 +1358,241 @@ static void test_running_dims_to_sixty_percent_and_completion_wakes_display(void
     pomodoro_application_destroy(application);
 }
 
+static void test_usb_power_keeps_ready_display_normal_at_idle_thresholds(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_wall_time_seconds = 100U;
+    fake.device_status = (pomodoro_application_device_status_t) {
+        .battery_percent = 80U,
+        .usb_power = true,
+    };
+    fake_enable_journal(&fake);
+    pomodoro_application_t *application = boot_application(&fake);
+    fake.now_wall_time_seconds = 220U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_READY);
+    assert(fake.rendered_view.display_awake);
+    assert(fake.rendered_view.effective_brightness_percent == 70U);
+    fake.now_wall_time_seconds = 400U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_READY);
+    assert(fake.rendered_view.display_awake);
+    assert(fake.rendered_view.effective_brightness_percent == 70U);
+    pomodoro_application_destroy(application);
+}
+
+static void test_usb_power_keeps_running_display_normal_and_timer_intact(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_wall_time_seconds = 100U;
+    fake_enable_journal(&fake);
+    pomodoro_application_t *application = boot_application(&fake);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_START) ==
+           POMODORO_APPLICATION_OK);
+    fake.device_status.usb_power = true;
+    fake.now_wall_time_seconds = 220U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_RUNNING);
+    assert(fake.rendered_view.remaining_seconds == 1380U);
+    assert(fake.rendered_view.display_awake);
+    assert(fake.rendered_view.effective_brightness_percent == 70U);
+    pomodoro_application_destroy(application);
+}
+
+static void test_charging_without_usb_power_keeps_battery_policy(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_wall_time_seconds = 100U;
+    fake.device_status = (pomodoro_application_device_status_t) {
+        .battery_percent = 80U,
+        .charging = true,
+        .usb_power = false,
+    };
+    fake_enable_journal(&fake);
+    pomodoro_application_t *application = boot_application(&fake);
+    fake.now_wall_time_seconds = 220U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.display_awake);
+    assert(fake.rendered_view.effective_brightness_percent == 14U);
+    fake.now_wall_time_seconds = 400U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(!fake.rendered_view.display_awake);
+    pomodoro_application_destroy(application);
+}
+
+static void test_usb_insertion_restores_dimmed_display(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_wall_time_seconds = 100U;
+    fake_enable_journal(&fake);
+    pomodoro_application_t *application = boot_application(&fake);
+    fake.now_wall_time_seconds = 220U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.effective_brightness_percent == 14U);
+    fake.device_status.usb_power = true;
+    fake.now_wall_time_seconds = 221U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.display_awake);
+    assert(fake.rendered_view.effective_brightness_percent == 70U);
+    pomodoro_application_destroy(application);
+}
+
+static void test_usb_insertion_wakes_auto_off_display(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_wall_time_seconds = 100U;
+    fake_enable_journal(&fake);
+    pomodoro_application_t *application = boot_application(&fake);
+    fake.now_wall_time_seconds = 400U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(!fake.rendered_view.display_awake);
+    assert(!fake.display_awake);
+    fake.device_status.usb_power = true;
+    fake.now_wall_time_seconds = 401U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.display_awake);
+    assert(fake.rendered_view.effective_brightness_percent == 70U);
+    pomodoro_application_destroy(application);
+}
+
+static void test_usb_power_preserves_user_requested_display_off(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_wall_time_seconds = 100U;
+    fake.device_status.usb_power = true;
+    fake_enable_journal(&fake);
+    pomodoro_application_t *application = boot_application(&fake);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TOGGLE_DISPLAY) ==
+           POMODORO_APPLICATION_OK);
+    assert(!fake.rendered_view.display_awake);
+    assert(!fake.display_awake);
+    fake.now_wall_time_seconds = 221U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(!fake.rendered_view.display_awake);
+    assert(!fake.display_awake);
+    pomodoro_application_destroy(application);
+}
+
+static void test_usb_removal_restarts_idle_timing(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_wall_time_seconds = 100U;
+    fake.device_status.usb_power = true;
+    fake_enable_journal(&fake);
+    pomodoro_application_t *application = boot_application(&fake);
+    fake.now_wall_time_seconds = 400U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.display_awake);
+    assert(fake.rendered_view.effective_brightness_percent == 70U);
+    fake.device_status.usb_power = false;
+    fake.now_wall_time_seconds = 400U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.display_awake);
+    assert(fake.rendered_view.effective_brightness_percent == 70U);
+    fake.now_wall_time_seconds = 519U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.display_awake);
+    assert(fake.rendered_view.effective_brightness_percent == 70U);
+    fake.now_wall_time_seconds = 520U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.display_awake);
+    assert(fake.rendered_view.effective_brightness_percent == 14U);
+    pomodoro_application_destroy(application);
+}
+
+static void test_usb_removal_resumes_auto_display_off(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_wall_time_seconds = 100U;
+    fake.device_status.usb_power = true;
+    fake_enable_journal(&fake);
+    pomodoro_application_t *application = boot_application(&fake);
+    fake.device_status.usb_power = false;
+    fake.now_wall_time_seconds = 500U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.display_awake);
+    assert(fake.rendered_view.effective_brightness_percent == 70U);
+    fake.now_wall_time_seconds = 799U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.display_awake);
+    assert(fake.rendered_view.effective_brightness_percent == 14U);
+    fake.now_wall_time_seconds = 800U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(!fake.rendered_view.display_awake);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_READY);
+    pomodoro_application_destroy(application);
+}
+
+static void test_usb_power_keeps_paused_display_normal(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_wall_time_seconds = 100U;
+    fake_enable_journal(&fake);
+    pomodoro_application_t *application = boot_application(&fake);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_START) ==
+           POMODORO_APPLICATION_OK);
+    fake.now_wall_time_seconds = 110U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_PAUSE) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_PAUSED);
+    fake.device_status.usb_power = true;
+    fake.now_wall_time_seconds = 410U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_PAUSED);
+    assert(fake.rendered_view.display_awake);
+    assert(fake.rendered_view.effective_brightness_percent == 70U);
+    pomodoro_application_destroy(application);
+}
+
 static void test_power_controls_do_not_change_timer_state(void)
 {
     fake_platform_t fake;
@@ -2743,6 +2978,15 @@ int main(void)
     test_auto_display_off_then_first_pwr_press_wakes_and_resets_idle();
     test_wake_touch_stays_consumed_when_recovery_fails();
     test_running_dims_to_sixty_percent_and_completion_wakes_display();
+    test_usb_power_keeps_ready_display_normal_at_idle_thresholds();
+    test_usb_power_keeps_running_display_normal_and_timer_intact();
+    test_charging_without_usb_power_keeps_battery_policy();
+    test_usb_insertion_restores_dimmed_display();
+    test_usb_insertion_wakes_auto_off_display();
+    test_usb_power_preserves_user_requested_display_off();
+    test_usb_removal_restarts_idle_timing();
+    test_usb_removal_resumes_auto_display_off();
+    test_usb_power_keeps_paused_display_normal();
     test_power_controls_do_not_change_timer_state();
     test_boot_with_saved_state_uses_persisted_settings();
     test_display_and_audio_failures_are_visible();

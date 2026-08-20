@@ -52,6 +52,10 @@ _Avoid_：完成模式、完成页面
 设备依据重力方向采用的四个正交界面方向之一；界面显示与触摸坐标同步旋转，不表示设备倾角或动作手势。
 _Avoid_：设备姿态、屏幕旋转、IMU 手势
 
+**USB Power**：
+设备正在通过 USB 接收外部电源的状态，与电池是否正在充电以及 USB 串口是否连接无关。USB Power 期间禁用基于电池的显示省电行为。
+_Avoid_：Charging、充电状态、USB 连接
+
 **OpenCode Status**：
 当前项目内全部 OpenCode 会话的汇总状态，按优先级取 Error、Waiting、Working、Completed 或 Idle；Completed 在确认或短暂展示后回到 Idle。
 _Avoid_：Agent 状态、Pomodoro Mode

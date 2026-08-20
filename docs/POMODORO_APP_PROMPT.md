@@ -318,12 +318,14 @@ Battery UI:
 
 ## Display and AMOLED protection
 
-- Running timer: after two minutes without touch, dim to 60% of the chosen brightness but remain visible.
-- Ready, paused, or waiting completion state: after two minutes dim to the configured Idle brightness multiplier of chosen brightness; after five minutes turn the display off.
+- While the device is on `USB Power` (receiving external power over USB, independent of charging state), skip automatic dimming and automatic Display Off: the display stays at the user's chosen brightness. A display dimmed or turned off by automatic power saving restores normal brightness and wakes on the next state update after USB Power appears.
+- Running timer: after two minutes without touch, dim to 60% of the chosen brightness but remain visible. This applies only when not on USB Power.
+- Ready, paused, or waiting completion state: after two minutes dim to the configured Idle brightness multiplier of chosen brightness; after five minutes turn the display off. This applies only when not on USB Power, and the idle window restarts from the moment USB Power disappears.
 - Any effective screen touch (blank space, a button, or a swipe start) restores the chosen brightness and restarts the idle window from the touch.
 - A touch on a dimmed but awake display restores brightness and still performs the pressed button or gesture.
 - First touch while off wakes the display only and is consumed for the whole contact: it does not execute the underlying click, gesture, or value change; the next touch operates normally.
 - Timer completion wakes the display and plays sound if enabled.
+- User-requested Display Off remains effective on USB Power and is not overridden by periodic updates.
 - Apply an unobtrusive ±2px periodic pixel shift to static content.
 
 ## UI Orientation

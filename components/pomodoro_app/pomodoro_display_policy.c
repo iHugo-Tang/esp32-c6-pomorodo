@@ -4,13 +4,14 @@
 
 pomodoro_display_policy_result_t pomodoro_display_policy_resolve(
     pomodoro_timer_state_t timer_state, uint64_t idle_seconds,
-    uint8_t chosen_brightness_percent, uint8_t idle_brightness_percent)
+    uint8_t chosen_brightness_percent, uint8_t idle_brightness_percent,
+    bool usb_power)
 {
     pomodoro_display_policy_result_t result = {
         .awake = true,
         .brightness_percent = chosen_brightness_percent,
     };
-    if (idle_seconds < 120U) {
+    if (usb_power || idle_seconds < 120U) {
         return result;
     }
     if (timer_state == POMODORO_TIMER_RUNNING) {
