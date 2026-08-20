@@ -43,6 +43,7 @@ typedef struct {
     char opencode_input_lines[8][POMODORO_OPENCODE_MAX_LINE_LENGTH + 1U];
     unsigned opencode_input_count;
     unsigned opencode_input_index;
+    unsigned opencode_read_count;
     unsigned opencode_write_count;
     char opencode_writes[16][POMODORO_OPENCODE_MAX_LINE_LENGTH + 1U];
 } fake_platform_t;
@@ -205,6 +206,7 @@ static bool fake_read_opencode_line(void *context, char *line, size_t size,
     if (line == NULL || size == 0U || available == NULL) {
         return false;
     }
+    fake->opencode_read_count++;
     *available = false;
     if (fake->opencode_input_index >= fake->opencode_input_count) {
         return true;
@@ -2643,6 +2645,7 @@ static void test_opencode_status_switch_persists_and_disables(void)
 
     /* While disabled the device emits DISABLED and ignores incoming state. */
     fake_enqueue_opencode_line(&fake, "OC1 STATE 1 1");
+    unsigned reads_before_disabled_tick = fake.opencode_read_count;
     fake.now_wall_time_seconds = 105U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
@@ -2651,6 +2654,7 @@ static void test_opencode_status_switch_persists_and_disables(void)
     assert(strcmp(fake.opencode_writes[1], "OC1 DISABLED") == 0);
     assert(fake.rendered_view.opencode_state ==
            POMODORO_OPENCODE_STATE_HIDDEN);
+    assert(fake.opencode_read_count == reads_before_disabled_tick);
 
     /* Re-enabling restores the current snapshot without replaying stale state. */
     assert(pomodoro_application_dispatch(

@@ -29,9 +29,12 @@ typedef struct {
     bool pending_power_action_set;
     pomodoro_application_action_t pending_power_action;
     pomodoro_orientation_resolver_t orientation;
-    char opencode_line_buffer[POMODORO_OPENCODE_MAX_LINE_LENGTH];
-    size_t opencode_line_length;
-    bool opencode_line_overflow;
+    char usb_line_buffer[POMODORO_OPENCODE_MAX_LINE_LENGTH + 1U];
+    size_t usb_line_length;
+    bool usb_line_overflow;
+    char opencode_line[POMODORO_OPENCODE_MAX_LINE_LENGTH + 1U];
+    bool opencode_line_available;
+    bool opencode_input_enabled;
 } runtime_context_t;
 
 static const char *TAG = "pomodoro_runtime";
@@ -133,6 +136,45 @@ static bool play_break_completion(void *context, uint8_t volume)
            pomodoro_board_play_completion_tone(false, volume);
 }
 
+static void poll_usb_input(runtime_context_t *target)
+{
+    if (target == NULL) {
+        return;
+    }
+    uint8_t byte = 0U;
+    while (pomodoro_board_read_usb_serial_jtag(&byte, 1U) == 1) {
+        if (byte == '\n') {
+            if (!target->usb_line_overflow &&
+                target->usb_line_length ==
+                    POMODORO_SCREENSHOT_COMMAND_LENGTH &&
+                memcmp(target->usb_line_buffer, POMODORO_SCREENSHOT_COMMAND,
+                       POMODORO_SCREENSHOT_COMMAND_LENGTH) == 0) {
+                (void) pomodoro_board_request_screenshot();
+            } else if (target->opencode_input_enabled &&
+                       !target->opencode_line_available &&
+                       !target->usb_line_overflow) {
+                memcpy(target->opencode_line, target->usb_line_buffer,
+                       target->usb_line_length);
+                target->opencode_line[target->usb_line_length] = '\0';
+                target->opencode_line_available = true;
+            }
+            target->usb_line_length = 0U;
+            target->usb_line_overflow = false;
+            if (target->opencode_line_available) {
+                return;
+            }
+        } else if (byte == '\r') {
+            continue;
+        } else if (target->usb_line_length <
+                   POMODORO_OPENCODE_MAX_LINE_LENGTH) {
+            target->usb_line_buffer[target->usb_line_length++] =
+                (char) byte;
+        } else {
+            target->usb_line_overflow = true;
+        }
+    }
+}
+
 static bool read_opencode_line(void *context, char *line, size_t size,
                                bool *available)
 {
@@ -141,32 +183,17 @@ static bool read_opencode_line(void *context, char *line, size_t size,
         return false;
     }
     *available = false;
-    if (target == NULL) {
+    if (target == NULL || !target->opencode_line_available) {
         return true;
     }
-    uint8_t byte = 0U;
-    while (pomodoro_board_read_usb_serial_jtag(&byte, 1U) == 1) {
-        if (byte == '\n') {
-            if (!target->opencode_line_overflow &&
-                target->opencode_line_length < size) {
-                memcpy(line, target->opencode_line_buffer,
-                       target->opencode_line_length);
-                line[target->opencode_line_length] = '\0';
-                *available = true;
-            }
-            target->opencode_line_length = 0U;
-            target->opencode_line_overflow = false;
-            return true;
-        } else if (byte == '\r') {
-            continue;
-        } else if (target->opencode_line_length <
-                   sizeof(target->opencode_line_buffer) - 1U) {
-            target->opencode_line_buffer[target->opencode_line_length++] =
-                (char) byte;
-        } else {
-            target->opencode_line_overflow = true;
-        }
+    size_t length = strlen(target->opencode_line);
+    if (length >= size) {
+        target->opencode_line_available = false;
+        return false;
     }
+    memcpy(line, target->opencode_line, length + 1U);
+    target->opencode_line_available = false;
+    *available = true;
     return true;
 }
 
@@ -180,6 +207,13 @@ static bool write_opencode(void *context, const char *line)
     if (length == 0U || length > POMODORO_OPENCODE_MAX_LINE_LENGTH) {
         return false;
     }
+    if (strcmp(line, "OC1 ENABLED") == 0) {
+        target->opencode_line_available = false;
+        target->opencode_input_enabled = true;
+    } else if (strcmp(line, "OC1 DISABLED") == 0) {
+        target->opencode_input_enabled = false;
+        target->opencode_line_available = false;
+    }
     return pomodoro_board_write_usb_serial_jtag(line, length) ==
                (int) length &&
            pomodoro_board_write_usb_serial_jtag("\n", 1U) == 1;
@@ -188,6 +222,9 @@ static bool write_opencode(void *context, const char *line)
 static void dispatch_action(pomodoro_application_action_t action,
                             uint16_t steps)
 {
+    if (action == POMODORO_APPLICATION_ACTION_TICK) {
+        poll_usb_input(&runtime);
+    }
     bool manual_time_action =
         action >= POMODORO_APPLICATION_ACTION_MANUAL_YEAR_DOWN &&
         action <= POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_UP;

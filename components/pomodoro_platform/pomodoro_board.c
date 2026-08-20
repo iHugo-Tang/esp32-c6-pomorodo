@@ -89,6 +89,62 @@ static esp_codec_dev_handle_t audio_device;
 static bool audio_busy;
 static bool queued_focus_tone;
 static uint8_t queued_tone_volume;
+static bool screenshot_active;
+
+static bool write_usb_all(const void *buffer, size_t size)
+{
+    const uint8_t *bytes = buffer;
+    while (size > 0U) {
+        size_t chunk = size > POMODORO_SCREENSHOT_USB_CHUNK_BYTES
+            ? POMODORO_SCREENSHOT_USB_CHUNK_BYTES
+            : size;
+        int written = usb_serial_jtag_write_bytes(bytes, chunk,
+                                                   pdMS_TO_TICKS(100));
+        if (written <= 0) {
+            return false;
+        }
+        bytes += written;
+        size -= (size_t) written;
+    }
+    return true;
+}
+
+static void capture_flush(lv_event_t *event)
+{
+    if (!screenshot_active) {
+        return;
+    }
+    lv_area_t *area = lv_event_get_param(event);
+    lv_draw_buf_t *draw_buffer = lv_display_get_buf_active(board.display);
+    if (area == NULL || draw_buffer == NULL || draw_buffer->data == NULL) {
+        screenshot_active = false;
+        return;
+    }
+    uint16_t x = (uint16_t) area->x1;
+    uint16_t y = (uint16_t) area->y1;
+    uint16_t width = (uint16_t) lv_area_get_width(area);
+    uint16_t height = (uint16_t) lv_area_get_height(area);
+    uint8_t header[] = {
+        POMODORO_SCREENSHOT_CHUNK_MAGIC[0],
+        POMODORO_SCREENSHOT_CHUNK_MAGIC[1],
+        (uint8_t) x, (uint8_t) (x >> 8U),
+        (uint8_t) y, (uint8_t) (y >> 8U),
+        (uint8_t) width, (uint8_t) (width >> 8U),
+        (uint8_t) height, (uint8_t) (height >> 8U),
+    };
+    size_t pixel_bytes = (size_t) width * height *
+        POMODORO_SCREENSHOT_BYTES_PER_PIXEL;
+    if (!write_usb_all(header, sizeof(header)) ||
+        !write_usb_all(draw_buffer->data, pixel_bytes)) {
+        screenshot_active = false;
+        return;
+    }
+    if (lv_display_flush_is_last(board.display)) {
+        static const char done[] = POMODORO_SCREENSHOT_DONE_MAGIC;
+        screenshot_active = false;
+        (void) write_usb_all(done, sizeof(done) - 1U);
+    }
+}
 
 static const sh8601_lcd_init_cmd_t lcd_init_commands[] = {
     {0x11, NULL, 0, 120},
@@ -748,6 +804,8 @@ esp_err_t pomodoro_board_initialize_display(void)
     if (board.display == NULL) {
         return ESP_ERR_NO_MEM;
     }
+    lv_display_add_event_cb(board.display, capture_flush,
+                            LV_EVENT_FLUSH_START, NULL);
     ESP_LOGI(TAG,
              "LVGL draw buffer=%u pixels (%u bytes), single buffered",
              DISPLAY_WIDTH * DRAW_BUFFER_ROWS,
@@ -822,5 +880,28 @@ int pomodoro_board_write_usb_serial_jtag(const void *buffer, size_t size)
     if (buffer == NULL || size == 0U) {
         return 0;
     }
+    if (screenshot_active) {
+        return 0;
+    }
     return usb_serial_jtag_write_bytes(buffer, size, 20U);
+}
+
+bool pomodoro_board_request_screenshot(void)
+{
+    if (board.display == NULL || screenshot_active) {
+        return false;
+    }
+    static const uint8_t dimensions[] = {
+        (uint8_t) DISPLAY_WIDTH, (uint8_t) (DISPLAY_WIDTH >> 8U),
+        (uint8_t) DISPLAY_HEIGHT, (uint8_t) (DISPLAY_HEIGHT >> 8U),
+    };
+    screenshot_active = true;
+    if (!write_usb_all(POMODORO_SCREENSHOT_HEADER_MAGIC,
+                       POMODORO_SCREENSHOT_HEADER_MAGIC_LENGTH) ||
+        !write_usb_all(dimensions, sizeof(dimensions))) {
+        screenshot_active = false;
+        return false;
+    }
+    lv_obj_invalidate(lv_display_get_screen_active(board.display));
+    return true;
 }

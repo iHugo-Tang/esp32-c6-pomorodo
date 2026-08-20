@@ -123,26 +123,30 @@ void pomodoro_opencode_status_apply_state(
     if (status == NULL || !status->enabled) {
         return;
     }
-    if (status->has_revision && revision < status->revision) {
+    if (status->connected && status->has_revision &&
+        revision < status->revision) {
         return;
     }
-    bool first_connection = !status->has_revision;
-    uint32_t old_revision = status->revision;
-    bool revision_changed = !first_connection &&
+    uint8_t next_mask = mask_bits(mask);
+    bool first_state = !status->has_revision;
+    bool reconnecting = status->has_revision && !status->connected;
+    bool revision_changed = status->has_revision &&
         revision != status->revision;
+    bool mask_changed = status->has_revision &&
+        next_mask != status->raw_mask;
+    bool new_state_epoch = first_state || revision_changed ||
+        (reconnecting && mask_changed);
     status->has_revision = true;
     status->connected = true;
     status->last_heartbeat_wall_time_seconds = now_wall_time_seconds;
     status->revision = revision;
-    status->raw_mask = mask_bits(mask);
-    if (first_connection || revision_changed) {
+    status->raw_mask = next_mask;
+    if (new_state_epoch) {
         status->locally_cleared = 0U;
         if ((status->raw_mask & POMODORO_OPENCODE_BIT_COMPLETED) != 0U) {
-            if (first_connection || revision != old_revision) {
-                status->completed_deadline_wall_time_seconds =
-                    now_wall_time_seconds +
-                    POMODORO_OPENCODE_COMPLETED_DISPLAY_SECONDS;
-            }
+            status->completed_deadline_wall_time_seconds =
+                now_wall_time_seconds +
+                POMODORO_OPENCODE_COMPLETED_DISPLAY_SECONDS;
         } else {
             status->completed_deadline_wall_time_seconds = 0U;
         }

@@ -215,16 +215,32 @@ static void test_disconnect_hides_after_ten_seconds(void)
            POMODORO_OPENCODE_STATE_HIDDEN);
     assert(!pomodoro_opencode_status_connected(&status));
 
-    /* Reconnect with the same revision restores the display without a wake. */
-    pomodoro_opencode_status_apply_state(&status, 1U, 0x02U, 111U);
+    /* A restarted plugin begins revisions at zero and must reconnect. */
+    pomodoro_opencode_status_apply_state(&status, 0U, 0x04U, 111U);
     assert(pomodoro_opencode_status_resolve(&status, 111U) ==
-           POMODORO_OPENCODE_STATE_WAITING);
+           POMODORO_OPENCODE_STATE_WORKING);
+    assert(pomodoro_opencode_status_take_wake(&status));
+
+    pomodoro_opencode_status_tick(&status, 121U);
+    assert(!pomodoro_opencode_status_connected(&status));
+
+    /* Reconnect with the same revision restores the display without a wake. */
+    pomodoro_opencode_status_apply_state(&status, 0U, 0x04U, 122U);
+    assert(pomodoro_opencode_status_resolve(&status, 122U) ==
+           POMODORO_OPENCODE_STATE_WORKING);
     assert(!pomodoro_opencode_status_take_wake(&status));
 
-    /* Reconnect with a changed state is a real change and wakes. */
-    pomodoro_opencode_status_apply_state(&status, 2U, 0x01U, 112U);
-    assert(pomodoro_opencode_status_resolve(&status, 112U) ==
+    /* A restarted sender may reuse a revision for a different state. */
+    pomodoro_opencode_status_tick(&status, 132U);
+    pomodoro_opencode_status_apply_state(&status, 0U, 0x01U, 133U);
+    assert(pomodoro_opencode_status_resolve(&status, 133U) ==
            POMODORO_OPENCODE_STATE_ERROR);
+    assert(pomodoro_opencode_status_take_wake(&status));
+
+    /* A changed revision while connected is also a real change. */
+    pomodoro_opencode_status_apply_state(&status, 1U, 0x02U, 134U);
+    assert(pomodoro_opencode_status_resolve(&status, 134U) ==
+           POMODORO_OPENCODE_STATE_WAITING);
     assert(pomodoro_opencode_status_take_wake(&status));
 }
 
