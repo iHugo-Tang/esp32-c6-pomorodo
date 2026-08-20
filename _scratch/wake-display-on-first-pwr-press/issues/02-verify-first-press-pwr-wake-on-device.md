@@ -6,12 +6,12 @@
 
 **Status:** ready-for-human
 
-- [ ] After automatic Display Off, the first PWR short press immediately wakes the display without requiring a second press.
-- [ ] Repeat the automatic Display Off and first-press wake scenario multiple times with the same result.
-- [ ] Wake restores the selected brightness and the display does not immediately dim again.
-- [ ] Manual PWR Display Off still wakes on the first short press.
-- [ ] A short press while the display is awake still turns the display off.
-- [ ] Running timer, Pomodoro deadline, touch wake, completion wake, and long-press power-off behavior remain correct.
-- [ ] One physical short press causes only one display transition.
-- [ ] Logs do not show the lock-timeout condition that loses the PWR action.
-- [ ] The target-device acceptance record is updated with the results.
+- [x] After automatic Display Off, the first PWR short press immediately wakes the display without requiring a second press.
+- [x] Repeat the automatic Display Off and first-press wake scenario multiple times with the same result.
+- [x] Wake restores the selected brightness and the display does not immediately dim again.
+- [x] Manual PWR Display Off still wakes on the first short press.
+- [x] A short press while the display is awake still turns the display off.
+- [x] Running timer, Pomodoro deadline, touch wake, completion wake, and long-press power-off behavior remain correct.
+- [x] One physical short press causes only one display transition.
+- [x] Logs do not show the lock-timeout condition that loses the PWR action.
+- [x] The target-device acceptance record is updated with the results.
