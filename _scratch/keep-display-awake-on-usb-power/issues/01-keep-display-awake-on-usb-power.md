@@ -17,3 +17,8 @@
 - [x] Application-orchestrator tests cover USB Power, insertion recovery, removal timing, charging without USB Power, and user-requested Display Off.
 - [x] The `USB Power` domain term and affected product and hardware documentation are updated.
 - [x] The complete host test suite and ESP-IDF firmware build pass.
+
+## Comments
+
+- 2026-08-20: Verification — host tests 4/4 pass (`cmake --build build/host --parallel && ctest --test-dir build/host --output-on-failure`); ESP-IDF build passes (`idf.py build`, `pomodoro.bin` 0xb2330 bytes, 77% app partition free).
+- 2026-08-20: Committed as `feat: keep display awake on USB power` (180f206). `CONTEXT.md` keeps only the `USB Power` definition; the lifecycle behavior lives in the spec and product/hardware documentation.
