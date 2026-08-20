@@ -1,6 +1,6 @@
 # Switch Setting Scroll
 
-Status: implementation-complete
+Status: ready-for-human
 
 ## Problem Statement
 

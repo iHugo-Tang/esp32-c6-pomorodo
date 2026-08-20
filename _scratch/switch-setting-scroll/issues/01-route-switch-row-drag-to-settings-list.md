@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** done
+**Status:** ready-for-human
 
 - [x] Auto-start breaks, Auto-start focus, and Sound rows do not scroll their own contents.
 - [x] A vertical drag starting on a switch row is handled by the Settings list.
