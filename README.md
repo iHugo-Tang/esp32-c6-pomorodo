@@ -55,12 +55,22 @@ idf.py build
 ## Flash firmware while OpenCode is running
 
 The project USB port is shared between the OpenCode Status plugin and firmware
-flashing. To flash without interrupting OpenCode, use the supported wrapper,
-which reserves the port cooperatively:
+flashing. Use the supported wrapper instead of calling `idf.py flash` directly:
 
-```sh
-tools/flash.sh -p /dev/cu.usbmodem11101
-```
+1. Connect the device and confirm its serial port, such as
+   `/dev/cu.usbmodem11101`.
+2. If `.opencode/plugins/` changed, fully quit every OpenCode process and start
+   OpenCode again so the updated plugin is loaded.
+3. From the repository root, load ESP-IDF and run the wrapper:
+
+   ```sh
+   . "$HOME/esp/esp-idf/export.sh"
+   tools/flash.sh -p /dev/cu.usbmodem11101
+   ```
+
+4. Wait for `Hash of data verified` and `Hard resetting via RTS pin`. The
+   wrapper then removes its reservation and OpenCode Status reconnects
+   automatically.
 
 The wrapper writes `.pomodoro/flash-reservation` (containing its PID) before
 opening the port, waits up to `POMODORO_FLASH_RELEASE_TIMEOUT_S` (default 8 s)
@@ -70,8 +80,9 @@ timeout. It never sends stop or termination signals to OpenCode. The port can
 also be given via `POMODORO_PORT` or auto-detected when exactly one
 `/dev/cu.usbmodem*` exists.
 
-After changing anything under `.opencode/plugins/`, fully quit and restart
-OpenCode before verifying, so the updated plugin is loaded.
+If release times out, close another serial owner such as `idf.py monitor` and
+retry the same wrapper command. Do not use `erase-flash`; it deletes saved
+product state.
 
 The target integration uses the interfaces declared in
 `components/pomodoro_platform/include/pomodoro_platform.h` with exact,
