@@ -10,7 +10,6 @@
 #include "pomodoro_board.h"
 #include "pomodoro_device_view.h"
 #include "pomodoro_orientation.h"
-#include "pomodoro_time_sync_server.h"
 
 typedef struct {
     pomodoro_journal_t journal;
@@ -78,25 +77,6 @@ static bool set_display_awake(void *context, bool awake)
 static bool power_off(void *context)
 {
     return context != NULL && pomodoro_board_power_off();
-}
-
-static bool start_time_sync(
-    void *context, pomodoro_application_time_sync_session_t *session)
-{
-    return context != NULL && pomodoro_time_sync_server_start(session);
-}
-
-static pomodoro_application_time_sync_poll_result_t poll_time_sync(
-    void *context, pomodoro_application_time_sync_submission_t *submission)
-{
-    return context != NULL
-        ? pomodoro_time_sync_server_poll(submission)
-        : POMODORO_APPLICATION_TIME_SYNC_ERROR;
-}
-
-static bool stop_time_sync(void *context)
-{
-    return context != NULL && pomodoro_time_sync_server_stop();
 }
 
 static pomodoro_application_load_result_t load_state(
@@ -378,9 +358,6 @@ esp_err_t pomodoro_platform_start(void)
         .read_device_status = read_device_status,
         .set_display_awake = set_display_awake,
         .power_off = power_off,
-        .start_time_sync = start_time_sync,
-        .poll_time_sync = poll_time_sync,
-        .stop_time_sync = stop_time_sync,
         .load = load_state,
         .save = save_state,
         .render = render_view,

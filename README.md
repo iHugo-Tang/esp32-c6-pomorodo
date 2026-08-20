@@ -19,8 +19,8 @@ The repository currently contains an executable device slice of the product:
   controls that preserve the configured automation settings;
 - persistence and hardware service boundaries for NVS, RTC, display, touch,
   audio, and power implementations;
-- explicit iPhone time sync through a five-minute password-protected local
-  SoftAP, QR join surface, confirmation page, and persisted IANA offset rules;
+- manual date and time setup with a fixed UTC offset, used whenever the RTC
+  has no valid time, plus a single Settings `Date & time` entry;
 - default ESP32-C6 memory/flash configuration and a data-preserving partition
   table;
 - native tests for completion, abort, pause/resume, all four Pomodoro Set

@@ -33,13 +33,6 @@ struct pomodoro_application {
     uint8_t effective_brightness_percent;
     pomodoro_application_manual_time_t manual_time_draft;
     bool time_setup_can_cancel;
-    pomodoro_application_time_setup_stage_t time_setup_stage;
-    pomodoro_application_time_sync_session_t time_sync_session;
-    uint64_t time_sync_deadline_epoch_seconds;
-    uint64_t time_sync_success_deadline_epoch_seconds;
-    pomodoro_application_page_t time_sync_destination_page;
-    bool time_sync_connected;
-    bool time_sync_failed;
 };
 
 static uint16_t completed_pomodoros_on(
@@ -48,6 +41,34 @@ static uint16_t completed_pomodoros_on(
     const pomodoro_daily_statistics_t *day =
         pomodoro_statistics_find(statistics, date);
     return day != NULL ? day->completed_pomodoros : 0U;
+}
+
+static bool manual_date_is_supported(pomodoro_date_t date)
+{
+    return date.year >= 2020U && date.year <= 2069U &&
+        pomodoro_date_is_valid(date);
+}
+
+static pomodoro_date_t firmware_build_date(void)
+{
+    static const char *months[] = {
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    };
+    pomodoro_date_t date = {.year = 2026U, .month = 1U, .day = 1U};
+    const char *built = __DATE__;
+    for (uint8_t month = 0U; month < 12U; month++) {
+        if (strncmp(built, months[month], 3U) == 0) {
+            date.month = month + 1U;
+            break;
+        }
+    }
+    date.day = (uint8_t) strtoul(built + 4U, NULL, 10);
+    date.year = (uint16_t) strtoul(built + 7U, NULL, 10);
+    if (!manual_date_is_supported(date)) {
+        date = (pomodoro_date_t) {.year = 2026U, .month = 1U, .day = 1U};
+    }
+    return date;
 }
 
 static bool platform_is_valid(const pomodoro_application_platform_t *platform)
@@ -59,9 +80,6 @@ static bool platform_is_valid(const pomodoro_application_platform_t *platform)
            platform->read_device_status != NULL &&
            platform->set_display_awake != NULL &&
            platform->power_off != NULL &&
-           platform->start_time_sync != NULL &&
-           platform->poll_time_sync != NULL &&
-           platform->stop_time_sync != NULL &&
            platform->load != NULL && platform->save != NULL &&
            platform->render != NULL &&
            platform->play_focus_complete != NULL &&
@@ -103,9 +121,8 @@ static void snapshot_view(pomodoro_application_t *application,
         : application->has_last_time && application->last_time.rtc_is_valid;
     if (application->view.rtc_is_valid && resolved_time != NULL) {
         application->view.current_local_date = resolved_time->local_date;
-        int16_t offset_minutes = pomodoro_time_zone_offset_minutes_at(
-            &application->model.time_zone, resolved_time->epoch_seconds,
-            application->model.settings.utc_offset_quarter_hours);
+        int16_t offset_minutes =
+            (int16_t) application->model.settings.utc_offset_quarter_hours * 15;
         int64_t local_epoch = (int64_t) resolved_time->epoch_seconds +
             (int64_t) offset_minutes * 60;
         int64_t seconds_of_day = local_epoch % 86400;
@@ -139,26 +156,9 @@ static void snapshot_view(pomodoro_application_t *application,
     application->view.effective_brightness_percent =
         application->effective_brightness_percent;
     application->view.manual_time_draft = application->manual_time_draft;
-    application->view.time_setup_stage = application->time_setup_stage;
-    application->view.time_sync_session = application->time_sync_session;
-    application->view.time_sync_connected = application->time_sync_connected;
-    application->view.time_sync_failed = application->time_sync_failed;
-    application->view.time_sync_seconds_remaining = 0U;
-    if (resolved_time != NULL && application->time_sync_deadline_epoch_seconds >
-                                     resolved_time->epoch_seconds) {
-        uint64_t remaining = application->time_sync_deadline_epoch_seconds -
-            resolved_time->epoch_seconds;
-        application->view.time_sync_seconds_remaining = remaining > UINT16_MAX
-            ? UINT16_MAX
-            : (uint16_t) remaining;
-    }
-    application->view.time_zone_needs_sync = resolved_time != NULL &&
-        pomodoro_time_zone_schedule_needs_sync(
-            &application->model.time_zone, resolved_time->epoch_seconds);
-    memcpy(application->view.time_zone_name,
-           application->model.time_zone.iana_name,
-           sizeof(application->view.time_zone_name));
     application->view.statistics_available = application->view.rtc_is_valid;
+    application->view.time_setup_can_cancel =
+        application->time_setup_can_cancel;
     pomodoro_statistics_project_view(
         &application->statistics,
         resolved_time != NULL ? resolved_time->local_date
@@ -229,9 +229,7 @@ static pomodoro_application_result_t read_time(
     if (time->rtc_is_valid &&
         !application->platform.resolve_local_date(
             application->platform.context, time->epoch_seconds,
-            pomodoro_time_zone_offset_minutes_at(
-                &application->model.time_zone, time->epoch_seconds,
-                application->model.settings.utc_offset_quarter_hours),
+            (int16_t) application->model.settings.utc_offset_quarter_hours * 15,
             &time->local_date)) {
         return fail_platform(application, POMODORO_APPLICATION_ERROR_CLOCK);
     }
@@ -361,10 +359,7 @@ static pomodoro_application_result_t publish_completion(
         !application->platform.resolve_local_date(
             application->platform.context,
             application->model.timer.deadline_epoch_seconds,
-            pomodoro_time_zone_offset_minutes_at(
-                &application->model.time_zone,
-                application->model.timer.deadline_epoch_seconds,
-                application->model.settings.utc_offset_quarter_hours),
+            (int16_t) application->model.settings.utc_offset_quarter_hours * 15,
             &completion_date)) {
         return fail_platform(application, POMODORO_APPLICATION_ERROR_CLOCK);
     }
@@ -461,7 +456,7 @@ static pomodoro_application_result_t boot(
     application->manual_time_draft = (pomodoro_application_manual_time_t) {
         .local_date = time.rtc_is_valid
             ? time.local_date
-            : (pomodoro_date_t) {.year = 2026U, .month = 1U, .day = 1U},
+            : firmware_build_date(),
         .hour = 12U,
         .minute = 0U,
         .utc_offset_quarter_hours =
@@ -502,9 +497,7 @@ static pomodoro_application_result_t boot(
     application->view.phase = time.rtc_is_valid
         ? POMODORO_APPLICATION_PHASE_ACTIVE
         : POMODORO_APPLICATION_PHASE_TIME_SETUP;
-    application->time_setup_stage = time.rtc_is_valid
-        ? POMODORO_APPLICATION_TIME_SETUP_MANUAL
-        : POMODORO_APPLICATION_TIME_SETUP_LANDING;
+    application->time_setup_can_cancel = false;
     application->view.error = POMODORO_APPLICATION_ERROR_NONE;
     application->page = POMODORO_APPLICATION_PAGE_MAIN;
     application->booted = true;
@@ -701,6 +694,21 @@ static pomodoro_application_result_t tick(
     return render(application, &time, POMODORO_EVENT_NONE);
 }
 
+static pomodoro_application_result_t tick_time_setup(
+    pomodoro_application_t *application)
+{
+    pomodoro_application_time_t time;
+    pomodoro_application_result_t result = read_time(application, &time);
+    if (result != POMODORO_APPLICATION_OK) {
+        return result;
+    }
+    result = update_display_lifecycle(application, &time);
+    if (result != POMODORO_APPLICATION_OK) {
+        return result;
+    }
+    return render(application, &time, POMODORO_EVENT_NONE);
+}
+
 static pomodoro_application_result_t start_next(
     pomodoro_application_t *application)
 {
@@ -752,52 +760,6 @@ pomodoro_application_result_t pomodoro_application_create(
     return POMODORO_APPLICATION_OK;
 }
 
-static bool stop_time_sync_session(pomodoro_application_t *application)
-{
-    bool stopped = application->platform.stop_time_sync(
-        application->platform.context);
-    memset(&application->time_sync_session, 0,
-           sizeof(application->time_sync_session));
-    application->time_sync_deadline_epoch_seconds = 0U;
-    application->time_sync_connected = false;
-    return stopped;
-}
-
-static pomodoro_application_result_t start_time_sync(
-    pomodoro_application_t *application)
-{
-    if (application->time_sync_deadline_epoch_seconds != 0U &&
-        !stop_time_sync_session(application)) {
-        return fail_platform(application, POMODORO_APPLICATION_ERROR_CLOCK);
-    }
-    memset(&application->time_sync_session, 0,
-           sizeof(application->time_sync_session));
-    if (!application->platform.start_time_sync(
-            application->platform.context,
-            &application->time_sync_session)) {
-        (void) stop_time_sync_session(application);
-        application->time_sync_failed = true;
-        return render(application, NULL, POMODORO_EVENT_NONE);
-    }
-    application->time_setup_stage = POMODORO_APPLICATION_TIME_SETUP_SYNC;
-    application->time_sync_deadline_epoch_seconds =
-        application->last_time.epoch_seconds + 300U;
-    application->time_sync_connected = false;
-    application->time_sync_failed = false;
-    return render(application, &application->last_time, POMODORO_EVENT_NONE);
-}
-
-static pomodoro_application_result_t fail_time_sync(
-    pomodoro_application_t *application)
-{
-    if (!stop_time_sync_session(application)) {
-        return fail_platform(application, POMODORO_APPLICATION_ERROR_CLOCK);
-    }
-    application->time_sync_failed = true;
-    application->time_setup_stage = POMODORO_APPLICATION_TIME_SETUP_SYNC;
-    return render(application, NULL, POMODORO_EVENT_NONE);
-}
-
 static pomodoro_application_result_t recover_timer_after_clock_set(
     pomodoro_application_t *application, uint64_t old_now_epoch_seconds,
     uint64_t new_now_epoch_seconds, pomodoro_event_t *restored_event)
@@ -830,125 +792,17 @@ static pomodoro_application_result_t recover_timer_after_clock_set(
     return POMODORO_APPLICATION_OK;
 }
 
-static pomodoro_application_result_t complete_time_sync(
-    pomodoro_application_t *application,
-    const pomodoro_application_time_sync_submission_t *submission)
+static pomodoro_application_result_t show_volume_feedback(
+    pomodoro_application_t *application)
 {
-    if (submission == NULL || submission->utc_epoch_seconds == 0U ||
-        !pomodoro_time_zone_schedule_is_valid(&submission->time_zone) ||
-        submission->utc_epoch_seconds >
-            UINT64_MAX - POMODORO_TIME_ZONE_MINIMUM_FUTURE_SECONDS ||
-        submission->time_zone.expires_utc_epoch_seconds <
-            submission->utc_epoch_seconds +
-                POMODORO_TIME_ZONE_MINIMUM_FUTURE_SECONDS) {
-        return fail_time_sync(application);
-    }
-    uint64_t old_now_epoch_seconds = application->last_time.epoch_seconds;
-    if (!application->platform.write_utc_time(
-            application->platform.context, submission->utc_epoch_seconds)) {
-        (void) stop_time_sync_session(application);
-        return fail_platform(application, POMODORO_APPLICATION_ERROR_CLOCK);
-    }
     pomodoro_application_time_t time;
-    if (!application->platform.read_time(application->platform.context,
-                                         &time)) {
-        (void) stop_time_sync_session(application);
-        return fail_platform(application, POMODORO_APPLICATION_ERROR_CLOCK);
+    pomodoro_application_result_t result = read_time(application, &time);
+    if (result != POMODORO_APPLICATION_OK) {
+        return result;
     }
-    time.rtc_is_valid = true;
-    application->model.time_zone = submission->time_zone;
-    int16_t offset_minutes = pomodoro_time_zone_offset_minutes_at(
-        &application->model.time_zone, time.epoch_seconds,
-        application->model.settings.utc_offset_quarter_hours);
-    if (offset_minutes % 15 != 0 ||
-        !application->platform.resolve_local_date(
-            application->platform.context, time.epoch_seconds,
-            offset_minutes, &time.local_date)) {
-        (void) stop_time_sync_session(application);
-        return fail_platform(application, POMODORO_APPLICATION_ERROR_CLOCK);
-    }
-    application->model.settings.utc_offset_quarter_hours =
-        (int8_t) (offset_minutes / 15);
-    application->last_time = time;
-    application->has_last_time = true;
-    pomodoro_event_t restored_event;
-    pomodoro_application_result_t recovery_result =
-        recover_timer_after_clock_set(
-            application, old_now_epoch_seconds, time.epoch_seconds,
-            &restored_event);
-    if (recovery_result != POMODORO_APPLICATION_OK) {
-        (void) stop_time_sync_session(application);
-        return recovery_result;
-    }
-    if (!pomodoro_statistics_assign_pending(&application->statistics,
-                                            time.local_date) ||
-        !stop_time_sync_session(application)) {
-        return fail_platform(application, POMODORO_APPLICATION_ERROR_CLOCK);
-    }
-    application->view.error = POMODORO_APPLICATION_ERROR_NONE;
-    application->time_sync_destination_page = application->time_setup_can_cancel
-        ? POMODORO_APPLICATION_PAGE_SETTINGS
-        : POMODORO_APPLICATION_PAGE_MAIN;
-    application->time_setup_can_cancel = false;
-    application->time_sync_failed = false;
-    if (restored_event != POMODORO_EVENT_NONE) {
-        application->view.phase = POMODORO_APPLICATION_PHASE_ACTIVE;
-        application->page = application->time_sync_destination_page;
-        return publish_completion(application, &time, restored_event,
-                                  time.rtc_is_valid);
-    }
-    application->view.phase = POMODORO_APPLICATION_PHASE_TIME_SETUP;
-    application->time_setup_stage =
-        POMODORO_APPLICATION_TIME_SETUP_SYNC_SUCCESS;
-    application->time_sync_success_deadline_epoch_seconds =
-        time.epoch_seconds + 1U;
+    application->volume_feedback_deadline_epoch_seconds =
+        time.epoch_seconds + 2U;
     return save_and_render(application, &time);
-}
-
-static pomodoro_application_result_t finish_time_sync_success(
-    pomodoro_application_t *application)
-{
-    pomodoro_application_time_t time;
-    pomodoro_application_result_t result = read_time(application, &time);
-    if (result != POMODORO_APPLICATION_OK) {
-        return result;
-    }
-    if (time.epoch_seconds <
-        application->time_sync_success_deadline_epoch_seconds) {
-        return render(application, &time, POMODORO_EVENT_NONE);
-    }
-    application->time_sync_success_deadline_epoch_seconds = 0U;
-    application->view.phase = POMODORO_APPLICATION_PHASE_ACTIVE;
-    application->page = application->time_sync_destination_page;
-    return render(application, &time, POMODORO_EVENT_NONE);
-}
-
-static pomodoro_application_result_t poll_time_sync(
-    pomodoro_application_t *application)
-{
-    pomodoro_application_time_t time;
-    pomodoro_application_result_t result = read_time(application, &time);
-    if (result != POMODORO_APPLICATION_OK) {
-        return result;
-    }
-    if (application->time_sync_deadline_epoch_seconds == 0U ||
-        time.epoch_seconds >= application->time_sync_deadline_epoch_seconds) {
-        return fail_time_sync(application);
-    }
-    pomodoro_application_time_sync_submission_t submission;
-    memset(&submission, 0, sizeof(submission));
-    pomodoro_application_time_sync_poll_result_t poll =
-        application->platform.poll_time_sync(
-            application->platform.context, &submission);
-    if (poll == POMODORO_APPLICATION_TIME_SYNC_SUBMITTED) {
-        return complete_time_sync(application, &submission);
-    }
-    if (poll == POMODORO_APPLICATION_TIME_SYNC_ERROR) {
-        return fail_time_sync(application);
-    }
-    application->time_sync_connected =
-        poll == POMODORO_APPLICATION_TIME_SYNC_CONNECTED;
-    return render(application, &time, POMODORO_EVENT_NONE);
 }
 
 static pomodoro_application_result_t adjust_volume(
@@ -966,9 +820,7 @@ static pomodoro_application_result_t adjust_volume(
     if (volume > 0) {
         application->model.last_nonzero_volume = (uint8_t) volume;
     }
-    application->volume_feedback_deadline_epoch_seconds =
-        application->last_time.epoch_seconds + 2U;
-    return save_and_render(application, &application->last_time);
+    return show_volume_feedback(application);
 }
 
 static pomodoro_application_result_t toggle_display(
@@ -1008,34 +860,10 @@ pomodoro_application_result_t pomodoro_application_dispatch(
     }
     if (application->booted &&
         application->view.phase == POMODORO_APPLICATION_PHASE_TIME_SETUP) {
-        if (action == POMODORO_APPLICATION_ACTION_OPEN_TIME_SYNC) {
-            return start_time_sync(application);
+        if (action == POMODORO_APPLICATION_ACTION_TICK) {
+            return tick_time_setup(application);
         }
-        if (action == POMODORO_APPLICATION_ACTION_OPEN_DATE_TIME) {
-            if (application->time_setup_stage ==
-                    POMODORO_APPLICATION_TIME_SETUP_SYNC &&
-                application->time_sync_deadline_epoch_seconds != 0U &&
-                !stop_time_sync_session(application)) {
-                return fail_platform(
-                    application, POMODORO_APPLICATION_ERROR_CLOCK);
-            }
-            application->time_setup_stage =
-                POMODORO_APPLICATION_TIME_SETUP_MANUAL;
-            return render(application, NULL, POMODORO_EVENT_NONE);
-        }
-        if (action == POMODORO_APPLICATION_ACTION_TICK &&
-            application->time_setup_stage ==
-                POMODORO_APPLICATION_TIME_SETUP_SYNC) {
-            return poll_time_sync(application);
-        }
-        if (action == POMODORO_APPLICATION_ACTION_TICK &&
-            application->time_setup_stage ==
-                POMODORO_APPLICATION_TIME_SETUP_SYNC_SUCCESS) {
-            return finish_time_sync_success(application);
-        }
-        if (application->time_setup_stage ==
-                POMODORO_APPLICATION_TIME_SETUP_MANUAL &&
-            action >= POMODORO_APPLICATION_ACTION_MANUAL_YEAR_DOWN &&
+        if (action >= POMODORO_APPLICATION_ACTION_MANUAL_YEAR_DOWN &&
             action <= POMODORO_APPLICATION_ACTION_MANUAL_OFFSET_UP) {
             if (!pomodoro_manual_time_adjust(
                     &application->manual_time_draft, action)) {
@@ -1043,9 +871,7 @@ pomodoro_application_result_t pomodoro_application_dispatch(
             }
             return render(application, NULL, POMODORO_EVENT_NONE);
         }
-        if (application->time_setup_stage ==
-                POMODORO_APPLICATION_TIME_SETUP_MANUAL &&
-            action == POMODORO_APPLICATION_ACTION_MANUAL_TIME_CONFIRM) {
+        if (action == POMODORO_APPLICATION_ACTION_MANUAL_TIME_CONFIRM) {
             return pomodoro_application_confirm_manual_time(
                 application, &application->manual_time_draft);
         }
@@ -1060,22 +886,12 @@ pomodoro_application_result_t pomodoro_application_dispatch(
             return power_off(application);
         }
         if (action == POMODORO_APPLICATION_ACTION_BACK) {
-            if (application->time_setup_stage ==
-                    POMODORO_APPLICATION_TIME_SETUP_SYNC &&
-                application->time_sync_deadline_epoch_seconds != 0U &&
-                !stop_time_sync_session(application)) {
-                return fail_platform(
-                    application, POMODORO_APPLICATION_ERROR_CLOCK);
+            if (!application->time_setup_can_cancel) {
+                return POMODORO_APPLICATION_ERR_INVALID_STATE;
             }
-            if (application->time_setup_can_cancel) {
-                application->view.phase = POMODORO_APPLICATION_PHASE_ACTIVE;
-                application->page = POMODORO_APPLICATION_PAGE_SETTINGS;
-                application->time_setup_can_cancel = false;
-            } else {
-                application->time_setup_stage =
-                    POMODORO_APPLICATION_TIME_SETUP_LANDING;
-            }
-            application->time_sync_failed = false;
+            application->view.phase = POMODORO_APPLICATION_PHASE_ACTIVE;
+            application->page = POMODORO_APPLICATION_PAGE_SETTINGS;
+            application->time_setup_can_cancel = false;
             return render(application, NULL, POMODORO_EVENT_NONE);
         }
         return POMODORO_APPLICATION_ERR_INVALID_STATE;
@@ -1194,9 +1010,7 @@ pomodoro_application_result_t pomodoro_application_dispatch(
                 application->model.settings.volume;
             application->model.settings.volume = 0U;
         }
-        application->volume_feedback_deadline_epoch_seconds =
-            application->last_time.epoch_seconds + 2U;
-        return save_and_render(application, &application->last_time);
+        return show_volume_feedback(application);
     }
     if (action == POMODORO_APPLICATION_ACTION_TOGGLE_DISPLAY) {
         return toggle_display(application);
@@ -1217,16 +1031,8 @@ pomodoro_application_result_t pomodoro_application_dispatch(
                     application->model.settings.utc_offset_quarter_hours,
             };
         application->time_setup_can_cancel = true;
-        application->time_setup_stage =
-            POMODORO_APPLICATION_TIME_SETUP_MANUAL;
         application->view.phase = POMODORO_APPLICATION_PHASE_TIME_SETUP;
         return render(application, NULL, POMODORO_EVENT_NONE);
-    }
-    if (action == POMODORO_APPLICATION_ACTION_OPEN_TIME_SYNC &&
-        application->page == POMODORO_APPLICATION_PAGE_SETTINGS) {
-        application->time_setup_can_cancel = true;
-        application->view.phase = POMODORO_APPLICATION_PHASE_TIME_SETUP;
-        return start_time_sync(application);
     }
     if (action >= POMODORO_APPLICATION_ACTION_OPEN_FOCUS_MINUTES &&
         action <= POMODORO_APPLICATION_ACTION_OPEN_IDLE_BRIGHTNESS) {
@@ -1394,7 +1200,8 @@ pomodoro_application_result_t pomodoro_application_confirm_manual_time(
         return POMODORO_APPLICATION_ERR_INVALID_STATE;
     }
     uint64_t utc_epoch_seconds = 0U;
-    if (!pomodoro_local_datetime_to_utc(
+    if (!manual_date_is_supported(manual_time->local_date) ||
+        !pomodoro_local_datetime_to_utc(
             manual_time->local_date, manual_time->hour, manual_time->minute,
             manual_time->utc_offset_quarter_hours, &utc_epoch_seconds)) {
         return POMODORO_APPLICATION_ERR_INVALID_ARGUMENT;
@@ -1416,8 +1223,6 @@ pomodoro_application_result_t pomodoro_application_confirm_manual_time(
     application->has_last_time = true;
     application->model.settings.utc_offset_quarter_hours =
         manual_time->utc_offset_quarter_hours;
-    memset(&application->model.time_zone, 0,
-           sizeof(application->model.time_zone));
     pomodoro_event_t restored_event;
     pomodoro_application_result_t recovery_result =
         recover_timer_after_clock_set(
@@ -1433,7 +1238,6 @@ pomodoro_application_result_t pomodoro_application_confirm_manual_time(
     application->view.phase = POMODORO_APPLICATION_PHASE_ACTIVE;
     application->view.error = POMODORO_APPLICATION_ERROR_NONE;
     application->time_setup_can_cancel = false;
-    application->time_setup_stage = POMODORO_APPLICATION_TIME_SETUP_MANUAL;
     if (restored_event != POMODORO_EVENT_NONE) {
         return publish_completion(application, &time, restored_event,
                                   time.rtc_is_valid);
@@ -1461,9 +1265,5 @@ pomodoro_application_result_t pomodoro_application_handle_touch(
 
 void pomodoro_application_destroy(pomodoro_application_t *application)
 {
-    if (application != NULL &&
-        application->time_sync_deadline_epoch_seconds != 0U) {
-        (void) stop_time_sync_session(application);
-    }
     free(application);
 }

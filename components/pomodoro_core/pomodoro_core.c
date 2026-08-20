@@ -110,70 +110,6 @@ bool pomodoro_settings_are_valid(const pomodoro_settings_t *settings)
            settings->utc_offset_quarter_hours <= 56;
 }
 
-bool pomodoro_time_zone_schedule_is_valid(
-    const pomodoro_time_zone_schedule_t *schedule)
-{
-    if (schedule == NULL) {
-        return false;
-    }
-    if (!schedule->automatic) {
-        return schedule->transition_count == 0U;
-    }
-    if (schedule->transition_count == 0U ||
-        schedule->transition_count > POMODORO_TIME_ZONE_TRANSITION_CAPACITY ||
-        schedule->iana_name[0] == '\0' ||
-        memchr(schedule->iana_name, '\0', sizeof(schedule->iana_name)) == NULL ||
-        schedule->transitions[0].effective_utc_epoch_seconds != 0U ||
-        schedule->expires_utc_epoch_seconds == 0U) {
-        return false;
-    }
-    uint64_t previous = 0U;
-    for (uint8_t index = 0U; index < schedule->transition_count; index++) {
-        const pomodoro_utc_offset_transition_t *transition =
-            &schedule->transitions[index];
-        if (transition->offset_minutes < -720 ||
-            transition->offset_minutes > 840 ||
-            transition->offset_minutes % 15 != 0 ||
-            (index > 0U &&
-             transition->effective_utc_epoch_seconds <= previous)) {
-            return false;
-        }
-        previous = transition->effective_utc_epoch_seconds;
-    }
-    return schedule->expires_utc_epoch_seconds > previous;
-}
-
-int16_t pomodoro_time_zone_offset_minutes_at(
-    const pomodoro_time_zone_schedule_t *schedule,
-    uint64_t utc_epoch_seconds, int8_t fixed_offset_quarter_hours)
-{
-    if (pomodoro_time_zone_schedule_is_valid(schedule) &&
-        schedule->automatic) {
-        int16_t offset = schedule->transitions[0].offset_minutes;
-        for (uint8_t index = 1U; index < schedule->transition_count; index++) {
-            if (schedule->transitions[index].effective_utc_epoch_seconds >
-                utc_epoch_seconds) {
-                break;
-            }
-            offset = schedule->transitions[index].offset_minutes;
-        }
-        return offset;
-    }
-    return (int16_t) fixed_offset_quarter_hours * 15;
-}
-
-bool pomodoro_time_zone_schedule_needs_sync(
-    const pomodoro_time_zone_schedule_t *schedule,
-    uint64_t utc_epoch_seconds)
-{
-    const uint64_t warning_window_seconds = UINT64_C(30) * 24U * 60U * 60U;
-    return pomodoro_time_zone_schedule_is_valid(schedule) &&
-           schedule->automatic &&
-           (utc_epoch_seconds >= schedule->expires_utc_epoch_seconds ||
-            schedule->expires_utc_epoch_seconds - utc_epoch_seconds <=
-                warning_window_seconds);
-}
-
 pomodoro_result_t pomodoro_init(pomodoro_model_t *model,
                                 const pomodoro_settings_t *settings)
 {
@@ -190,7 +126,6 @@ pomodoro_result_t pomodoro_init(pomodoro_model_t *model,
     memset(model, 0, sizeof(*model));
     model->settings = resolved;
     model->last_nonzero_volume = resolved.volume > 0U ? resolved.volume : 3U;
-    memset(&model->time_zone, 0, sizeof(model->time_zone));
     model->timer.version = POMODORO_SNAPSHOT_VERSION;
     prepare_ready(model, POMODORO_MODE_FOCUS);
     return POMODORO_OK;

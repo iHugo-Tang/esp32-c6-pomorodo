@@ -21,9 +21,8 @@
 
 | ID | 页面/状态 | 类型 | 主要入口 | 返回/出口 |
 |---|---|---|---|---|
-| P00 | First-run time setup | 全屏页面 | RTC 无效的首次开机 | 进入 P01 或 P02 |
-| P01 | Sync from iPhone | 全屏页面 | P00；Settings 的 `Sync from iPhone` | 成功后进入来源目标；Back 返回来源 |
-| P02 | Set time manually | 全屏页面 | P00；Settings 的 `Set manually`；P01 失败回退 | Confirm 后进入 Main 或返回 Settings |
+| P00 | First-run time setup | 全屏页面 | RTC 无效的首次开机 | Confirm 后进入 P10；无 Back |
+| P02 | Set time manually | 全屏页面 | P00；Settings 的 `Date & time` | Confirm 后进入 Main 或返回 Settings；Back 丢弃草稿返回 Settings |
 | P10 | Main timer | 全屏页面 | 完成首次设置；从 Settings/Stats 返回；唤醒 | 进入 Stats、Settings、完成态或确认 Dialog |
 | S10-A | Focus / Short break / Long break Ready | P10 状态 | 选择模式 | Start 进入 Running |
 | S10-B | Running | P10 状态 | Start、Resume、自动开始 | Pause；计时完成；切换模式确认 |
@@ -38,7 +37,7 @@
 | O01 | Volume overlay | 临时覆盖层 | 实体 `+` 或 `-` | 自动消失 |
 | O02 | Battery low message | 临时提示层 | 电量首次低于约 15% | 自动消失，不中止计时 |
 | O03 | Auto-rotate unavailable | 临时提示层 | IMU 连续读取失败 | 三秒后自动消失，不中止计时 |
-| E01 | RTC invalid state | 页面替换/阻断态 | 开机或运行中检测到 RTC 无效 | Sync 或手动设置时间 |
+| E01 | RTC invalid state | 页面替换/阻断态 | 开机或运行中检测到 RTC 无效 | 手动设置时间 |
 
 ## 3. 页面导航图
 
@@ -47,7 +46,6 @@
 ```mermaid
 flowchart LR
     BOOT["⚙ First-run time setup"]
-    PHONE["📱 Sync from iPhone"]
     MANUAL["🕒 Set time manually"]
     MAIN["⏱ Main timer"]
     FOCUS_DONE["🍅 Focus complete state"]
@@ -58,11 +56,7 @@ flowchart LR
     ABORT{"! End timer?"}
     RESET{"! Reset timer?"}
 
-    BOOT -->|"Sync from iPhone"| PHONE
-    BOOT -->|"Set manually"| MANUAL
-    PHONE -->|"Sync succeeds at first run"| MAIN
-    PHONE -->|"Sync succeeds from Settings"| SETTINGS
-    PHONE -->|"Use manual setup"| MANUAL
+    BOOT -->|"Set date & time"| MANUAL
     MANUAL -->|"Confirm at first run"| MAIN
     MANUAL -->|"Confirm from Settings"| SETTINGS
     MAIN -->|"Focus reaches 00:00"| FOCUS_DONE
@@ -76,9 +70,7 @@ flowchart LR
     STATS -->|"Back to entry source"| SETTINGS
     SETTINGS -->|"Duration or Daily goal"| STEPPER
     STEPPER -->|"Confirm or Back"| SETTINGS
-    SETTINGS -->|"Sync from iPhone"| PHONE
-    SETTINGS -->|"Set manually"| MANUAL
-    PHONE -->|"Back"| SETTINGS
+    SETTINGS -->|"Date & time"| MANUAL
     MANUAL -->|"Back"| SETTINGS
     MAIN -->|"Swipe mode while active"| ABORT
     ABORT -->|"Confirm or Cancel"| MAIN
@@ -90,7 +82,7 @@ flowchart LR
     classDef state fill:#DDF4E4,stroke:#287A43,stroke-width:2px,color:#123B21
     classDef decision fill:#FFE2E2,stroke:#A83A3A,stroke-width:2px,color:#4A1111
     class MAIN,STATS,SETTINGS,STEPPER primary
-    class BOOT,PHONE,MANUAL setup
+    class BOOT,MANUAL setup
     class FOCUS_DONE,BREAK_DONE state
     class ABORT,RESET decision
 ```
@@ -137,78 +129,32 @@ flowchart LR
 
 - 设备首次开机且 RTC 未初始化。
 - 开机检测到 RTC 无效。
+- RTC 无效时直接进入不可跳过的滚轮式手动设置界面（等同 P02），不显示 Landing 或 Back。
 
-### 页面结构（从上到下）
-
-1. 顶部品牌/产品标题：`Pomodoro`，首次设置时不显示 Back。
-2. 中央时钟插画或简洁时钟图标。
-3. 标题：`Set date & time`。
-4. 说明：`Time is required for daily statistics and timer recovery.`
-5. 主按钮：`Sync from iPhone`，使用主强调色。
-6. 次按钮：`Set manually`，使用描边或文本样式。
-7. 辅助说明：`No account or internet connection is required.`
-
-### 交互
-
-- `Sync from iPhone` → P01。
-- `Set manually` → P02。
-- 不允许跳过；PWR 仍可熄屏/唤醒或关机。
-
-## 6. P01 — Sync from iPhone
+## 6. P02 — Set time manually
 
 ### 入口
 
-- P00 的 `Sync from iPhone`。
-- P30 Date & time 区块的 `Sync from iPhone`。
+- RTC 无效的首次设置（P00）。
+- Settings Date & time 区块的 `Date & time`。
 
 ### 页面结构
 
-1. 顶部栏：Back + `Sync from iPhone`。
-2. 步骤标记：`1 of 2` / `2 of 2`，或使用简短状态文案。
-3. 中央 QR Code，四周保留足够白色静区；二维码卡片可使用白底以确保扫描。
-4. 热点名称，例如 `Pomodoro-7F2A`。
-5. 状态说明：
-   - `Scan this code with your iPhone.`
-   - `The connection expires in 5:00.`
-6. 连接后状态：`Connected — confirm Sync to Pomodoro on your iPhone.`
-7. 次操作：`Set manually instead`。
-
-### 状态变体
-
-- Creating hotspot：小型进度指示器，不显示无法扫描的空二维码。
-- Waiting for iPhone：显示二维码与倒数。
-- iPhone connected：保持二维码但降低强调，突出确认说明。
-- Syncing：显示 `Syncing time…`。
-- Success：对勾 + `Time synced`，短暂停留后进入 Main 或返回 Settings。
-- Timeout/Error：`Couldn't sync time` + `Try again` + `Set manually`。
-
-### 返回规则
-
-- 首次设置来源：同步成功进入 P10；Back 返回 P00。
-- Settings 来源：成功或 Back 返回 P30。
-
-## 7. P02 — Set time manually
-
-### 入口
-
-- P00、P01 回退、Settings Date & time 区块。
-
-### 页面结构
-
-1. 顶部栏：Back + `Set manually`。
-2. 日期选择器：Year / Month / Day，轮式单选。
-3. 时间选择器：Hour / Minute；使用 24 小时制以减少 AM/PM 歧义。
-4. UTC offset 选择器，例如 `UTC−07:00`。
-5. 说明：`Automatic daylight saving requires iPhone sync.`
-6. 底部固定主按钮：`Confirm`。
+1. 顶部栏：Settings 来源显示 Back + `Set date & time`；首次设置不显示 Back。
+2. 六个并排滚轮：Year / Month / Day / Hour(24 小时制) / Minute / UTC offset（范围 UTC−12:00 至 UTC+14:00，步进十五分钟）。
+3. 说明：`Set the local date, time, and fixed UTC offset.`
+4. 底部固定主按钮：`Set time`（Confirm）。
 
 ### 交互
 
+- 滚轮修改草稿；年月改变导致日期不存在时，日期立即收敛到当月最后一天。
 - Confirm 校验日期合法性后保存。
-- 未确认时 Back 放弃修改。
 - 首次设置 Confirm 后进入 Main；Settings 来源 Confirm 后返回 Settings。
+- 未确认时 Settings 来源的 Back 放弃修改并返回 Settings；首次设置无 Back。
+- RTC 无效时草稿日期默认使用固件编译日期，时间为 `12:00`，offset 使用已保存值或默认值。
+- 时间设置阶段音量浮层与普通页面一致：最后一次音量操作两秒后消失。
 
-## 8. P10 — Main timer
+## 7. P10 — Main timer
 
 主屏只使用一个页面模板，按 Mode 和 Timer State 替换内容。禁止滚动。
 
@@ -273,7 +219,7 @@ flowchart LR
 - 三秒自动开始倒计时期间按钮禁用；模态确认遮罩显示期间不可点击。
 - 与 Settings 的 Sound switch、实体音量键共享同一声音状态，重启后保留。
 
-## 9. S11 — Focus complete
+## 8. S11 — Focus complete
 
 此状态替换 P10 中央 CircularTimer，保留顶部栏和底部 Set Progress。
 插图、完成文案与可见操作按钮组成的内容块须在屏幕 Y 方向整体居中；自动开始开启与关闭状态分别按各自可见按钮数量计算中心。
@@ -300,7 +246,7 @@ flowchart LR
 - 主按钮：`Start break`（由应用按 Set 进度决定进入 Short break 或 Long break）。普通完成状态不显示 `Not now`；仅自动开始倒计时时显示 `Cancel auto-start`。
 - 页面保持到用户操作；无操作 2 分钟变暗、5 分钟熄屏。
 
-## 10. S12 — Break complete
+## 9. S12 — Break complete
 
 同样替换主屏中央区域。
 
@@ -320,7 +266,7 @@ flowchart LR
 
 - 仅显示 `Start focus`。
 
-## 11. P20 — Statistics
+## 10. P20 — Statistics
 
 ### 入口
 
@@ -345,7 +291,7 @@ flowchart LR
 - RTC 无效：隐藏图表，显示时钟图标、`Set date & time to view statistics` 和进入时间设置的按钮。
 - 返回目标取决于入口来源，不固定跳回 Main。
 
-## 12. P30 — Settings
+## 11. P30 — Settings
 
 ### 入口
 
@@ -389,11 +335,9 @@ flowchart LR
 
 #### Date & time
 
-- 当前本地日期时间，例如 `Aug 15, 2026 · 14:35`。
-- `Time zone` — 例如 `America/Edmonton` 或固定 UTC offset。
-- `Sync from iPhone` → P01。
-- `Set manually` → P02。
-- 若 DST 规则即将过期，显示 StatusBadge：`Time zone rules need sync`。
+- 当前本地日期时间，例如 `2026-08-15 14:35 UTC-07:00`。
+- `Date & time` → P02（滚轮式手动设置）。
+- 固定 UTC offset 直接显示在日期时间旁，无时区规则提示。
 
 #### Power
 
@@ -405,9 +349,9 @@ flowchart LR
 - Switch 立即保存。
 - Brightness 松手保存。
 - NumericStepper、日期和时间只有 Confirm 后保存。
-- Back 不撤销已经保存的设置。
+- Back 不撤销已经保存的设置；日期时间编辑器 Back 丢弃未确认草稿。
 
-## 13. P31 — Numeric stepper
+## 12. P31 — Numeric stepper
 
 一个页面模板复用于四种设置。
 
@@ -437,7 +381,7 @@ flowchart LR
 - Back 放弃未确认值，不显示额外 Dialog。
 - 修改当前模式的时长不影响正在运行或暂停的计时。
 
-## 14. D01 — End timer confirmation
+## 13. D01 — End timer confirmation
 
 ### 入口
 
@@ -456,7 +400,7 @@ flowchart LR
 - Cancel：恢复原状态和剩余时间。
 - 点击遮罩等同 Cancel；实体音量键仍可调音量。
 
-## 15. D02 — Reset timer confirmation
+## 14. D02 — Reset timer confirmation
 
 ### 入口
 
@@ -473,7 +417,7 @@ flowchart LR
 - Confirm：回到当前 Mode 的 Ready 状态和完整配置时长。
 - Cancel：回到 Paused。
 
-## 16. O01 — Volume overlay
+## 15. O01 — Volume overlay
 
 ### 入口
 
@@ -487,24 +431,24 @@ flowchart LR
 - 约两秒无继续操作后自动消失。
 - 覆盖层不暂停计时、不截断完成态声音之外的流程。
 
-## 17. O02 — Battery low message
+## 16. O02 — Battery low message
 
 - 电量首次低于约 15% 时，从顶部栏下方显示轻量提示：`Battery low`。
 - Battery 图标切换为警示色。
 - 不使用阻断 Dialog，不停止或暂停计时。
 - 同一低电量周期只提示一次，避免重复干扰。
 
-## 18. O03 — Auto-rotate unavailable
+## 17. O03 — Auto-rotate unavailable
 
 - IMU 连续三次读取失败时，从顶部栏下方显示轻量提示：`Auto-rotate unavailable`。
 - 提示三秒后自动消失，不使用阻断 Dialog，不停止或暂停计时。
 - 每次开机最多显示一次；IMU 恢复后不显示成功提示。
 
-## 19. E01 — RTC invalid state
+## 18. E01 — RTC invalid state
 
 ### 开机时
 
-- 直接使用 P00，不允许进入 Main。
+- 直接进入 P02 手动设置界面，不允许进入 Main，且不显示 Back。
 
 ### 运行中
 
@@ -514,10 +458,10 @@ flowchart LR
 - Statistics 使用异常空状态。
 - 用户进入时间设置并恢复 RTC 后，待处理记录归入恢复时的 Statistics Day。
 
-## 20. 原型连线与交互检查清单
+## 19. 原型连线与交互检查清单
 
-- P00 的两个入口都能最终到达 Main，且没有 Skip。
-- P01/P02 从首次设置与 Settings 进入时拥有不同返回目标。
+- 首次设置与 Settings 来源的 P02 拥有不同返回目标（首次无 Back）。
+- P02 六个滚轮（Year/Month/Day/Hour/Minute/UTC offset）范围正确且年月改变收敛日期。
 - Main 的 Statistics 与 Settings IconButton 都可操作。
 - Stats Back 能返回正确来源。
 - 四个 NumericStepper 共享模板但范围正确。
@@ -536,32 +480,31 @@ flowchart LR
 - 旋转期间页面、滚动位置、Dialog 和 Timer 状态不变；进行中的触摸不会被中途旋转打断。
 - 平放、临界方向、熄屏唤醒和 IMU 故障分别体现保持方向、延迟切换与非阻断回退行为。
 
-## 21. 建议输出的原型画板
+## 20. 建议输出的原型画板
 
 为了覆盖所有关键交互，设计工具中至少建立以下画板：
 
-1. First-run time setup。
-2. iPhone sync — waiting。
-3. iPhone sync — success/error（可用组件变体）。
-4. Manual date/time。
-5. Focus — Ready。
-6. Focus — Running。
-7. Focus — Paused。
-8. Short break — Running。
-9. Long break — Running。
-10. Focus complete — auto-start on。
-11. Focus complete — auto-start off。
-12. Break complete。
-13. Daily goal reached 变体。
-14. Statistics — populated。
-15. Statistics — RTC invalid/empty。
-16. Settings — top section。
-17. Settings — lower section。
-18. Numeric stepper — duration。
-19. Numeric stepper — Daily goal。
-20. End timer Dialog。
-21. Reset Dialog。
-22. Volume overlay。
-23. Battery low 状态。
+1. First-run time setup（滚轮式手动设置，无 Back）。
+2. Manual date/time — 六个滚轮（Year/Month/Day/Hour/Minute/UTC offset）。
+3. Manual date/time — 年月改变后日期收敛变体。
+4. Focus — Ready。
+5. Focus — Running。
+6. Focus — Paused。
+7. Short break — Running。
+8. Long break — Running。
+9. Focus complete — auto-start on。
+10. Focus complete — auto-start off。
+11. Break complete。
+12. Daily goal reached 变体。
+13. Statistics — populated。
+14. Statistics — RTC invalid/empty。
+15. Settings — top section。
+16. Settings — lower section。
+17. Numeric stepper — duration。
+18. Numeric stepper — Daily goal。
+19. End timer Dialog。
+20. Reset Dialog。
+21. Volume overlay。
+22. Battery low 状态。
 
 原型应优先验证 480×480 真机可读性、顶部栏拥挤程度、CircularTimer 内按钮触控面积、Settings 滚动手感以及无 PSRAM 条件下的转场简化效果。

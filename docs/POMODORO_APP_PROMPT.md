@@ -15,7 +15,7 @@ Design and implement a single-purpose Pomodoro timer for the Waveshare ESP32-C6-
 - Memory constraint: 512KB HP SRAM and no PSRAM.
 - Framework: ESP-IDF `>=5.5.2,<5.6` with pinned, Waveshare-validated LVGL 9, `esp_lvgl_port`, and Waveshare driver versions.
 - Use small partial LVGL draw buffers. Never allocate a full RGB565 framebuffer or full-screen double buffers.
-- Bluetooth, Thread, Zigbee, microphones, ES7210, the QMI8658 gyroscope, and MicroSD remain uninitialized. Wi-Fi is enabled only for an explicit iPhone time-sync session.
+- Bluetooth, Thread, Zigbee, microphones, ES7210, the QMI8658 gyroscope, and MicroSD remain uninitialized. Wi-Fi remains uninitialized; the device never creates hotspots or connects to a network.
 
 ## Product language
 
@@ -169,9 +169,8 @@ Sections, in order:
    - Brightness
 6. Date & time
    - Current local date and time
-   - Time zone
-   - Sync from iPhone
-   - Set manually
+   - Fixed UTC offset
+   - Date & time (opens the manual editor)
 7. Power
    - Battery percentage and charging state
 
@@ -216,26 +215,27 @@ Statistics rules:
 - Scale to the trailing-seven-day maximum while covering at least the current Daily Goal.
 - Persist 365 daily aggregates. Display only the latest seven. Delete the oldest when day 366 is created.
 
-## Date, time, and iPhone sync
+## Date, time, and fixed UTC offset
 
-The RTC stores UTC. Local time and Statistics Day use the saved time-zone offset schedule.
+The RTC stores UTC. Local time and Statistics Day use the fixed UTC offset setting.
 
 First boot is not skippable:
 
-- Offer `Sync from iPhone` and `Set manually`.
+- When the RTC has no valid time, the device boots directly into the non-skippable manual date/time editor.
 - Other settings use their defaults.
+- The editor uses rollers for Year, Month, Day, 24-hour Hour, Minute, and the UTC offset (range UTC−12:00 to UTC+14:00, 15-minute steps, defaulting to the saved value or `UTC+00:00`).
+- When the RTC is invalid, the draft date defaults to the firmware build date and the time to `12:00`.
+- If a Year or Month change makes the Day invalid, the Day immediately converges to the last valid day of that month.
+- Only Confirm saves; the first-run editor shows no Back button.
 
-iPhone sync:
+Settings entry:
 
-- Start a temporary Wi-Fi SoftAP with a random password and a five-minute expiry.
-- Display a QR code for the iPhone to join.
-- Serve a local page that reads the iPhone’s calibrated UTC time, IANA time-zone name, and the next five years of UTC-offset transitions.
-- Require `Sync to Pomodoro` confirmation before writing the RTC.
-- Shut down Wi-Fi and delete all session data after success or expiry.
-- Never connect to the home router, access the internet, or store Wi-Fi credentials.
-- Prompt for another sync before the five-year transition schedule expires.
+- Settings has a single `Date & time` row showing the current local date/time and the fixed UTC offset.
+- Opening it starts the same editor with the current local values as the draft.
+- Confirm validates, writes the RTC, rebases an active timer, and returns to Settings.
+- Back discards the draft and returns to Settings.
 
-Manual time setup stores a fixed UTC offset. Automatic DST requires iPhone sync.
+Manual date/time setup stores a fixed UTC offset. There is no automatic daylight-saving adjustment.
 
 Changing date/time:
 
@@ -394,7 +394,8 @@ Firmware updates:
 ## Out of scope
 
 - Accounts, login, cloud sync, analytics, remote notifications, notification shade.
-- Internet access, background Wi-Fi, saved Wi-Fi credentials, OTA.
+- Internet access, any Wi-Fi, phone sync, NTP/GPS time sync, OTA.
+- Automatic daylight-saving adjustment and IANA time-zone databases.
 - Vibration or haptics.
 - Microphone, voice assistant, IMU gestures, gyroscope-driven behavior, Bluetooth, Thread/Zigbee, MicroSD features.
 - Long-term statistics UI beyond the trailing seven-day chart.

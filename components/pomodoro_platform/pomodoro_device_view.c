@@ -7,10 +7,6 @@
 #include "esp_log.h"
 #include "esp_lvgl_port.h"
 #include "lvgl.h"
-#include "qrcode.h"
-
-LV_DRAW_BUF_DEFINE_STATIC(time_sync_qr_buffer, 180, 180,
-                          LV_COLOR_FORMAT_I1);
 
 typedef struct {
     int16_t x;
@@ -68,19 +64,6 @@ static const struct {
     {POMODORO_APPLICATION_ACTION_OPEN_IDLE_BRIGHTNESS, "Idle brightness"},
     {POMODORO_APPLICATION_ACTION_POWER_OFF, "Power off"},
     {POMODORO_APPLICATION_ACTION_OPEN_DATE_TIME, "Date & time"},
-    {POMODORO_APPLICATION_ACTION_OPEN_TIME_SYNC, "Sync from iPhone"},
-    {POMODORO_APPLICATION_ACTION_MANUAL_YEAR_DOWN, "Year -"},
-    {POMODORO_APPLICATION_ACTION_MANUAL_YEAR_UP, "Year +"},
-    {POMODORO_APPLICATION_ACTION_MANUAL_MONTH_DOWN, "Month -"},
-    {POMODORO_APPLICATION_ACTION_MANUAL_MONTH_UP, "Month +"},
-    {POMODORO_APPLICATION_ACTION_MANUAL_DAY_DOWN, "Day -"},
-    {POMODORO_APPLICATION_ACTION_MANUAL_DAY_UP, "Day +"},
-    {POMODORO_APPLICATION_ACTION_MANUAL_HOUR_DOWN, "Hour -"},
-    {POMODORO_APPLICATION_ACTION_MANUAL_HOUR_UP, "Hour +"},
-    {POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_DOWN, "Minute -"},
-    {POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_UP, "Minute +"},
-    {POMODORO_APPLICATION_ACTION_MANUAL_OFFSET_DOWN, "UTC -"},
-    {POMODORO_APPLICATION_ACTION_MANUAL_OFFSET_UP, "UTC +"},
     {POMODORO_APPLICATION_ACTION_MANUAL_TIME_CONFIRM, "Set time"},
     {POMODORO_APPLICATION_ACTION_NUMERIC_DECREMENT, LV_SYMBOL_DOWN},
     {POMODORO_APPLICATION_ACTION_NUMERIC_INCREMENT, LV_SYMBOL_UP},
@@ -145,7 +128,6 @@ typedef struct {
     lv_obj_t *settings_brightness_value;
     lv_obj_t *settings_idle_brightness_value;
     lv_obj_t *settings_datetime_value;
-    lv_obj_t *settings_time_sync_value;
     lv_obj_t *settings_power_value;
     lv_obj_t *auto_breaks_switch;
     lv_obj_t *auto_focus_switch;
@@ -153,7 +135,8 @@ typedef struct {
     lv_obj_t *auxiliary_buttons_container;
     lv_obj_t *statistics_chart;
     lv_obj_t *numeric_roller;
-    lv_obj_t *time_sync_qr;
+    lv_obj_t *manual_roller_container;
+    lv_obj_t *manual_rollers[6];
     lv_obj_t *statistics_bars[7];
     lv_obj_t *statistics_dates[7];
     lv_obj_t *statistics_counts[7];
@@ -171,7 +154,8 @@ typedef struct {
     pomodoro_application_action_t pending_mode_action;
     int32_t gesture_start_x;
     bool numeric_roller_rendering;
-    char rendered_time_sync_uri[128];
+    bool manual_roller_rendering;
+    char manual_roller_options[1100];
 } device_view_context_t;
 
 typedef struct {
@@ -244,54 +228,138 @@ static void numeric_roller_changed(lv_event_t *event)
     }
 }
 
-static void draw_time_sync_qr(esp_qrcode_handle_t qrcode, void *user_data)
+static int16_t manual_roller_minimum(uint8_t index)
 {
-    lv_obj_t *canvas = user_data;
-    int modules = esp_qrcode_get_size(qrcode);
-    const int quiet_modules = 4;
-    int scale = 180 / (modules + quiet_modules * 2);
-    int image_size = (modules + quiet_modules * 2) * scale;
-    int origin = (180 - image_size) / 2 + quiet_modules * scale;
-    lv_canvas_fill_bg(canvas, lv_color_white(), LV_OPA_COVER);
-    for (int y = 0; y < modules; y++) {
-        for (int x = 0; x < modules; x++) {
-            if (!esp_qrcode_get_module(qrcode, x, y)) {
-                continue;
-            }
-            for (int pixel_y = 0; pixel_y < scale; pixel_y++) {
-                for (int pixel_x = 0; pixel_x < scale; pixel_x++) {
-                    lv_canvas_set_px(canvas, origin + x * scale + pixel_x,
-                                     origin + y * scale + pixel_y,
-                                     lv_color_black(), LV_OPA_COVER);
-                }
-            }
-        }
+    static const int16_t minimums[] = {2020, 1, 1, 0, 0, -48};
+    return minimums[index % 6U];
+}
+
+static int16_t manual_roller_maximum(uint8_t index)
+{
+    static const int16_t maximums[] = {2069, 12, 31, 23, 59, 56};
+    return maximums[index % 6U];
+}
+
+static int16_t manual_roller_value(const pomodoro_application_view_t *view,
+                                   uint8_t index)
+{
+    switch (index % 6U) {
+    case 1:
+        return view->manual_time_draft.local_date.month;
+    case 2:
+        return view->manual_time_draft.local_date.day;
+    case 3:
+        return view->manual_time_draft.hour;
+    case 4:
+        return view->manual_time_draft.minute;
+    case 5:
+        return view->manual_time_draft.utc_offset_quarter_hours;
+    default:
+        return view->manual_time_draft.local_date.year;
     }
 }
 
-static void render_time_sync_qr(const char *join_uri)
+static pomodoro_application_action_t manual_roller_action(uint8_t index,
+                                                          bool up)
 {
-    if (join_uri == NULL || join_uri[0] == '\0' ||
-        strcmp(join_uri, view_context.rendered_time_sync_uri) == 0) {
+    static const pomodoro_application_action_t ups[] = {
+        POMODORO_APPLICATION_ACTION_MANUAL_YEAR_UP,
+        POMODORO_APPLICATION_ACTION_MANUAL_MONTH_UP,
+        POMODORO_APPLICATION_ACTION_MANUAL_DAY_UP,
+        POMODORO_APPLICATION_ACTION_MANUAL_HOUR_UP,
+        POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_UP,
+        POMODORO_APPLICATION_ACTION_MANUAL_OFFSET_UP,
+    };
+    static const pomodoro_application_action_t downs[] = {
+        POMODORO_APPLICATION_ACTION_MANUAL_YEAR_DOWN,
+        POMODORO_APPLICATION_ACTION_MANUAL_MONTH_DOWN,
+        POMODORO_APPLICATION_ACTION_MANUAL_DAY_DOWN,
+        POMODORO_APPLICATION_ACTION_MANUAL_HOUR_DOWN,
+        POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_DOWN,
+        POMODORO_APPLICATION_ACTION_MANUAL_OFFSET_DOWN,
+    };
+    return up ? ups[index % 6U] : downs[index % 6U];
+}
+
+static void manual_roller_options(uint8_t index, char *buffer, size_t size)
+{
+    buffer[0] = '\0';
+    size_t used = 0U;
+    for (int16_t value = manual_roller_minimum(index);
+         value <= manual_roller_maximum(index); value++) {
+        int written;
+        if (index == 5U) {
+            int total_minutes = (int) value * 15;
+            int sign = total_minutes < 0 ? -1 : 1;
+            int absolute_minutes = sign * total_minutes;
+            int hours = absolute_minutes / 60;
+            int minutes = absolute_minutes % 60;
+            written = snprintf(buffer + used, size - used,
+                               value == manual_roller_maximum(index)
+                                   ? (sign < 0 ? "UTC-%02d:%02d"
+                                               : "UTC+%02d:%02d")
+                                   : (sign < 0 ? "UTC-%02d:%02d\n"
+                                               : "UTC+%02d:%02d\n"),
+                               hours, minutes);
+        } else {
+            written = snprintf(buffer + used, size - used,
+                               value == manual_roller_maximum(index)
+                                   ? "%d"
+                                   : "%d\n",
+                               value);
+        }
+        if (written < 0 || (size_t) written >= size - used) {
+            break;
+        }
+        used += (size_t) written;
+    }
+}
+
+static void manual_roller_changed(lv_event_t *event)
+{
+    if (view_context.manual_roller_rendering) {
         return;
     }
-    esp_qrcode_config_t config = ESP_QRCODE_CONFIG_DEFAULT();
-    config.display_func_with_cb = draw_time_sync_qr;
-    config.user_data = view_context.time_sync_qr;
-    config.max_qrcode_version = 8;
-    config.qrcode_ecc_level = ESP_QRCODE_ECC_MED;
-    if (esp_qrcode_generate(&config, join_uri) == ESP_OK) {
-        strlcpy(view_context.rendered_time_sync_uri, join_uri,
-                sizeof(view_context.rendered_time_sync_uri));
+    lv_obj_t *target = lv_event_get_target(event);
+    for (uint8_t index = 0; index < 6U; index++) {
+        if (view_context.manual_rollers[index] != target) {
+            continue;
+        }
+        int16_t selected = manual_roller_minimum(index) +
+            (int16_t) lv_roller_get_selected(target);
+        int16_t current =
+            manual_roller_value(&view_context.last_view, index);
+        int16_t delta = selected - current;
+        if (delta == 0) {
+            return;
+        }
+        pomodoro_application_action_t action =
+            manual_roller_action(index, delta > 0);
+        int16_t steps = delta > 0 ? delta : -delta;
+        for (int16_t step = 0; step < steps; step++) {
+            dispatch(action);
+        }
+        return;
     }
 }
 
-static void clear_time_sync_qr(void)
+static void render_manual_rollers(const pomodoro_application_view_t *view)
 {
-    memset(view_context.rendered_time_sync_uri, 0,
-           sizeof(view_context.rendered_time_sync_uri));
-    lv_canvas_fill_bg(view_context.time_sync_qr, lv_color_white(),
-                      LV_OPA_COVER);
+    view_context.manual_roller_rendering = true;
+    for (uint8_t index = 0; index < 6U; index++) {
+        manual_roller_options(index, view_context.manual_roller_options,
+                              sizeof(view_context.manual_roller_options));
+        lv_roller_set_options(view_context.manual_rollers[index],
+                              view_context.manual_roller_options,
+                              LV_ROLLER_MODE_NORMAL);
+        int16_t value = manual_roller_value(view, index);
+        int16_t selected = value - manual_roller_minimum(index);
+        lv_roller_set_selected(view_context.manual_rollers[index], selected,
+                               LV_ANIM_OFF);
+        lv_obj_remove_flag(view_context.manual_rollers[index],
+                           LV_OBJ_FLAG_HIDDEN);
+    }
+    view_context.manual_roller_rendering = false;
 }
 
 static const char *application_error_text(pomodoro_application_error_t error)
@@ -839,15 +907,6 @@ esp_err_t pomodoro_device_view_create(
     lv_label_set_long_mode(view_context.page_body, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_color(view_context.page_body,
                                 lv_color_hex(0xAAB1BE), 0);
-    view_context.time_sync_qr = lv_canvas_create(view_context.page_content);
-    LV_DRAW_BUF_INIT_STATIC(time_sync_qr_buffer);
-    lv_canvas_set_draw_buf(view_context.time_sync_qr,
-                           &time_sync_qr_buffer);
-    lv_canvas_set_palette(view_context.time_sync_qr, 0,
-                          lv_color32_make(0xFF, 0xFF, 0xFF, 0xFF));
-    lv_canvas_set_palette(view_context.time_sync_qr, 1,
-                          lv_color32_make(0x00, 0x00, 0x00, 0xFF));
-    lv_obj_add_flag(view_context.time_sync_qr, LV_OBJ_FLAG_HIDDEN);
     view_context.statistics_metrics = lv_obj_create(view_context.page_content);
     lv_obj_set_size(view_context.statistics_metrics, LV_PCT(100), 86);
     lv_obj_set_style_bg_opa(view_context.statistics_metrics, LV_OPA_TRANSP, 0);
@@ -999,14 +1058,34 @@ esp_err_t pomodoro_device_view_create(
     lv_obj_add_event_cb(view_context.numeric_roller, numeric_roller_changed,
                         LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_flag(view_context.numeric_roller, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_t *manual_roller_container = lv_obj_create(
+        view_context.page_content);
+    view_context.manual_roller_container = manual_roller_container;
+    lv_obj_set_size(manual_roller_container, LV_PCT(100), 130);
+    lv_obj_set_style_bg_opa(manual_roller_container, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(manual_roller_container, 0, 0);
+    lv_obj_set_style_pad_all(manual_roller_container, 0, 0);
+    lv_obj_set_style_pad_column(manual_roller_container, 2, 0);
+    lv_obj_set_flex_flow(manual_roller_container, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(manual_roller_container, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    for (uint8_t index = 0; index < 6U; index++) {
+        view_context.manual_rollers[index] = lv_roller_create(
+            manual_roller_container);
+        lv_obj_set_width(view_context.manual_rollers[index], 70);
+        lv_obj_set_height(view_context.manual_rollers[index], 120);
+        lv_roller_set_visible_row_count(view_context.manual_rollers[index], 3);
+        lv_obj_add_event_cb(view_context.manual_rollers[index],
+                            manual_roller_changed, LV_EVENT_VALUE_CHANGED,
+                            NULL);
+        lv_obj_add_flag(view_context.manual_rollers[index],
+                        LV_OBJ_FLAG_HIDDEN);
+    }
+    lv_obj_add_flag(manual_roller_container, LV_OBJ_FLAG_HIDDEN);
     (void) make_settings_section_label(view_context.settings_switches,
                                        "DATE & TIME", true);
     (void) make_setting_action_row(
-        view_context.settings_switches, "Sync from iPhone",
-        POMODORO_APPLICATION_ACTION_OPEN_TIME_SYNC,
-        &view_context.settings_time_sync_value);
-    (void) make_setting_action_row(
-        view_context.settings_switches, "Set manually",
+        view_context.settings_switches, "Date & time",
         POMODORO_APPLICATION_ACTION_OPEN_DATE_TIME,
         &view_context.settings_datetime_value);
     (void) make_settings_section_label(view_context.settings_switches,
@@ -1338,79 +1417,15 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
     lv_obj_add_flag(view_context.statistics_metrics, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(view_context.settings_switches, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(view_context.numeric_roller, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(view_context.time_sync_qr, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_remove_flag(view_context.page_back_button, LV_OBJ_FLAG_HIDDEN);
-    if (view->phase != POMODORO_APPLICATION_PHASE_TIME_SETUP ||
-        view->time_setup_stage != POMODORO_APPLICATION_TIME_SETUP_SYNC ||
-        view->time_sync_session.join_uri[0] == '\0') {
-        clear_time_sync_qr();
+    lv_obj_add_flag(view_context.manual_roller_container, LV_OBJ_FLAG_HIDDEN);
+    if (view->phase == POMODORO_APPLICATION_PHASE_TIME_SETUP &&
+        !view->time_setup_can_cancel) {
+        lv_obj_add_flag(view_context.page_back_button, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_remove_flag(view_context.page_back_button, LV_OBJ_FLAG_HIDDEN);
     }
 
     if (view->phase == POMODORO_APPLICATION_PHASE_TIME_SETUP) {
-        if (view->time_setup_stage ==
-            POMODORO_APPLICATION_TIME_SETUP_LANDING) {
-            lv_label_set_text(view_context.page_title, "Set date & time");
-            lv_label_set_text(
-                view_context.page_body,
-                "Time is required for daily statistics and timer recovery.\n\n"
-                "No account or internet connection is required.");
-            set_auxiliary_button_text(
-                POMODORO_APPLICATION_ACTION_OPEN_DATE_TIME, "Set manually");
-            set_auxiliary_button_visible(
-                POMODORO_APPLICATION_ACTION_OPEN_TIME_SYNC, true);
-            set_auxiliary_button_visible(
-                POMODORO_APPLICATION_ACTION_OPEN_DATE_TIME, true);
-            lv_obj_add_flag(view_context.page_back_button,
-                            LV_OBJ_FLAG_HIDDEN);
-            return;
-        }
-        if (view->time_setup_stage ==
-            POMODORO_APPLICATION_TIME_SETUP_SYNC) {
-            char text[384];
-            if (view->time_sync_failed) {
-                snprintf(text, sizeof(text),
-                         "Couldn't sync time.\n\nTry again or set the time "
-                         "manually.");
-                set_auxiliary_button_text(
-                    POMODORO_APPLICATION_ACTION_OPEN_TIME_SYNC,
-                    "Try again");
-                set_auxiliary_button_visible(
-                    POMODORO_APPLICATION_ACTION_OPEN_TIME_SYNC, true);
-            } else {
-                snprintf(
-                    text, sizeof(text),
-                    "%s\nPassword: %s\n\n%s\nOpen http://192.168.4.1 in "
-                    "Safari.\nExpires in %u:%02u.",
-                    view->time_sync_session.ssid,
-                    view->time_sync_session.password,
-                    view->time_sync_connected
-                        ? "Connected - confirm Sync to Pomodoro on your iPhone."
-                        : "Scan this code with your iPhone.",
-                    view->time_sync_seconds_remaining / 60U,
-                    view->time_sync_seconds_remaining % 60U);
-                render_time_sync_qr(view->time_sync_session.join_uri);
-                lv_obj_remove_flag(view_context.time_sync_qr,
-                                   LV_OBJ_FLAG_HIDDEN);
-            }
-            lv_label_set_text(view_context.page_title, "Sync from iPhone");
-            lv_label_set_text(view_context.page_body, text);
-            set_auxiliary_button_text(
-                POMODORO_APPLICATION_ACTION_OPEN_DATE_TIME,
-                "Set manually instead");
-            set_auxiliary_button_visible(
-                POMODORO_APPLICATION_ACTION_OPEN_DATE_TIME, true);
-            return;
-        }
-        if (view->time_setup_stage ==
-            POMODORO_APPLICATION_TIME_SETUP_SYNC_SUCCESS) {
-            lv_label_set_text(view_context.page_title, "Time synced");
-            lv_label_set_text(view_context.page_body,
-                              LV_SYMBOL_OK "\n\nTime and daylight-saving "
-                              "rules saved.");
-            lv_obj_add_flag(view_context.page_back_button,
-                            LV_OBJ_FLAG_HIDDEN);
-            return;
-        }
         char text[256];
         snprintf(
             text, sizeof(text),
@@ -1423,12 +1438,11 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
             (double) view->manual_time_draft.utc_offset_quarter_hours / 4.0);
         lv_label_set_text(view_context.page_title, "Set date & time");
         lv_label_set_text(view_context.page_body, text);
-        for (pomodoro_application_action_t action =
-                 POMODORO_APPLICATION_ACTION_MANUAL_YEAR_DOWN;
-             action <= POMODORO_APPLICATION_ACTION_MANUAL_TIME_CONFIRM;
-             action++) {
-            set_auxiliary_button_visible(action, true);
-        }
+        lv_obj_remove_flag(view_context.manual_roller_container,
+                           LV_OBJ_FLAG_HIDDEN);
+        render_manual_rollers(view);
+        set_auxiliary_button_visible(
+            POMODORO_APPLICATION_ACTION_MANUAL_TIME_CONFIRM, true);
         return;
     }
     if (view->page == POMODORO_APPLICATION_PAGE_MENU) {
@@ -1574,12 +1588,6 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
                           view->settings.brightness_percent);
     lv_label_set_text_fmt(view_context.settings_idle_brightness_value, "%u%%",
                           view->settings.idle_brightness_percent);
-    lv_label_set_text_fmt(
-        view_context.settings_time_sync_value, "%s%s",
-        view->time_zone_needs_sync ? "Sync soon - " : "",
-        view->time_zone_needs_sync ? "rules expiring" :
-        view->time_zone_name[0] != '\0' ? view->time_zone_name :
-                                         "automatic DST");
     lv_label_set_text_fmt(
         view_context.settings_datetime_value,
         "%04u-%02u-%02u %02u:%02u UTC%+.2f",

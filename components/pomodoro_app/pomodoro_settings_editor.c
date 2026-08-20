@@ -1,5 +1,30 @@
 #include "pomodoro_settings_editor.h"
 
+static uint8_t days_in_month(uint16_t year, uint8_t month)
+{
+    static const uint8_t days_per_month[] = {
+        31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+    };
+    if (month < 1U || month > 12U) {
+        return 0U;
+    }
+    uint8_t days = days_per_month[month - 1U];
+    bool leap = (year % 4U == 0U && year % 100U != 0U) || year % 400U == 0U;
+    if (month == 2U && leap) {
+        days++;
+    }
+    return days;
+}
+
+static void converge_day(pomodoro_application_manual_time_t *draft)
+{
+    uint8_t maximum = days_in_month(draft->local_date.year,
+                                    draft->local_date.month);
+    if (draft->local_date.day > maximum) {
+        draft->local_date.day = maximum;
+    }
+}
+
 bool pomodoro_numeric_editor_open(
     pomodoro_numeric_editor_t *editor,
     const pomodoro_settings_t *settings,
@@ -100,11 +125,13 @@ bool pomodoro_manual_time_adjust(
         if (value >= 2020 && value <= 2069) {
             draft->local_date.year = (uint16_t) value;
         }
+        converge_day(draft);
     } else if (action == POMODORO_APPLICATION_ACTION_MANUAL_MONTH_DOWN ||
                action == POMODORO_APPLICATION_ACTION_MANUAL_MONTH_UP) {
         int value = (int) draft->local_date.month + delta;
         draft->local_date.month = (uint8_t) (value < 1 ? 12 :
                                              value > 12 ? 1 : value);
+        converge_day(draft);
     } else if (action == POMODORO_APPLICATION_ACTION_MANUAL_DAY_DOWN ||
                action == POMODORO_APPLICATION_ACTION_MANUAL_DAY_UP) {
         int value = (int) draft->local_date.day + delta;

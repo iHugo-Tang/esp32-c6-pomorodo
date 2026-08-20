@@ -1,5 +1,8 @@
 # 通过临时 SoftAP 从 iPhone 同步 RTC
 
+> **Superseded by [ADR-0008](./0008-manual-date-time-and-fixed-utc-offset.md).**
+> 设备只使用手动日期时间与固定 UTC offset，不再提供手机同步或自动时区规则。
+
 带后备电源的 PCF85063 RTC 是日常运行与离线统计的权威时钟。需要校时时，设备临时创建带随机密码且五分钟失效的 Wi‑Fi 热点并显示连接二维码；iPhone 打开设备托管的本地页面后，将自身已校准的 UTC 时间、IANA 时区名称及未来五年的 UTC offset 切换表传给设备，用户确认后写入 RTC，随后设备关闭 Wi‑Fi 并删除全部会话数据。
 
 ## Considered Options

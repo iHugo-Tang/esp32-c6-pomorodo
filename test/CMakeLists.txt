@@ -32,6 +32,7 @@ add_executable(
 )
 target_include_directories(
     pomodoro_application_test PRIVATE
+    ../components/pomodoro_app
     ../components/pomodoro_app/include
     ../components/pomodoro_core/include
 )

@@ -56,7 +56,6 @@ typedef enum {
     POMODORO_APPLICATION_ACTION_TOGGLE_AUTO_FOCUS,
     POMODORO_APPLICATION_ACTION_TOGGLE_AUTO_BREAK,
     POMODORO_APPLICATION_ACTION_OPEN_DATE_TIME,
-    POMODORO_APPLICATION_ACTION_OPEN_TIME_SYNC,
     POMODORO_APPLICATION_ACTION_MANUAL_YEAR_DOWN,
     POMODORO_APPLICATION_ACTION_MANUAL_YEAR_UP,
     POMODORO_APPLICATION_ACTION_MANUAL_MONTH_DOWN,
@@ -108,31 +107,6 @@ typedef struct {
     uint8_t minute;
     int8_t utc_offset_quarter_hours;
 } pomodoro_application_manual_time_t;
-
-typedef enum {
-    POMODORO_APPLICATION_TIME_SETUP_LANDING = 0,
-    POMODORO_APPLICATION_TIME_SETUP_MANUAL,
-    POMODORO_APPLICATION_TIME_SETUP_SYNC,
-    POMODORO_APPLICATION_TIME_SETUP_SYNC_SUCCESS,
-} pomodoro_application_time_setup_stage_t;
-
-typedef struct {
-    char ssid[33];
-    char password[16];
-    char join_uri[128];
-} pomodoro_application_time_sync_session_t;
-
-typedef struct {
-    uint64_t utc_epoch_seconds;
-    pomodoro_time_zone_schedule_t time_zone;
-} pomodoro_application_time_sync_submission_t;
-
-typedef enum {
-    POMODORO_APPLICATION_TIME_SYNC_WAITING = 0,
-    POMODORO_APPLICATION_TIME_SYNC_CONNECTED,
-    POMODORO_APPLICATION_TIME_SYNC_SUBMITTED,
-    POMODORO_APPLICATION_TIME_SYNC_ERROR,
-} pomodoro_application_time_sync_poll_result_t;
 
 typedef enum {
     POMODORO_APPLICATION_CONFIRM_NONE = 0,
@@ -192,6 +166,7 @@ typedef struct {
     uint8_t current_local_minute;
     pomodoro_application_page_t page;
     bool statistics_available;
+    bool time_setup_can_cancel;
     uint16_t today_completed_pomodoros;
     uint32_t today_completed_focus_seconds;
     uint16_t today_goal_percent;
@@ -213,13 +188,6 @@ typedef struct {
     int8_t pixel_shift_x;
     int8_t pixel_shift_y;
     pomodoro_application_manual_time_t manual_time_draft;
-    pomodoro_application_time_setup_stage_t time_setup_stage;
-    pomodoro_application_time_sync_session_t time_sync_session;
-    uint16_t time_sync_seconds_remaining;
-    bool time_sync_connected;
-    bool time_sync_failed;
-    bool time_zone_needs_sync;
-    char time_zone_name[POMODORO_TIME_ZONE_NAME_CAPACITY];
 } pomodoro_application_view_t;
 
 typedef struct {
@@ -236,12 +204,6 @@ typedef struct {
                                pomodoro_application_device_status_t *status);
     bool (*set_display_awake)(void *context, bool awake);
     bool (*power_off)(void *context);
-    bool (*start_time_sync)(
-        void *context, pomodoro_application_time_sync_session_t *session);
-    pomodoro_application_time_sync_poll_result_t (*poll_time_sync)(
-        void *context,
-        pomodoro_application_time_sync_submission_t *submission);
-    bool (*stop_time_sync)(void *context);
     /* Distinguishes an unused store from an I/O failure. */
     pomodoro_application_load_result_t (*load)(
         void *context, pomodoro_persisted_state_t *state);

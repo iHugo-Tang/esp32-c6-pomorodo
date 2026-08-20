@@ -4,7 +4,6 @@ idf_component_register(
         "pomodoro_device_platform.c"
         "pomodoro_device_view.c"
         "pomodoro_orientation.c"
-        "pomodoro_time_sync_server.c"
         "pomodoro_nvs_journal.c"
     INCLUDE_DIRS "include"
     REQUIRES
@@ -16,12 +15,6 @@ idf_component_register(
         esp_driver_spi
         esp_lcd
         esp_timer
-        esp_wifi
-        esp_http_server
-        esp_netif
-        esp_event
-        json
-        espressif__qrcode
         esp_lvgl_port
         esp_lcd_sh8601
         esp_lcd_touch_cst9217

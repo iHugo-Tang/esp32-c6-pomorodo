@@ -11,5 +11,3 @@ dependencies:
     version: "1.0.4"
   espressif/esp_codec_dev:
     version: "1.4.0"
-  espressif/qrcode:
-    version: "0.2.0"
