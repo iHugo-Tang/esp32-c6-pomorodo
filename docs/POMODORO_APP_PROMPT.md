@@ -169,7 +169,6 @@ Sections, in order:
    - Brightness
 6. Date & time
    - Current local date and time
-   - Fixed UTC offset
    - Date & time (opens the manual editor)
 7. Power
    - Battery percentage and charging state
@@ -215,27 +214,27 @@ Statistics rules:
 - Scale to the trailing-seven-day maximum while covering at least the current Daily Goal.
 - Persist 365 daily aggregates. Display only the latest seven. Delete the oldest when day 366 is created.
 
-## Date, time, and fixed UTC offset
+## Local date and time
 
-The RTC stores UTC. Local time and Statistics Day use the fixed UTC offset setting.
+The RTC stores the device's local wall time. The device has no time-zone or UTC-offset setting.
 
 First boot is not skippable:
 
 - When the RTC has no valid time, the device boots directly into the non-skippable manual date/time editor.
 - Other settings use their defaults.
-- The editor uses rollers for Year, Month, Day, 24-hour Hour, Minute, and the UTC offset (range UTC−12:00 to UTC+14:00, 15-minute steps, defaulting to the saved value or `UTC+00:00`).
+- The editor uses rollers for Year, Month, Day, 24-hour Hour, and Minute.
 - When the RTC is invalid, the draft date defaults to the firmware build date and the time to `12:00`.
 - If a Year or Month change makes the Day invalid, the Day immediately converges to the last valid day of that month.
 - Only Confirm saves; the first-run editor shows no Back button.
 
 Settings entry:
 
-- Settings has a single `Date & time` row showing the current local date/time and the fixed UTC offset.
+- Settings has a single `Date & time` row showing the current local date/time.
 - Opening it starts the same editor with the current local values as the draft.
 - Confirm validates, writes the RTC, rebases an active timer, and returns to Settings.
 - Back discards the draft and returns to Settings.
 
-Manual date/time setup stores a fixed UTC offset. There is no automatic daylight-saving adjustment.
+The device does not perform automatic daylight-saving adjustment; users correct local time manually when needed.
 
 Changing date/time:
 

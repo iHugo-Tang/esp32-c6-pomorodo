@@ -1,5 +1,7 @@
 # 03 — 交付滚轮式日期时间设置
 
+> UTC offset 部分已由 [`local-date-time`](../../local-date-time/spec.md) 取代；保留此文件记录旧实现。
+
 **What to build:** RTC 无效时直接进入不可跳过的手动设置；用户通过年月日、24 小时时分及 UTC offset 滚轮编辑。默认使用固件编译日期和 `12:00`，日期自动收敛；Settings 合并为单一 `Date & time` 行，Confirm 保存、Back 丢弃。
 
 **Blocked by:** 02 — 将本地时间收敛为固定 UTC offset

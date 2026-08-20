@@ -136,7 +136,7 @@ typedef struct {
     lv_obj_t *statistics_chart;
     lv_obj_t *numeric_roller;
     lv_obj_t *manual_roller_container;
-    lv_obj_t *manual_rollers[6];
+    lv_obj_t *manual_rollers[5];
     lv_obj_t *statistics_bars[7];
     lv_obj_t *statistics_dates[7];
     lv_obj_t *statistics_counts[7];
@@ -155,7 +155,7 @@ typedef struct {
     int32_t gesture_start_x;
     bool numeric_roller_rendering;
     bool manual_roller_rendering;
-    char manual_roller_options[1100];
+    char manual_roller_options[256];
 } device_view_context_t;
 
 typedef struct {
@@ -230,20 +230,20 @@ static void numeric_roller_changed(lv_event_t *event)
 
 static int16_t manual_roller_minimum(uint8_t index)
 {
-    static const int16_t minimums[] = {2020, 1, 1, 0, 0, -48};
-    return minimums[index % 6U];
+    static const int16_t minimums[] = {2020, 1, 1, 0, 0};
+    return minimums[index % 5U];
 }
 
 static int16_t manual_roller_maximum(uint8_t index)
 {
-    static const int16_t maximums[] = {2069, 12, 31, 23, 59, 56};
-    return maximums[index % 6U];
+    static const int16_t maximums[] = {2069, 12, 31, 23, 59};
+    return maximums[index % 5U];
 }
 
 static int16_t manual_roller_value(const pomodoro_application_view_t *view,
                                    uint8_t index)
 {
-    switch (index % 6U) {
+    switch (index % 5U) {
     case 1:
         return view->manual_time_draft.local_date.month;
     case 2:
@@ -252,8 +252,6 @@ static int16_t manual_roller_value(const pomodoro_application_view_t *view,
         return view->manual_time_draft.hour;
     case 4:
         return view->manual_time_draft.minute;
-    case 5:
-        return view->manual_time_draft.utc_offset_quarter_hours;
     default:
         return view->manual_time_draft.local_date.year;
     }
@@ -268,7 +266,6 @@ static pomodoro_application_action_t manual_roller_action(uint8_t index,
         POMODORO_APPLICATION_ACTION_MANUAL_DAY_UP,
         POMODORO_APPLICATION_ACTION_MANUAL_HOUR_UP,
         POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_UP,
-        POMODORO_APPLICATION_ACTION_MANUAL_OFFSET_UP,
     };
     static const pomodoro_application_action_t downs[] = {
         POMODORO_APPLICATION_ACTION_MANUAL_YEAR_DOWN,
@@ -276,9 +273,8 @@ static pomodoro_application_action_t manual_roller_action(uint8_t index,
         POMODORO_APPLICATION_ACTION_MANUAL_DAY_DOWN,
         POMODORO_APPLICATION_ACTION_MANUAL_HOUR_DOWN,
         POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_DOWN,
-        POMODORO_APPLICATION_ACTION_MANUAL_OFFSET_DOWN,
     };
-    return up ? ups[index % 6U] : downs[index % 6U];
+    return up ? ups[index % 5U] : downs[index % 5U];
 }
 
 static void manual_roller_options(uint8_t index, char *buffer, size_t size)
@@ -287,27 +283,11 @@ static void manual_roller_options(uint8_t index, char *buffer, size_t size)
     size_t used = 0U;
     for (int16_t value = manual_roller_minimum(index);
          value <= manual_roller_maximum(index); value++) {
-        int written;
-        if (index == 5U) {
-            int total_minutes = (int) value * 15;
-            int sign = total_minutes < 0 ? -1 : 1;
-            int absolute_minutes = sign * total_minutes;
-            int hours = absolute_minutes / 60;
-            int minutes = absolute_minutes % 60;
-            written = snprintf(buffer + used, size - used,
-                               value == manual_roller_maximum(index)
-                                   ? (sign < 0 ? "UTC-%02d:%02d"
-                                               : "UTC+%02d:%02d")
-                                   : (sign < 0 ? "UTC-%02d:%02d\n"
-                                               : "UTC+%02d:%02d\n"),
-                               hours, minutes);
-        } else {
-            written = snprintf(buffer + used, size - used,
+        int written = snprintf(buffer + used, size - used,
                                value == manual_roller_maximum(index)
                                    ? "%d"
                                    : "%d\n",
                                value);
-        }
         if (written < 0 || (size_t) written >= size - used) {
             break;
         }
@@ -321,7 +301,7 @@ static void manual_roller_changed(lv_event_t *event)
         return;
     }
     lv_obj_t *target = lv_event_get_target(event);
-    for (uint8_t index = 0; index < 6U; index++) {
+    for (uint8_t index = 0; index < 5U; index++) {
         if (view_context.manual_rollers[index] != target) {
             continue;
         }
@@ -346,7 +326,7 @@ static void manual_roller_changed(lv_event_t *event)
 static void render_manual_rollers(const pomodoro_application_view_t *view)
 {
     view_context.manual_roller_rendering = true;
-    for (uint8_t index = 0; index < 6U; index++) {
+    for (uint8_t index = 0; index < 5U; index++) {
         manual_roller_options(index, view_context.manual_roller_options,
                               sizeof(view_context.manual_roller_options));
         lv_roller_set_options(view_context.manual_rollers[index],
@@ -1070,7 +1050,7 @@ esp_err_t pomodoro_device_view_create(
     lv_obj_set_flex_flow(manual_roller_container, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(manual_roller_container, LV_FLEX_ALIGN_CENTER,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    for (uint8_t index = 0; index < 6U; index++) {
+    for (uint8_t index = 0; index < 5U; index++) {
         view_context.manual_rollers[index] = lv_roller_create(
             manual_roller_container);
         lv_obj_set_width(view_context.manual_rollers[index], 70);
@@ -1411,7 +1391,8 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
     lv_obj_remove_flag(view_context.page_panel, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(view_context.menu_button, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(view_context.page_content, LV_OBJ_FLAG_SCROLLABLE);
-    if (view->page != POMODORO_APPLICATION_PAGE_SETTINGS) {
+    if (view->phase == POMODORO_APPLICATION_PHASE_TIME_SETUP ||
+        view->page != POMODORO_APPLICATION_PAGE_SETTINGS) {
         lv_obj_scroll_to_y(view_context.page_content, 0, LV_ANIM_OFF);
     }
     lv_obj_add_flag(view_context.statistics_chart, LV_OBJ_FLAG_HIDDEN);
@@ -1430,13 +1411,12 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
         char text[256];
         snprintf(
             text, sizeof(text),
-            "%04u-%02u-%02u  %02u:%02u\nUTC%+.2f\n\n"
-            "Set the local date, time, and fixed UTC offset.",
+            "%04u-%02u-%02u  %02u:%02u\n\n"
+            "Set the local date and time.",
             view->manual_time_draft.local_date.year,
             view->manual_time_draft.local_date.month,
             view->manual_time_draft.local_date.day,
-            view->manual_time_draft.hour, view->manual_time_draft.minute,
-            (double) view->manual_time_draft.utc_offset_quarter_hours / 4.0);
+            view->manual_time_draft.hour, view->manual_time_draft.minute);
         lv_label_set_text(view_context.page_title, "Set date & time");
         lv_label_set_text(view_context.page_body, text);
         lv_obj_remove_flag(view_context.manual_roller_container,
@@ -1591,11 +1571,10 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
                           view->settings.idle_brightness_percent);
     lv_label_set_text_fmt(
         view_context.settings_datetime_value,
-        "%04u-%02u-%02u %02u:%02u UTC%+.2f",
+        "%04u-%02u-%02u %02u:%02u",
         view->current_local_date.year, view->current_local_date.month,
         view->current_local_date.day, view->current_local_hour,
-        view->current_local_minute,
-        (double) view->settings.utc_offset_quarter_hours / 4.0);
+        view->current_local_minute);
     lv_label_set_text_fmt(
         view_context.settings_power_value, "%s%s%u%%",
         view->device_status.usb_power ? "USB power  " : "",

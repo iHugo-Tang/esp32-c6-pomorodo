@@ -11,15 +11,15 @@ typedef struct {
     pomodoro_test_memory_journal_t memory_journal;
     pomodoro_journal_t journal;
     bool use_journal;
-    uint64_t now_epoch_seconds;
+    uint64_t now_wall_time_seconds;
     pomodoro_date_t local_date;
     pomodoro_date_t resolved_date;
     bool use_resolved_date;
-    bool resolve_date_from_epoch;
+    bool resolve_date_from_wall_time;
     bool rtc_is_invalid;
     bool fail_write_time;
     unsigned write_time_count;
-    uint64_t written_utc_epoch_seconds;
+    uint64_t written_wall_time_seconds;
     unsigned brightness_count;
     uint8_t brightness_percent;
     pomodoro_application_device_status_t device_status;
@@ -55,7 +55,7 @@ static bool fake_read_time(void *context, pomodoro_application_time_t *time)
         return false;
     }
     *time = (pomodoro_application_time_t) {
-        .epoch_seconds = fake->now_epoch_seconds,
+        .wall_time_seconds = fake->now_wall_time_seconds,
         .rtc_is_valid = !fake->rtc_is_invalid,
         .local_date = pomodoro_date_is_valid(fake->local_date)
             ? fake->local_date
@@ -64,20 +64,16 @@ static bool fake_read_time(void *context, pomodoro_application_time_t *time)
     return true;
 }
 
-static bool fake_resolve_local_date(void *context, uint64_t epoch_seconds,
-                                    int16_t utc_offset_minutes,
+static bool fake_resolve_local_date(void *context, uint64_t wall_time_seconds,
                                     pomodoro_date_t *date)
 {
     fake_platform_t *fake = context;
-    (void) epoch_seconds;
-    (void) utc_offset_minutes;
+    (void) wall_time_seconds;
     if (date == NULL) {
         return false;
     }
-    if (fake->resolve_date_from_epoch) {
-        return utc_offset_minutes % 15 == 0 &&
-            pomodoro_local_date_from_utc(
-                epoch_seconds, (int8_t) (utc_offset_minutes / 15), date);
+    if (fake->resolve_date_from_wall_time) {
+        return pomodoro_local_date_from_wall_time(wall_time_seconds, date);
     }
     *date = fake->use_resolved_date
         ? fake->resolved_date
@@ -87,15 +83,15 @@ static bool fake_resolve_local_date(void *context, uint64_t epoch_seconds,
     return pomodoro_date_is_valid(*date);
 }
 
-static bool fake_write_utc_time(void *context, uint64_t utc_epoch_seconds)
+static bool fake_write_time(void *context, uint64_t wall_time_seconds)
 {
     fake_platform_t *fake = context;
     fake->write_time_count++;
-    fake->written_utc_epoch_seconds = utc_epoch_seconds;
+    fake->written_wall_time_seconds = wall_time_seconds;
     if (fake->fail_write_time) {
         return false;
     }
-    fake->now_epoch_seconds = utc_epoch_seconds;
+    fake->now_wall_time_seconds = wall_time_seconds;
     fake->rtc_is_invalid = false;
     return true;
 }
@@ -204,7 +200,7 @@ static pomodoro_application_platform_t fake_platform_services(
         .context = fake,
         .read_time = fake_read_time,
         .resolve_local_date = fake_resolve_local_date,
-        .write_utc_time = fake_write_utc_time,
+        .write_time = fake_write_time,
         .set_display_brightness_percent =
             fake_set_display_brightness_percent,
         .read_device_status = fake_read_device_status,
@@ -241,7 +237,7 @@ static void test_boot_without_saved_state_shows_default_focus_ready(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100;
+    fake.now_wall_time_seconds = 100;
     fake.load_result = POMODORO_APPLICATION_LOAD_EMPTY;
     pomodoro_application_t *application = boot_application(&fake);
 
@@ -269,7 +265,7 @@ static void test_start_and_deadline_emit_one_focus_completion(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100;
+    fake.now_wall_time_seconds = 100;
     fake.load_result = POMODORO_APPLICATION_LOAD_EMPTY;
     pomodoro_application_t *application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
@@ -279,7 +275,7 @@ static void test_start_and_deadline_emit_one_focus_completion(void)
     assert(fake.rendered_view.remaining_seconds == 25U * 60U);
     assert(fake.save_count == 2);
 
-    fake.now_epoch_seconds = 1600;
+    fake.now_wall_time_seconds = 1600;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -295,7 +291,7 @@ static void test_start_and_deadline_emit_one_focus_completion(void)
            POMODORO_EVENT_FOCUS_COMPLETE);
     assert(!fake.rendered_view.daily_goal_reached);
 
-    fake.now_epoch_seconds = 1700;
+    fake.now_wall_time_seconds = 1700;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -315,7 +311,7 @@ static void test_daily_goal_celebration_is_exposed_until_completion_resolves(voi
     pomodoro_model_t model;
     pomodoro_statistics_store_t statistics;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100;
+    fake.now_wall_time_seconds = 100;
     fake.load_result = POMODORO_APPLICATION_LOAD_LOADED;
     pomodoro_settings_t settings = pomodoro_default_settings();
     settings.daily_goal = 1;
@@ -328,14 +324,14 @@ static void test_daily_goal_celebration_is_exposed_until_completion_resolves(voi
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_START) ==
            POMODORO_APPLICATION_OK);
-    fake.now_epoch_seconds = 1600;
+    fake.now_wall_time_seconds = 1600;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
     assert(fake.rendered_view.daily_goal_reached);
 
-    fake.now_epoch_seconds = 1601;
+    fake.now_wall_time_seconds = 1601;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -354,7 +350,7 @@ static void test_save_failure_exposes_error_and_current_timer_state(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100;
+    fake.now_wall_time_seconds = 100;
     fake.load_result = POMODORO_APPLICATION_LOAD_EMPTY;
     pomodoro_application_t *application = boot_application(&fake);
     fake.fail_save = true;
@@ -393,7 +389,7 @@ static void test_boot_platform_failures_are_visible(void)
     pomodoro_application_destroy(application);
 
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100;
+    fake.now_wall_time_seconds = 100;
     fake.load_result = POMODORO_APPLICATION_LOAD_ERROR;
     platform = fake_platform_services(&fake);
     application = NULL;
@@ -414,7 +410,7 @@ static void test_boot_does_not_overwrite_state_when_journal_read_fails(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
     fake.memory_journal.fail_reads = true;
     pomodoro_application_t *application = create_application(&fake);
@@ -432,7 +428,7 @@ static void test_invalid_rtc_boot_requires_non_skippable_time_setup(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake.rtc_is_invalid = true;
     fake_enable_journal(&fake);
     pomodoro_application_t *application = boot_application(&fake);
@@ -450,11 +446,11 @@ static void test_invalid_rtc_boot_requires_non_skippable_time_setup(void)
     pomodoro_application_destroy(application);
 }
 
-static void test_manual_time_validates_writes_utc_and_enters_main(void)
+static void test_manual_time_validates_writes_local_time_and_enters_main(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake.rtc_is_invalid = true;
     fake_enable_journal(&fake);
     pomodoro_application_t *application = boot_application(&fake);
@@ -462,7 +458,6 @@ static void test_manual_time_validates_writes_utc_and_enters_main(void)
         .local_date = {.year = 2026, .month = 2, .day = 29},
         .hour = 14U,
         .minute = 30U,
-        .utc_offset_quarter_hours = -24,
     };
 
     assert(pomodoro_application_confirm_manual_time(application, &manual) ==
@@ -485,10 +480,12 @@ static void test_manual_time_validates_writes_utc_and_enters_main(void)
     assert(pomodoro_application_confirm_manual_time(application, &manual) ==
            POMODORO_APPLICATION_OK);
     assert(fake.write_time_count == 1U);
-    assert(fake.written_utc_epoch_seconds == UINT64_C(1786825800));
+    uint64_t expected;
+    assert(pomodoro_local_datetime_to_wall_time(
+        manual.local_date, manual.hour, manual.minute, &expected));
+    assert(fake.written_wall_time_seconds == expected);
     assert(fake.rendered_view.phase == POMODORO_APPLICATION_PHASE_ACTIVE);
     assert(fake.rendered_view.rtc_is_valid);
-    assert(fake.rendered_view.settings.utc_offset_quarter_hours == -24);
     pomodoro_application_destroy(application);
 }
 
@@ -496,13 +493,13 @@ static void test_time_correction_preserves_running_remaining_duration(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
     pomodoro_application_t *application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_START) ==
            POMODORO_APPLICATION_OK);
-    fake.now_epoch_seconds = 400U;
+    fake.now_wall_time_seconds = 400U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -512,7 +509,6 @@ static void test_time_correction_preserves_running_remaining_duration(void)
         .local_date = {.year = 2026, .month = 8, .day = 15},
         .hour = 14U,
         .minute = 30U,
-        .utc_offset_quarter_hours = -24,
     };
     assert(pomodoro_application_confirm_manual_time(application, &manual) ==
            POMODORO_APPLICATION_OK);
@@ -525,7 +521,7 @@ static void test_rtc_failure_uses_pending_statistics_until_time_recovers(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
     pomodoro_application_t *application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
@@ -533,7 +529,7 @@ static void test_rtc_failure_uses_pending_statistics_until_time_recovers(void)
            POMODORO_APPLICATION_OK);
 
     fake.rtc_is_invalid = true;
-    fake.now_epoch_seconds = 1600U;
+    fake.now_wall_time_seconds = 1600U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -545,7 +541,7 @@ static void test_rtc_failure_uses_pending_statistics_until_time_recovers(void)
     assert(!fake.rendered_view.rtc_is_valid);
 
     fake.rtc_is_invalid = false;
-    fake.now_epoch_seconds = 1601U;
+    fake.now_wall_time_seconds = 1601U;
     fake.local_date = (pomodoro_date_t) {.year = 2026, .month = 8, .day = 16};
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
@@ -567,7 +563,7 @@ static void test_statistics_view_shows_today_and_trailing_seven_days(void)
     pomodoro_model_t model;
     pomodoro_statistics_store_t statistics;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake.load_result = POMODORO_APPLICATION_LOAD_LOADED;
     pomodoro_settings_t settings = pomodoro_default_settings();
     assert(pomodoro_init(&model, &settings) == POMODORO_OK);
@@ -623,7 +619,7 @@ static void test_statistics_hide_chart_while_rtc_is_invalid(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
     pomodoro_application_t *application = boot_application(&fake);
     fake.rtc_is_invalid = true;
@@ -643,7 +639,7 @@ static void test_main_menu_routes_to_statistics_settings_and_back(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
     pomodoro_application_t *application = boot_application(&fake);
 
@@ -701,7 +697,7 @@ static void test_clear_set_progress_from_completion_preserves_statistics(void)
     pomodoro_model_t model;
     pomodoro_statistics_store_t statistics;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake.load_result = POMODORO_APPLICATION_LOAD_LOADED;
     pomodoro_settings_t settings = pomodoro_default_settings();
     settings.auto_start_breaks = false;
@@ -714,7 +710,7 @@ static void test_clear_set_progress_from_completion_preserves_statistics(void)
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_START) ==
            POMODORO_APPLICATION_OK);
-    fake.now_epoch_seconds = 1600U;
+    fake.now_wall_time_seconds = 1600U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -768,7 +764,7 @@ static void test_clear_set_progress_preserves_running_focus(void)
     pomodoro_model_t model;
     pomodoro_statistics_store_t statistics;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake.load_result = POMODORO_APPLICATION_LOAD_LOADED;
     pomodoro_settings_t settings = pomodoro_default_settings();
     settings.auto_start_breaks = false;
@@ -781,7 +777,7 @@ static void test_clear_set_progress_preserves_running_focus(void)
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_START) ==
            POMODORO_APPLICATION_OK);
-    fake.now_epoch_seconds = 400U;
+    fake.now_wall_time_seconds = 400U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -801,7 +797,7 @@ static void test_clear_set_progress_preserves_running_focus(void)
     assert(fake.rendered_view.remaining_seconds == 1200U);
     assert(fake.rendered_view.set_progress == 0U);
 
-    fake.now_epoch_seconds = 1600U;
+    fake.now_wall_time_seconds = 1600U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -817,7 +813,7 @@ static void test_focus_completion_cancels_pending_set_progress_clear(void)
     pomodoro_model_t model;
     pomodoro_statistics_store_t statistics;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake.load_result = POMODORO_APPLICATION_LOAD_LOADED;
     pomodoro_settings_t settings = pomodoro_default_settings();
     settings.auto_start_breaks = false;
@@ -838,7 +834,7 @@ static void test_focus_completion_cancels_pending_set_progress_clear(void)
                POMODORO_APPLICATION_ACTION_REQUEST_CLEAR_SET_PROGRESS) ==
            POMODORO_APPLICATION_OK);
 
-    fake.now_epoch_seconds = 1600U;
+    fake.now_wall_time_seconds = 1600U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -857,7 +853,7 @@ static void test_completion_behind_statistics_returns_to_main(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
     pomodoro_application_t *application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
@@ -866,7 +862,7 @@ static void test_completion_behind_statistics_returns_to_main(void)
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_OPEN_STATISTICS) ==
            POMODORO_APPLICATION_OK);
-    fake.now_epoch_seconds = 1600U;
+    fake.now_wall_time_seconds = 1600U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -879,7 +875,7 @@ static void test_numeric_stepper_discards_back_and_saves_confirm(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
     pomodoro_application_t *application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
@@ -922,13 +918,13 @@ static void test_duration_change_does_not_alter_running_timer(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
     pomodoro_application_t *application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_START) ==
            POMODORO_APPLICATION_OK);
-    fake.now_epoch_seconds = 400U;
+    fake.now_wall_time_seconds = 400U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -953,7 +949,7 @@ static void test_switches_and_brightness_save_with_specified_timing(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
     pomodoro_application_t *application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
@@ -988,7 +984,7 @@ static void test_brightness_numeric_page_previews_and_saves_on_confirm(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
     pomodoro_application_t *application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
@@ -1041,7 +1037,7 @@ static void test_idle_brightness_multiplier_saves_and_dims_ready_display(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
     pomodoro_application_t *application = boot_application(&fake);
     assert(fake.rendered_view.settings.idle_brightness_percent == 20U);
@@ -1069,7 +1065,7 @@ static void test_idle_brightness_multiplier_saves_and_dims_ready_display(void)
 
     application = boot_application(&fake);
     assert(fake.rendered_view.settings.idle_brightness_percent == 25U);
-    fake.now_epoch_seconds += 120U;
+    fake.now_wall_time_seconds += 120U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -1081,7 +1077,7 @@ static void test_volume_buttons_and_sound_toggle_persist_last_nonzero_volume(voi
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
     pomodoro_application_t *application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
@@ -1112,7 +1108,7 @@ static void test_volume_buttons_and_sound_toggle_persist_last_nonzero_volume(voi
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.settings.volume == 4U);
     assert(fake.rendered_view.volume_feedback_visible);
-    fake.now_epoch_seconds += 2U;
+    fake.now_wall_time_seconds += 2U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -1124,7 +1120,7 @@ static void test_battery_status_and_one_shot_warning_do_not_cancel_timer(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake.device_status = (pomodoro_application_device_status_t) {
         .battery_percent = 14U,
         .low_battery = true,
@@ -1136,19 +1132,19 @@ static void test_battery_status_and_one_shot_warning_do_not_cancel_timer(void)
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_START) ==
            POMODORO_APPLICATION_OK);
-    fake.now_epoch_seconds = 104U;
+    fake.now_wall_time_seconds = 104U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.timer_state == POMODORO_TIMER_RUNNING);
     assert(!fake.rendered_view.low_battery_warning_visible);
     fake.device_status.low_battery = false;
-    fake.now_epoch_seconds = 105U;
+    fake.now_wall_time_seconds = 105U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
     fake.device_status.low_battery = true;
-    fake.now_epoch_seconds = 106U;
+    fake.now_wall_time_seconds = 106U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -1160,10 +1156,10 @@ static void test_display_lifecycle_dims_sleeps_and_consumes_wake_touch(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
     pomodoro_application_t *application = boot_application(&fake);
-    fake.now_epoch_seconds = 220U;
+    fake.now_wall_time_seconds = 220U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -1177,25 +1173,25 @@ static void test_display_lifecycle_dims_sleeps_and_consumes_wake_touch(void)
     assert(fake.rendered_view.display_awake);
     assert(fake.rendered_view.effective_brightness_percent == 70U);
 
-    fake.now_epoch_seconds = 339U;
+    fake.now_wall_time_seconds = 339U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.display_awake);
     assert(fake.rendered_view.effective_brightness_percent == 70U);
-    fake.now_epoch_seconds = 340U;
+    fake.now_wall_time_seconds = 340U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.display_awake);
     assert(fake.rendered_view.effective_brightness_percent == 14U);
-    fake.now_epoch_seconds = 519U;
+    fake.now_wall_time_seconds = 519U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.display_awake);
     assert(fake.rendered_view.effective_brightness_percent == 14U);
-    fake.now_epoch_seconds = 520U;
+    fake.now_wall_time_seconds = 520U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -1217,11 +1213,11 @@ static void test_auto_display_off_then_first_pwr_press_wakes_and_resets_idle(voi
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
     pomodoro_application_t *application = boot_application(&fake);
 
-    fake.now_epoch_seconds = 400U;
+    fake.now_wall_time_seconds = 400U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -1239,14 +1235,14 @@ static void test_auto_display_off_then_first_pwr_press_wakes_and_resets_idle(voi
     assert(fake.rendered_view.timer_state == POMODORO_TIMER_READY);
     assert(fake.rendered_view.remaining_seconds == 25U * 60U);
 
-    fake.now_epoch_seconds = 519U;
+    fake.now_wall_time_seconds = 519U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.display_awake);
     assert(fake.rendered_view.effective_brightness_percent == 70U);
 
-    fake.now_epoch_seconds = 520U;
+    fake.now_wall_time_seconds = 520U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -1259,10 +1255,10 @@ static void test_wake_touch_stays_consumed_when_recovery_fails(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
     pomodoro_application_t *application = boot_application(&fake);
-    fake.now_epoch_seconds = 400U;
+    fake.now_wall_time_seconds = 400U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -1281,13 +1277,13 @@ static void test_running_dims_to_sixty_percent_and_completion_wakes_display(void
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
     pomodoro_application_t *application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_START) ==
            POMODORO_APPLICATION_OK);
-    fake.now_epoch_seconds = 220U;
+    fake.now_wall_time_seconds = 220U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -1296,7 +1292,7 @@ static void test_running_dims_to_sixty_percent_and_completion_wakes_display(void
                application, POMODORO_APPLICATION_ACTION_TOGGLE_DISPLAY) ==
            POMODORO_APPLICATION_OK);
     assert(!fake.rendered_view.display_awake);
-    fake.now_epoch_seconds = 1600U;
+    fake.now_wall_time_seconds = 1600U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -1310,7 +1306,7 @@ static void test_power_controls_do_not_change_timer_state(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
     pomodoro_application_t *application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
@@ -1321,7 +1317,7 @@ static void test_power_controls_do_not_change_timer_state(void)
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.timer_state == POMODORO_TIMER_RUNNING);
     assert(!fake.rendered_view.display_awake);
-    fake.now_epoch_seconds = 101U;
+    fake.now_wall_time_seconds = 101U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -1344,7 +1340,7 @@ static void test_boot_with_saved_state_uses_persisted_settings(void)
     pomodoro_model_t model;
     pomodoro_statistics_store_t statistics;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100;
+    fake.now_wall_time_seconds = 100;
     fake.load_result = POMODORO_APPLICATION_LOAD_LOADED;
     pomodoro_settings_t settings = pomodoro_default_settings();
     settings.daily_goal = 12;
@@ -1366,7 +1362,7 @@ static void test_display_and_audio_failures_are_visible(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100;
+    fake.now_wall_time_seconds = 100;
     fake.load_result = POMODORO_APPLICATION_LOAD_EMPTY;
     fake.fail_render = true;
     pomodoro_application_t *application = create_application(&fake);
@@ -1381,14 +1377,14 @@ static void test_display_and_audio_failures_are_visible(void)
     pomodoro_application_destroy(application);
 
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100;
+    fake.now_wall_time_seconds = 100;
     fake.load_result = POMODORO_APPLICATION_LOAD_EMPTY;
     application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_START) ==
            POMODORO_APPLICATION_OK);
     fake.fail_focus_audio = true;
-    fake.now_epoch_seconds = 1600;
+    fake.now_wall_time_seconds = 1600;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_ERR_PLATFORM);
@@ -1404,25 +1400,25 @@ static void test_pause_resume_and_confirmed_reset_preserve_remaining_time(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100;
+    fake.now_wall_time_seconds = 100;
     fake.load_result = POMODORO_APPLICATION_LOAD_EMPTY;
     pomodoro_application_t *application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_START) ==
            POMODORO_APPLICATION_OK);
 
-    fake.now_epoch_seconds = 400;
+    fake.now_wall_time_seconds = 400;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_PAUSE) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.timer_state == POMODORO_TIMER_PAUSED);
     assert(fake.rendered_view.remaining_seconds == 20U * 60U);
 
-    fake.now_epoch_seconds = 500;
+    fake.now_wall_time_seconds = 500;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_RESUME) ==
            POMODORO_APPLICATION_OK);
-    fake.now_epoch_seconds = 600;
+    fake.now_wall_time_seconds = 600;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_PAUSE) ==
            POMODORO_APPLICATION_OK);
@@ -1464,14 +1460,14 @@ static void test_pause_at_deadline_settles_completion_once(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100;
+    fake.now_wall_time_seconds = 100;
     fake.load_result = POMODORO_APPLICATION_LOAD_EMPTY;
     pomodoro_application_t *application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_START) ==
            POMODORO_APPLICATION_OK);
 
-    fake.now_epoch_seconds = 1600;
+    fake.now_wall_time_seconds = 1600;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_PAUSE) ==
            POMODORO_APPLICATION_OK);
@@ -1487,7 +1483,7 @@ static void test_idle_mode_swipes_do_not_wrap(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100;
+    fake.now_wall_time_seconds = 100;
     fake.load_result = POMODORO_APPLICATION_LOAD_EMPTY;
     pomodoro_application_t *application = boot_application(&fake);
 
@@ -1524,7 +1520,7 @@ static void test_active_mode_swipe_requires_confirmation_and_aborts(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100;
+    fake.now_wall_time_seconds = 100;
     fake.load_result = POMODORO_APPLICATION_LOAD_EMPTY;
     pomodoro_application_t *application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
@@ -1570,13 +1566,13 @@ static void test_completion_can_be_started_now(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100;
+    fake.now_wall_time_seconds = 100;
     fake.load_result = POMODORO_APPLICATION_LOAD_EMPTY;
     pomodoro_application_t *application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_START) ==
            POMODORO_APPLICATION_OK);
-    fake.now_epoch_seconds = 1600;
+    fake.now_wall_time_seconds = 1600;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -1599,13 +1595,13 @@ static void test_cancel_auto_start_enters_scheduled_mode_ready(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100;
+    fake.now_wall_time_seconds = 100;
     fake.load_result = POMODORO_APPLICATION_LOAD_EMPTY;
     pomodoro_application_t *application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_START) ==
            POMODORO_APPLICATION_OK);
-    fake.now_epoch_seconds = 1600;
+    fake.now_wall_time_seconds = 1600;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -1627,7 +1623,7 @@ static void test_completion_dismisses_stale_mode_switch_confirmation(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100;
+    fake.now_wall_time_seconds = 100;
     fake.load_result = POMODORO_APPLICATION_LOAD_EMPTY;
     pomodoro_application_t *application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
@@ -1639,7 +1635,7 @@ static void test_completion_dismisses_stale_mode_switch_confirmation(void)
     assert(fake.rendered_view.confirmation ==
            POMODORO_APPLICATION_CONFIRM_MODE_SWITCH);
 
-    fake.now_epoch_seconds = 1600;
+    fake.now_wall_time_seconds = 1600;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -1653,24 +1649,24 @@ static void test_auto_start_begins_scheduled_mode_after_three_seconds(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100;
+    fake.now_wall_time_seconds = 100;
     fake.load_result = POMODORO_APPLICATION_LOAD_EMPTY;
     pomodoro_application_t *application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_START) ==
            POMODORO_APPLICATION_OK);
-    fake.now_epoch_seconds = 1600;
+    fake.now_wall_time_seconds = 1600;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
 
-    fake.now_epoch_seconds = 1602;
+    fake.now_wall_time_seconds = 1602;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
     assert(fake.rendered_view.auto_start_seconds_remaining == 1U);
-    fake.now_epoch_seconds = 1603;
+    fake.now_wall_time_seconds = 1603;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -1686,7 +1682,7 @@ static void test_full_set_schedules_three_short_breaks_then_one_long_break(void)
     pomodoro_model_t model;
     pomodoro_statistics_store_t statistics;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100;
+    fake.now_wall_time_seconds = 100;
     fake.load_result = POMODORO_APPLICATION_LOAD_LOADED;
     pomodoro_settings_t settings = pomodoro_default_settings();
     settings.focus_minutes = 5;
@@ -1703,7 +1699,7 @@ static void test_full_set_schedules_three_short_breaks_then_one_long_break(void)
         assert(pomodoro_application_dispatch(
                    application, POMODORO_APPLICATION_ACTION_START) ==
                POMODORO_APPLICATION_OK);
-        fake.now_epoch_seconds += 300U;
+        fake.now_wall_time_seconds += 300U;
         assert(pomodoro_application_dispatch(
                    application, POMODORO_APPLICATION_ACTION_TICK) ==
                POMODORO_APPLICATION_OK);
@@ -1725,7 +1721,7 @@ static void test_full_set_schedules_three_short_breaks_then_one_long_break(void)
         assert(pomodoro_application_dispatch(
                    application, POMODORO_APPLICATION_ACTION_START) ==
                POMODORO_APPLICATION_OK);
-        fake.now_epoch_seconds += completed == 4U ? 300U : 60U;
+        fake.now_wall_time_seconds += completed == 4U ? 300U : 60U;
         assert(pomodoro_application_dispatch(
                    application, POMODORO_APPLICATION_ACTION_TICK) ==
                POMODORO_APPLICATION_OK);
@@ -1754,17 +1750,17 @@ static void test_boot_restarts_completion_countdown_without_offline_chaining(voi
     pomodoro_statistics_init(&statistics);
     assert(pomodoro_persistence_pack(&fake.persisted, &model, &statistics));
     fake.load_result = POMODORO_APPLICATION_LOAD_LOADED;
-    fake.now_epoch_seconds = 5000U;
+    fake.now_wall_time_seconds = 5000U;
 
     pomodoro_application_t *application = boot_application(&fake);
     assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
     assert(fake.rendered_view.auto_start_seconds_remaining == 3U);
-    fake.now_epoch_seconds = 5002U;
+    fake.now_wall_time_seconds = 5002U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
-    fake.now_epoch_seconds = 5003U;
+    fake.now_wall_time_seconds = 5003U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -1777,7 +1773,7 @@ static void test_reboot_restores_running_timer_from_rtc_deadline(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
 
     pomodoro_application_t *application = boot_application(&fake);
@@ -1788,7 +1784,7 @@ static void test_reboot_restores_running_timer_from_rtc_deadline(void)
     assert(fake.save_count == 2U);
     pomodoro_application_destroy(application);
 
-    fake.now_epoch_seconds = 400U;
+    fake.now_wall_time_seconds = 400U;
     application = boot_application(&fake);
     assert(fake.rendered_view.timer_state == POMODORO_TIMER_RUNNING);
     assert(fake.rendered_view.remaining_seconds == 20U * 60U);
@@ -1800,14 +1796,14 @@ static void test_reboot_restores_exact_paused_duration(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
 
     pomodoro_application_t *application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_START) ==
            POMODORO_APPLICATION_OK);
-    fake.now_epoch_seconds = 400U;
+    fake.now_wall_time_seconds = 400U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_PAUSE) ==
            POMODORO_APPLICATION_OK);
@@ -1815,7 +1811,7 @@ static void test_reboot_restores_exact_paused_duration(void)
     unsigned saves_before_reboot = fake.save_count;
     pomodoro_application_destroy(application);
 
-    fake.now_epoch_seconds = 5000U;
+    fake.now_wall_time_seconds = 5000U;
     application = boot_application(&fake);
     assert(fake.rendered_view.timer_state == POMODORO_TIMER_PAUSED);
     assert(fake.rendered_view.remaining_seconds == 20U * 60U);
@@ -1830,7 +1826,7 @@ static void test_reboot_settles_expired_timer_once_without_offline_chaining(void
     pomodoro_statistics_store_t statistics;
     pomodoro_persisted_state_t initial;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
     pomodoro_settings_t settings = pomodoro_default_settings();
     settings.daily_goal = 1U;
@@ -1845,7 +1841,7 @@ static void test_reboot_settles_expired_timer_once_without_offline_chaining(void
            POMODORO_APPLICATION_OK);
     pomodoro_application_destroy(application);
 
-    fake.now_epoch_seconds = 1700U;
+    fake.now_wall_time_seconds = 1700U;
     application = boot_application(&fake);
     assert(fake.rendered_view.mode == POMODORO_MODE_FOCUS);
     assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
@@ -1857,7 +1853,7 @@ static void test_reboot_settles_expired_timer_once_without_offline_chaining(void
     unsigned saves_after_settlement = fake.save_count;
     pomodoro_application_destroy(application);
 
-    fake.now_epoch_seconds = 1800U;
+    fake.now_wall_time_seconds = 1800U;
     application = boot_application(&fake);
     assert(fake.rendered_view.mode == POMODORO_MODE_FOCUS);
     assert(fake.rendered_view.timer_state == POMODORO_TIMER_COMPLETION);
@@ -1873,7 +1869,7 @@ static void test_running_ticks_do_not_write_state_once_per_second(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
 
     pomodoro_application_t *application = boot_application(&fake);
@@ -1882,7 +1878,7 @@ static void test_running_ticks_do_not_write_state_once_per_second(void)
            POMODORO_APPLICATION_OK);
     unsigned saves_after_start = fake.save_count;
     for (uint64_t now = 101U; now < 110U; ++now) {
-        fake.now_epoch_seconds = now;
+        fake.now_wall_time_seconds = now;
         assert(pomodoro_application_dispatch(
                    application, POMODORO_APPLICATION_ACTION_TICK) ==
                POMODORO_APPLICATION_OK);
@@ -1896,7 +1892,7 @@ static void test_offline_completion_uses_deadline_statistics_day(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake.local_date = (pomodoro_date_t) {.year = 2026, .month = 8, .day = 15};
     fake.resolved_date = fake.local_date;
     fake.use_resolved_date = true;
@@ -1908,7 +1904,7 @@ static void test_offline_completion_uses_deadline_statistics_day(void)
            POMODORO_APPLICATION_OK);
     pomodoro_application_destroy(application);
 
-    fake.now_epoch_seconds = 2000U;
+    fake.now_wall_time_seconds = 2000U;
     fake.local_date = (pomodoro_date_t) {.year = 2026, .month = 8, .day = 16};
     application = boot_application(&fake);
     pomodoro_persisted_state_t recovered;
@@ -1928,7 +1924,7 @@ static void test_confirmed_settings_save_and_survive_reboot(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
     pomodoro_application_t *application = boot_application(&fake);
     pomodoro_settings_t settings = fake.rendered_view.settings;
@@ -1951,7 +1947,7 @@ static void test_reboot_falls_back_after_torn_latest_transition(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
 
     pomodoro_application_t *application = boot_application(&fake);
@@ -1959,13 +1955,13 @@ static void test_reboot_falls_back_after_torn_latest_transition(void)
                application, POMODORO_APPLICATION_ACTION_START) ==
            POMODORO_APPLICATION_OK);
     fake.memory_journal.tear_next_write = true;
-    fake.now_epoch_seconds = 400U;
+    fake.now_wall_time_seconds = 400U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_PAUSE) ==
            POMODORO_APPLICATION_ERR_PLATFORM);
     pomodoro_application_destroy(application);
 
-    fake.now_epoch_seconds = 500U;
+    fake.now_wall_time_seconds = 500U;
     application = boot_application(&fake);
     assert(fake.rendered_view.timer_state == POMODORO_TIMER_RUNNING);
     assert(fake.rendered_view.remaining_seconds == 1100U);
@@ -1978,7 +1974,7 @@ static void test_legacy_state_is_treated_as_empty(void)
     pomodoro_model_t model;
     pomodoro_statistics_store_t statistics;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
     pomodoro_settings_t settings = pomodoro_default_settings();
     settings.daily_goal = 12U;
@@ -2016,7 +2012,7 @@ static void test_first_setup_volume_overlay_hides_after_tick(void)
                application, POMODORO_APPLICATION_ACTION_VOLUME_UP) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.volume_feedback_visible);
-    fake.now_epoch_seconds += 2U;
+    fake.now_wall_time_seconds += 2U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -2033,17 +2029,17 @@ static void test_second_volume_operation_restarts_overlay_deadline(void)
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_VOLUME_UP) ==
            POMODORO_APPLICATION_OK);
-    fake.now_epoch_seconds += 1U;
+    fake.now_wall_time_seconds += 1U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_VOLUME_UP) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.volume_feedback_visible);
-    fake.now_epoch_seconds++;
+    fake.now_wall_time_seconds++;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.volume_feedback_visible);
-    fake.now_epoch_seconds++;
+    fake.now_wall_time_seconds++;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -2055,7 +2051,7 @@ static void test_settings_volume_overlay_hides_after_tick(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     pomodoro_application_t *application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_OPEN_SETTINGS) ==
@@ -2065,7 +2061,7 @@ static void test_settings_volume_overlay_hides_after_tick(void)
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.page == POMODORO_APPLICATION_PAGE_SETTINGS);
     assert(fake.rendered_view.volume_feedback_visible);
-    fake.now_epoch_seconds += 2U;
+    fake.now_wall_time_seconds += 2U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -2078,7 +2074,7 @@ static void test_settings_time_setup_back_discards_draft(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     pomodoro_application_t *application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_OPEN_SETTINGS) ==
@@ -2105,7 +2101,7 @@ static void test_settings_confirm_returns_to_settings(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     pomodoro_application_t *application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_OPEN_SETTINGS) ==
@@ -2141,14 +2137,10 @@ static void test_manual_draft_ranges_are_bounded(void)
         .local_date = {.year = 2069, .month = 12, .day = 31},
         .hour = 23U,
         .minute = 59U,
-        .utc_offset_quarter_hours = 56,
     };
     assert(pomodoro_manual_time_adjust(
         &draft, POMODORO_APPLICATION_ACTION_MANUAL_YEAR_UP));
     assert(draft.local_date.year == 2069U);
-    assert(pomodoro_manual_time_adjust(
-        &draft, POMODORO_APPLICATION_ACTION_MANUAL_OFFSET_UP));
-    assert(draft.utc_offset_quarter_hours == 56);
     assert(pomodoro_manual_time_adjust(
         &draft, POMODORO_APPLICATION_ACTION_MANUAL_HOUR_UP));
     assert(draft.hour == 0U);
@@ -2160,14 +2152,10 @@ static void test_manual_draft_ranges_are_bounded(void)
         .local_date = {.year = 2020, .month = 1, .day = 1},
         .hour = 0U,
         .minute = 0U,
-        .utc_offset_quarter_hours = -48,
     };
     assert(pomodoro_manual_time_adjust(
         &draft, POMODORO_APPLICATION_ACTION_MANUAL_YEAR_DOWN));
     assert(draft.local_date.year == 2020U);
-    assert(pomodoro_manual_time_adjust(
-        &draft, POMODORO_APPLICATION_ACTION_MANUAL_OFFSET_DOWN));
-    assert(draft.utc_offset_quarter_hours == -48);
 }
 
 static void test_year_month_change_converges_day(void)
@@ -2176,7 +2164,6 @@ static void test_year_month_change_converges_day(void)
         .local_date = {.year = 2024, .month = 1, .day = 31},
         .hour = 12U,
         .minute = 0U,
-        .utc_offset_quarter_hours = 0,
     };
     assert(pomodoro_manual_time_adjust(
         &draft, POMODORO_APPLICATION_ACTION_MANUAL_MONTH_UP));
@@ -2207,27 +2194,24 @@ static void test_year_month_change_converges_day(void)
     assert(draft.local_date.day == 31U);
 }
 
-static void test_fixed_offset_decides_statistics_day(void)
+static void test_local_midnight_decides_statistics_day(void)
 {
     const struct {
-        pomodoro_date_t utc_date;
-        uint8_t utc_hour;
-        uint8_t utc_minute;
-        int8_t offset_quarter_hours;
+        pomodoro_date_t start_date;
+        uint8_t start_hour;
+        uint8_t start_minute;
         pomodoro_date_t expected_date;
     } cases[] = {
         {
-            .utc_date = {.year = 2026, .month = 8, .day = 15},
-            .utc_hour = 0U,
-            .utc_minute = 0U,
-            .offset_quarter_hours = -4,
-            .expected_date = {.year = 2026, .month = 8, .day = 14},
+            .start_date = {.year = 2026, .month = 8, .day = 15},
+            .start_hour = 0U,
+            .start_minute = 0U,
+            .expected_date = {.year = 2026, .month = 8, .day = 15},
         },
         {
-            .utc_date = {.year = 2026, .month = 8, .day = 14},
-            .utc_hour = 22U,
-            .utc_minute = 58U,
-            .offset_quarter_hours = 4,
+            .start_date = {.year = 2026, .month = 8, .day = 14},
+            .start_hour = 23U,
+            .start_minute = 58U,
             .expected_date = {.year = 2026, .month = 8, .day = 15},
         },
     };
@@ -2236,15 +2220,13 @@ static void test_fixed_offset_decides_statistics_day(void)
         pomodoro_model_t model;
         pomodoro_statistics_store_t statistics;
         memset(&fake, 0, sizeof(fake));
-        assert(pomodoro_local_datetime_to_utc(
-            cases[index].utc_date, cases[index].utc_hour,
-            cases[index].utc_minute, 0, &fake.now_epoch_seconds));
+        assert(pomodoro_local_datetime_to_wall_time(
+            cases[index].start_date, cases[index].start_hour,
+            cases[index].start_minute, &fake.now_wall_time_seconds));
         fake.load_result = POMODORO_APPLICATION_LOAD_LOADED;
-        fake.resolve_date_from_epoch = true;
+        fake.resolve_date_from_wall_time = true;
         pomodoro_settings_t settings = pomodoro_default_settings();
         settings.focus_minutes = 5U;
-        settings.utc_offset_quarter_hours =
-            cases[index].offset_quarter_hours;
         assert(pomodoro_init(&model, &settings) == POMODORO_OK);
         pomodoro_statistics_init(&statistics);
         assert(pomodoro_persistence_pack(
@@ -2253,7 +2235,7 @@ static void test_fixed_offset_decides_statistics_day(void)
         assert(pomodoro_application_dispatch(
                    application, POMODORO_APPLICATION_ACTION_START) ==
                POMODORO_APPLICATION_OK);
-        fake.now_epoch_seconds += 5U * 60U;
+        fake.now_wall_time_seconds += 5U * 60U;
         assert(pomodoro_application_dispatch(
                    application, POMODORO_APPLICATION_ACTION_TICK) ==
                POMODORO_APPLICATION_OK);
@@ -2275,20 +2257,15 @@ static void test_date_time_setup_actions_confirm_manual_draft(void)
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_UP) ==
            POMODORO_APPLICATION_OK);
-    assert(pomodoro_application_dispatch(
-               application, POMODORO_APPLICATION_ACTION_MANUAL_OFFSET_DOWN) ==
-           POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.manual_time_draft.minute == 1U);
-    assert(fake.rendered_view.manual_time_draft.utc_offset_quarter_hours ==
-           -1);
     uint64_t expected;
-    assert(pomodoro_local_datetime_to_utc(
-        fake.rendered_view.manual_time_draft.local_date, 12U, 1U, -1,
+    assert(pomodoro_local_datetime_to_wall_time(
+        fake.rendered_view.manual_time_draft.local_date, 12U, 1U,
         &expected));
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_MANUAL_TIME_CONFIRM) ==
            POMODORO_APPLICATION_OK);
-    assert(fake.written_utc_epoch_seconds == expected);
+    assert(fake.written_wall_time_seconds == expected);
     assert(fake.rendered_view.phase == POMODORO_APPLICATION_PHASE_ACTIVE);
     pomodoro_application_destroy(application);
 }
@@ -2297,7 +2274,7 @@ static void test_invalid_rtc_boot_rebases_saved_running_remaining_time(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     pomodoro_application_t *application = boot_application(&fake);
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_START) ==
@@ -2305,7 +2282,7 @@ static void test_invalid_rtc_boot_rebases_saved_running_remaining_time(void)
     pomodoro_application_destroy(application);
 
     fake.rtc_is_invalid = true;
-    fake.now_epoch_seconds = 0U;
+    fake.now_wall_time_seconds = 0U;
     application = boot_application(&fake);
     assert(fake.rendered_view.phase == POMODORO_APPLICATION_PHASE_TIME_SETUP);
     assert(fake.rendered_view.timer_state == POMODORO_TIMER_RUNNING);
@@ -2313,15 +2290,15 @@ static void test_invalid_rtc_boot_rebases_saved_running_remaining_time(void)
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_MANUAL_TIME_CONFIRM) ==
            POMODORO_APPLICATION_OK);
-    uint64_t restored_now = fake.written_utc_epoch_seconds;
+    uint64_t restored_now = fake.written_wall_time_seconds;
     assert(fake.rendered_view.timer_state == POMODORO_TIMER_RUNNING);
     assert(fake.focus_completion_event_count == 0U);
-    fake.now_epoch_seconds = restored_now + 1499U;
+    fake.now_wall_time_seconds = restored_now + 1499U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.remaining_seconds == 1U);
-    fake.now_epoch_seconds++;
+    fake.now_wall_time_seconds++;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -2333,7 +2310,7 @@ static void test_recovery_tick_assigns_outage_completion_to_recovery_day(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
-    fake.now_epoch_seconds = 100U;
+    fake.now_wall_time_seconds = 100U;
     fake.local_date = (pomodoro_date_t) {.year = 2026, .month = 8, .day = 15};
     pomodoro_application_t *application = boot_application(&fake);
     pomodoro_settings_t settings = fake.rendered_view.settings;
@@ -2344,13 +2321,13 @@ static void test_recovery_tick_assigns_outage_completion_to_recovery_day(void)
                application, POMODORO_APPLICATION_ACTION_START) ==
            POMODORO_APPLICATION_OK);
     fake.rtc_is_invalid = true;
-    fake.now_epoch_seconds = 399U;
+    fake.now_wall_time_seconds = 399U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
     fake.rtc_is_invalid = false;
     fake.local_date = (pomodoro_date_t) {.year = 2026, .month = 8, .day = 16};
-    fake.now_epoch_seconds = 400U;
+    fake.now_wall_time_seconds = 400U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
@@ -2394,7 +2371,7 @@ int main(void)
     test_boot_platform_failures_are_visible();
     test_boot_does_not_overwrite_state_when_journal_read_fails();
     test_invalid_rtc_boot_requires_non_skippable_time_setup();
-    test_manual_time_validates_writes_utc_and_enters_main();
+    test_manual_time_validates_writes_local_time_and_enters_main();
     test_time_correction_preserves_running_remaining_duration();
     test_rtc_failure_uses_pending_statistics_until_time_recovers();
     test_statistics_view_shows_today_and_trailing_seven_days();
@@ -2448,7 +2425,7 @@ int main(void)
     test_build_date_fallback_is_valid_with_noontime();
     test_manual_draft_ranges_are_bounded();
     test_year_month_change_converges_day();
-    test_fixed_offset_decides_statistics_day();
+    test_local_midnight_decides_statistics_day();
     puts("pomodoro_application_test: all tests passed");
     return 0;
 }

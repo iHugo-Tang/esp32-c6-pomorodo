@@ -14,7 +14,7 @@
 typedef struct {
     pomodoro_journal_t journal;
     pomodoro_application_t *application;
-    uint64_t last_epoch_seconds;
+    uint64_t last_wall_time_seconds;
     uint8_t countdown_log_frames;
     esp_timer_handle_t controls_timer;
     bool volume_up_candidate;
@@ -39,23 +39,21 @@ static bool read_time(void *context, pomodoro_application_time_t *time)
     runtime_context_t *target = context;
     bool read = target != NULL && pomodoro_board_read_time(time);
     if (read) {
-        target->last_epoch_seconds = time->epoch_seconds;
+        target->last_wall_time_seconds = time->wall_time_seconds;
     }
     return read;
 }
 
-static bool resolve_local_date(void *context, uint64_t epoch_seconds,
-                               int16_t utc_offset_minutes,
+static bool resolve_local_date(void *context, uint64_t wall_time_seconds,
                                pomodoro_date_t *date)
 {
     return context != NULL &&
-           pomodoro_board_resolve_local_date(
-               epoch_seconds, utc_offset_minutes, date);
+           pomodoro_board_resolve_local_date(wall_time_seconds, date);
 }
 
-static bool write_utc_time(void *context, uint64_t utc_epoch_seconds)
+static bool write_time(void *context, uint64_t wall_time_seconds)
 {
-    return context != NULL && pomodoro_board_write_utc_time(utc_epoch_seconds);
+    return context != NULL && pomodoro_board_write_time(wall_time_seconds);
 }
 
 static bool set_display_brightness_percent(void *context, uint8_t percent)
@@ -112,8 +110,9 @@ static bool render_view(void *context, const pomodoro_application_view_t *view)
     if (target != NULL && view != NULL &&
         view->timer_state == POMODORO_TIMER_RUNNING &&
         target->countdown_log_frames < 5U) {
-        ESP_LOGI(TAG, "Countdown frame epoch=%" PRIu64 ", remaining=%" PRIu32,
-                 target->last_epoch_seconds, view->remaining_seconds);
+        ESP_LOGI(TAG, "Countdown frame wall_time=%" PRIu64
+                 ", remaining=%" PRIu32,
+                 target->last_wall_time_seconds, view->remaining_seconds);
         ++target->countdown_log_frames;
     }
     return pomodoro_device_view_render(view);
@@ -353,7 +352,7 @@ esp_err_t pomodoro_platform_start(void)
         .context = &runtime,
         .read_time = read_time,
         .resolve_local_date = resolve_local_date,
-        .write_utc_time = write_utc_time,
+        .write_time = write_time,
         .set_display_brightness_percent = set_display_brightness_percent,
         .read_device_status = read_device_status,
         .set_display_awake = set_display_awake,
@@ -400,7 +399,7 @@ esp_err_t pomodoro_platform_start(void)
         return fail_startup("Button polling failed", result);
     }
 
-    ESP_LOGI(TAG, "Focus Ready; RTC epoch=%" PRIu64,
-             boot_time.epoch_seconds);
+    ESP_LOGI(TAG, "Focus Ready; RTC wall_time=%" PRIu64,
+             boot_time.wall_time_seconds);
     return ESP_OK;
 }

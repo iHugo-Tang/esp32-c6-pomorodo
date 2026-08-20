@@ -7,7 +7,7 @@
 **Status:** ready-for-human
 
 - [x] An invalid RTC at boot blocks Main and offers the non-skippable first-run time setup with a manual path.
-- [x] Manual setup validates date, 24-hour time, and fixed UTC offset, writes UTC to the RTC, and returns to the correct source.
+- [x] Manual setup validates local date and 24-hour time, writes them to the RTC, and returns to the correct source.
 - [x] Correcting date or time preserves an active timer's remaining duration and recomputes its absolute deadline.
 - [x] RTC failure during a timer continues from a monotonic clock and completed Focus results enter Pending Statistics.
 - [x] Restoring valid time assigns Pending Statistics to the restored current Statistics Day without relabeling historical days.

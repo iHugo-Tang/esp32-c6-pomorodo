@@ -28,13 +28,13 @@ pomodoro_display_policy_result_t pomodoro_display_policy_resolve(
     return result;
 }
 
-void pomodoro_display_policy_pixel_shift(uint64_t epoch_seconds,
+void pomodoro_display_policy_pixel_shift(uint64_t wall_time_seconds,
                                          int8_t *x, int8_t *y)
 {
     if (x == NULL || y == NULL) {
         return;
     }
-    uint8_t shift = (uint8_t) ((epoch_seconds / 60U) % 5U);
+    uint8_t shift = (uint8_t) ((wall_time_seconds / 60U) % 5U);
     *x = (int8_t) shift - 2;
     *y = 2 - (int8_t) shift;
 }

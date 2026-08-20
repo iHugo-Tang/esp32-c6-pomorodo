@@ -80,7 +80,7 @@ typedef struct {
 
 static const char *TAG = "pomodoro_board";
 static board_context_t board;
-static uint64_t last_valid_utc_epoch_seconds;
+static uint64_t last_valid_wall_time_seconds;
 static int64_t last_valid_monotonic_microseconds;
 static bool has_last_valid_time;
 static i2s_chan_handle_t audio_tx_channel;
@@ -160,8 +160,8 @@ static void use_monotonic_fallback(pomodoro_application_time_t *time)
         ? (uint64_t) (now - last_valid_monotonic_microseconds) / 1000000U
         : (uint64_t) now / 1000000U;
     *time = (pomodoro_application_time_t) {
-        .epoch_seconds = has_last_valid_time
-            ? last_valid_utc_epoch_seconds + elapsed_seconds
+        .wall_time_seconds = has_last_valid_time
+            ? last_valid_wall_time_seconds + elapsed_seconds
             : elapsed_seconds,
         .rtc_is_valid = false,
     };
@@ -232,47 +232,41 @@ bool pomodoro_board_read_time(pomodoro_application_time_t *time)
         return true;
     }
 
-    uint64_t minute_epoch_seconds;
-    if (!pomodoro_local_datetime_to_utc(
+    uint64_t minute_wall_time_seconds;
+    if (!pomodoro_local_datetime_to_wall_time(
             (pomodoro_date_t) {.year = year, .month = month, .day = day},
-            hour, minute, 0, &minute_epoch_seconds)) {
+            hour, minute, &minute_wall_time_seconds)) {
         use_monotonic_fallback(time);
         return true;
     }
-    time->epoch_seconds = minute_epoch_seconds + second;
+    time->wall_time_seconds = minute_wall_time_seconds + second;
     time->rtc_is_valid = true;
     time->local_date = (pomodoro_date_t) {
         .year = year,
         .month = month,
         .day = day,
     };
-    last_valid_utc_epoch_seconds = time->epoch_seconds;
+    last_valid_wall_time_seconds = time->wall_time_seconds;
     last_valid_monotonic_microseconds = esp_timer_get_time();
     has_last_valid_time = true;
     return true;
 }
 
-bool pomodoro_board_resolve_local_date(uint64_t epoch_seconds,
-                                       int16_t utc_offset_minutes,
+bool pomodoro_board_resolve_local_date(uint64_t wall_time_seconds,
                                        pomodoro_date_t *date)
 {
-    if (utc_offset_minutes < -720 || utc_offset_minutes > 840 ||
-        utc_offset_minutes % 15 != 0) {
-        return false;
-    }
-    return pomodoro_local_date_from_utc(
-        epoch_seconds, (int8_t) (utc_offset_minutes / 15), date);
+    return pomodoro_local_date_from_wall_time(wall_time_seconds, date);
 }
 
-bool pomodoro_board_write_utc_time(uint64_t utc_epoch_seconds)
+bool pomodoro_board_write_time(uint64_t wall_time_seconds)
 {
     pomodoro_date_t date;
     if (board.rtc == NULL ||
-        !pomodoro_local_date_from_utc(utc_epoch_seconds, 0, &date) ||
+        !pomodoro_local_date_from_wall_time(wall_time_seconds, &date) ||
         date.year < 2020U || date.year > 2069U) {
         return false;
     }
-    uint32_t seconds_of_day = (uint32_t) (utc_epoch_seconds % 86400U);
+    uint32_t seconds_of_day = (uint32_t) (wall_time_seconds % 86400U);
     uint8_t raw[] = {
         to_bcd((uint8_t) (seconds_of_day % 60U)),
         to_bcd((uint8_t) ((seconds_of_day / 60U) % 60U)),

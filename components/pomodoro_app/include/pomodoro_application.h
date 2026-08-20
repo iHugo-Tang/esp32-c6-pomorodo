@@ -66,8 +66,6 @@ typedef enum {
     POMODORO_APPLICATION_ACTION_MANUAL_HOUR_UP,
     POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_DOWN,
     POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_UP,
-    POMODORO_APPLICATION_ACTION_MANUAL_OFFSET_DOWN,
-    POMODORO_APPLICATION_ACTION_MANUAL_OFFSET_UP,
     POMODORO_APPLICATION_ACTION_MANUAL_TIME_CONFIRM,
 } pomodoro_application_action_t;
 
@@ -105,7 +103,6 @@ typedef struct {
     pomodoro_date_t local_date;
     uint8_t hour;
     uint8_t minute;
-    int8_t utc_offset_quarter_hours;
 } pomodoro_application_manual_time_t;
 
 typedef enum {
@@ -138,7 +135,7 @@ typedef enum {
 } pomodoro_application_error_t;
 
 typedef struct {
-    uint64_t epoch_seconds;
+    uint64_t wall_time_seconds;
     bool rtc_is_valid;
     pomodoro_date_t local_date;
 } pomodoro_application_time_t;
@@ -195,10 +192,9 @@ typedef struct {
     /* Supplies one coherent wall-clock observation for each dispatched action. */
     bool (*read_time)(void *context, pomodoro_application_time_t *time);
     /* Resolves a persisted deadline to its local Statistics Day. */
-    bool (*resolve_local_date)(void *context, uint64_t epoch_seconds,
-                               int16_t utc_offset_minutes,
+    bool (*resolve_local_date)(void *context, uint64_t wall_time_seconds,
                                pomodoro_date_t *date);
-    bool (*write_utc_time)(void *context, uint64_t utc_epoch_seconds);
+    bool (*write_time)(void *context, uint64_t wall_time_seconds);
     bool (*set_display_brightness_percent)(void *context, uint8_t percent);
     bool (*read_device_status)(void *context,
                                pomodoro_application_device_status_t *status);

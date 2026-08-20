@@ -1,5 +1,7 @@
 # 02 — 将本地时间收敛为固定 UTC offset
 
+> 已由 [`local-date-time`](../../local-date-time/spec.md) 取代；保留此文件记录旧实现。
+
 **What to build:** 删除已不可达的 IANA 时区和自动 offset 切换表；本地时间及 Statistics Day 只使用固定 UTC offset。持久化格式升级，旧格式安全重置为默认状态而非进入 Storage Error。
 
 **Blocked by:** 01 — 移除手机同步流程与无线依赖

@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 #define POMODORO_SNAPSHOT_VERSION 1U
-#define POMODORO_SETTINGS_VERSION 5U
+#define POMODORO_SETTINGS_VERSION 6U
 
 typedef enum {
     POMODORO_MODE_FOCUS = 0,
@@ -47,7 +47,6 @@ typedef struct {
     uint8_t volume;
     uint8_t brightness_percent;
     uint8_t idle_brightness_percent;
-    int8_t utc_offset_quarter_hours;
 } pomodoro_settings_t;
 
 typedef struct {
@@ -68,11 +67,11 @@ typedef struct {
     pomodoro_timer_state_t timer_state;
     uint32_t configured_duration_seconds;
     uint32_t remaining_seconds;
-    uint64_t deadline_epoch_seconds;
+    uint64_t deadline_wall_time_seconds;
     uint32_t settlement_sequence;
     bool settled;
     uint8_t set_progress;
-    uint64_t completion_transition_deadline_epoch_seconds;
+    uint64_t completion_transition_deadline_wall_time_seconds;
     bool auto_start_cancelled;
     pomodoro_completion_record_t last_completion;
 } pomodoro_snapshot_t;
@@ -91,15 +90,15 @@ uint32_t pomodoro_duration_seconds(const pomodoro_model_t *model,
                                    pomodoro_mode_t mode);
 pomodoro_mode_t pomodoro_scheduled_next_mode(const pomodoro_model_t *model);
 uint32_t pomodoro_remaining_seconds(const pomodoro_model_t *model,
-                                    uint64_t now_epoch_seconds);
+                                    uint64_t now_wall_time_seconds);
 
 pomodoro_result_t pomodoro_start(pomodoro_model_t *model,
-                                 uint64_t now_epoch_seconds);
+                                 uint64_t now_wall_time_seconds);
 pomodoro_result_t pomodoro_pause(pomodoro_model_t *model,
-                                 uint64_t now_epoch_seconds,
+                                 uint64_t now_wall_time_seconds,
                                  pomodoro_event_t *event);
 pomodoro_result_t pomodoro_resume(pomodoro_model_t *model,
-                                  uint64_t now_epoch_seconds);
+                                  uint64_t now_wall_time_seconds);
 pomodoro_result_t pomodoro_reset(pomodoro_model_t *model);
 pomodoro_result_t pomodoro_clear_set_progress(pomodoro_model_t *model);
 pomodoro_result_t pomodoro_request_mode(pomodoro_model_t *model,
@@ -107,22 +106,22 @@ pomodoro_result_t pomodoro_request_mode(pomodoro_model_t *model,
 pomodoro_result_t pomodoro_confirm_mode_switch(pomodoro_model_t *model,
                                                pomodoro_mode_t mode);
 pomodoro_event_t pomodoro_tick(pomodoro_model_t *model,
-                               uint64_t now_epoch_seconds);
+                               uint64_t now_wall_time_seconds);
 pomodoro_result_t pomodoro_finish_completion(pomodoro_model_t *model);
 pomodoro_result_t pomodoro_cancel_auto_start(pomodoro_model_t *model);
 bool pomodoro_auto_start_is_due(const pomodoro_model_t *model,
-                                uint64_t now_epoch_seconds);
+                                uint64_t now_wall_time_seconds);
 pomodoro_result_t pomodoro_start_next(pomodoro_model_t *model,
-                                      uint64_t now_epoch_seconds);
+                                      uint64_t now_wall_time_seconds);
 pomodoro_result_t pomodoro_restore(pomodoro_model_t *model,
                                    const pomodoro_snapshot_t *snapshot,
-                                   uint64_t now_epoch_seconds,
+                                   uint64_t now_wall_time_seconds,
                                    pomodoro_event_t *event);
 pomodoro_result_t pomodoro_rebase_running_timer(
-    pomodoro_model_t *model, uint64_t old_now_epoch_seconds,
-    uint64_t new_now_epoch_seconds);
+    pomodoro_model_t *model, uint64_t old_now_wall_time_seconds,
+    uint64_t new_now_wall_time_seconds);
 pomodoro_result_t pomodoro_rebase_running_timer_from_snapshot(
-    pomodoro_model_t *model, uint64_t new_now_epoch_seconds);
+    pomodoro_model_t *model, uint64_t new_now_wall_time_seconds);
 
 #ifdef __cplusplus
 }

@@ -110,46 +110,35 @@ bool pomodoro_date_add_days(pomodoro_date_t date, int days,
     if (resolved < 0 || (uint64_t) resolved > UINT64_MAX / 86400U) {
         return false;
     }
-    return pomodoro_local_date_from_utc(
-        (uint64_t) resolved * 86400U, 0, result);
+    return pomodoro_local_date_from_wall_time(
+        (uint64_t) resolved * 86400U, result);
 }
 
-bool pomodoro_local_datetime_to_utc(
+bool pomodoro_local_datetime_to_wall_time(
     pomodoro_date_t date, uint8_t hour, uint8_t minute,
-    int8_t utc_offset_quarter_hours, uint64_t *utc_epoch_seconds)
+    uint64_t *wall_time_seconds)
 {
     if (!pomodoro_date_is_valid(date) || hour > 23U || minute > 59U ||
-        utc_offset_quarter_hours < -48 || utc_offset_quarter_hours > 56 ||
-        utc_epoch_seconds == NULL) {
+        wall_time_seconds == NULL) {
         return false;
     }
     int64_t local_seconds = days_since_unix_epoch(
         date.year, date.month, date.day) * 86400 +
         (int64_t) hour * 3600 + (int64_t) minute * 60;
-    int64_t utc_seconds = local_seconds -
-        (int64_t) utc_offset_quarter_hours * 15 * 60;
-    if (utc_seconds < 0) {
+    if (local_seconds < 0) {
         return false;
     }
-    *utc_epoch_seconds = (uint64_t) utc_seconds;
+    *wall_time_seconds = (uint64_t) local_seconds;
     return true;
 }
 
-bool pomodoro_local_date_from_utc(
-    uint64_t utc_epoch_seconds, int8_t utc_offset_quarter_hours,
-    pomodoro_date_t *date)
+bool pomodoro_local_date_from_wall_time(uint64_t wall_time_seconds,
+                                    pomodoro_date_t *date)
 {
-    if (date == NULL || utc_offset_quarter_hours < -48 ||
-        utc_offset_quarter_hours > 56) {
+    if (date == NULL || wall_time_seconds > INT64_MAX) {
         return false;
     }
-    int64_t offset_seconds =
-        (int64_t) utc_offset_quarter_hours * 15 * 60;
-    if (utc_epoch_seconds > INT64_MAX ||
-        (offset_seconds < 0 && utc_epoch_seconds < (uint64_t) -offset_seconds)) {
-        return false;
-    }
-    int64_t local_seconds = (int64_t) utc_epoch_seconds + offset_seconds;
+    int64_t local_seconds = (int64_t) wall_time_seconds;
     int64_t days = local_seconds / 86400;
     if (local_seconds < 0 && local_seconds % 86400 != 0) {
         days--;

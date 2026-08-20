@@ -115,8 +115,7 @@ bool pomodoro_manual_time_adjust(
             action == POMODORO_APPLICATION_ACTION_MANUAL_MONTH_UP ||
             action == POMODORO_APPLICATION_ACTION_MANUAL_DAY_UP ||
             action == POMODORO_APPLICATION_ACTION_MANUAL_HOUR_UP ||
-            action == POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_UP ||
-            action == POMODORO_APPLICATION_ACTION_MANUAL_OFFSET_UP
+            action == POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_UP
         ? 1
         : -1;
     if (action == POMODORO_APPLICATION_ACTION_MANUAL_YEAR_DOWN ||
@@ -145,12 +144,6 @@ bool pomodoro_manual_time_adjust(
                action == POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_UP) {
         int value = (int) draft->minute + delta;
         draft->minute = (uint8_t) (value < 0 ? 59 : value > 59 ? 0 : value);
-    } else if (action == POMODORO_APPLICATION_ACTION_MANUAL_OFFSET_DOWN ||
-               action == POMODORO_APPLICATION_ACTION_MANUAL_OFFSET_UP) {
-        int value = (int) draft->utc_offset_quarter_hours + delta;
-        if (value >= -48 && value <= 56) {
-            draft->utc_offset_quarter_hours = (int8_t) value;
-        }
     } else {
         return false;
     }

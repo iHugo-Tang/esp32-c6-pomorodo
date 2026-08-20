@@ -141,8 +141,8 @@ flowchart LR
 ### 页面结构
 
 1. 顶部栏：Settings 来源显示 Back + `Set date & time`；首次设置不显示 Back。
-2. 六个并排滚轮：Year / Month / Day / Hour(24 小时制) / Minute / UTC offset（范围 UTC−12:00 至 UTC+14:00，步进十五分钟）。
-3. 说明：`Set the local date, time, and fixed UTC offset.`
+2. 五个并排滚轮：Year / Month / Day / Hour（24 小时制）/ Minute。
+3. 说明：`Set the local date and time.`
 4. 底部固定主按钮：`Set time`（Confirm）。
 
 ### 交互
@@ -151,7 +151,7 @@ flowchart LR
 - Confirm 校验日期合法性后保存。
 - 首次设置 Confirm 后进入 Main；Settings 来源 Confirm 后返回 Settings。
 - 未确认时 Settings 来源的 Back 放弃修改并返回 Settings；首次设置无 Back。
-- RTC 无效时草稿日期默认使用固件编译日期，时间为 `12:00`，offset 使用已保存值或默认值。
+- RTC 无效时草稿日期默认使用固件编译日期，时间为 `12:00`。
 - 时间设置阶段音量浮层与普通页面一致：最后一次音量操作两秒后消失。
 
 ## 7. P10 — Main timer
@@ -335,9 +335,8 @@ flowchart LR
 
 #### Date & time
 
-- 当前本地日期时间，例如 `2026-08-15 14:35 UTC-07:00`。
+- 当前本地日期时间，例如 `2026-08-15 14:35`。
 - `Date & time` → P02（滚轮式手动设置）。
-- 固定 UTC offset 直接显示在日期时间旁，无时区规则提示。
 
 #### Power
 
@@ -461,7 +460,7 @@ flowchart LR
 ## 19. 原型连线与交互检查清单
 
 - 首次设置与 Settings 来源的 P02 拥有不同返回目标（首次无 Back）。
-- P02 六个滚轮（Year/Month/Day/Hour/Minute/UTC offset）范围正确且年月改变收敛日期。
+- P02 五个滚轮（Year/Month/Day/Hour/Minute）范围正确且年月改变收敛日期。
 - Main 的 Statistics 与 Settings IconButton 都可操作。
 - Stats Back 能返回正确来源。
 - 四个 NumericStepper 共享模板但范围正确。
@@ -485,7 +484,7 @@ flowchart LR
 为了覆盖所有关键交互，设计工具中至少建立以下画板：
 
 1. First-run time setup（滚轮式手动设置，无 Back）。
-2. Manual date/time — 六个滚轮（Year/Month/Day/Hour/Minute/UTC offset）。
+2. Manual date/time — 五个滚轮（Year/Month/Day/Hour/Minute）。
 3. Manual date/time — 年月改变后日期收敛变体。
 4. Focus — Ready。
 5. Focus — Running。
