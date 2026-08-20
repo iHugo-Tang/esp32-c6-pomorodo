@@ -20,4 +20,5 @@ idf_component_register(
         esp_lcd_touch_cst9217
         lvgl
         esp_codec_dev
+        esp_driver_usb_serial_jtag
 )

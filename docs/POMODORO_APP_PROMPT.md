@@ -73,6 +73,15 @@ Sound button:
 - A tap shows the two-second volume overlay and never pauses or disturbs the timer; sound off leaves completion visual feedback intact.
 - It is disabled during the three-second automatic-start countdown and cannot be activated through a blocking confirmation dialog.
 
+OpenCode status indicator:
+
+- When `OpenCode status` is enabled and the paired OpenCode project is connected, Main shows a 28×28 px circle in the bottom-left corner, inset 26 px from the left edge and vertically center-aligned with the Sound button. Its touch target is 44×44 px.
+- The indicator aggregates all sessions in one OpenCode process for the current project. Its priority is Error, Waiting, Working, Completed, then Idle.
+- Colors reuse the existing palette: Error red `#FF5C5C`, Waiting yellow `#FFD166`, Working blue `#5B8CFF`, Completed green `#4DD17A`, and Idle gray `#454B56`.
+- Completed remains green for five seconds, then becomes Idle gray. Tapping green acknowledges it early; tapping red acknowledges the current errors and reveals the next aggregate state. Other colors do not respond to taps, and no detail text is shown.
+- A received aggregate state change wakes the display, including after a manual PWR sleep. Repeated heartbeats, local acknowledgement, completion expiry, and connection timeout do not wake it again.
+- Hide the indicator outside Main, behind blocking dialogs, when OpenCode is disconnected, and when the setting is off. Include it in the normal AMOLED pixel shift.
+
 ## Timer state machine
 
 Each timer has these states:
@@ -160,17 +169,20 @@ Sections, in order:
 3. Automation
    - Auto-start breaks
    - Auto-start focus
-4. Sound
+4. OpenCode
+   - OpenCode status switch, on by default
+   - Turning it off hides the indicator, stops OpenCode status reads, and disables OpenCode-triggered display wakeups.
+5. Sound
    - Sound switch
    - The Sound switch and the Main Sound button control the same state.
    - Current volume, for example `3/5`
    - `Use the side buttons to adjust volume`
-5. Display
+6. Display
    - Brightness
-6. Date & time
+7. Date & time
    - Current local date and time
    - Date & time (opens the manual editor)
-7. Power
+8. Power
    - Battery percentage and charging state
 
 There is no Vibration setting and no haptic behavior. There is no clear-statistics action.
@@ -273,6 +285,7 @@ RTC failure:
 Transient status overlay implementation:
 
 - Main owns one screen-level `StatusOverlay` container for all non-blocking status feedback. RTC/date-time errors, the one-shot low-battery warning, and the side-button volume indicator must be children of this same container; do not create separate independently positioned overlay layers for them.
+- The persistent bottom-left OpenCode status indicator is a connection/status control, not transient feedback, and is the sole exception to the single `StatusOverlay` placement rule.
 - Keep `StatusOverlay` above normal Main content and below blocking dialogs. It must not intercept touch input or pause the timer.
 - Configure the container with LVGL flex layout using `LV_FLEX_FLOW_COLUMN`, centered on the horizontal axis below the top app bar. Use an 8px gap between visible children.
 - Child order is fixed from top to bottom: `Date & time unavailable`, `Battery low`, then the volume indicator. Hidden children consume no layout space, so any visible combination remains vertically packed.

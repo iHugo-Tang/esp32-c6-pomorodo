@@ -22,11 +22,17 @@ static uint32_t state_checksum(const pomodoro_persisted_state_t *state)
     return crc32(state, offsetof(pomodoro_persisted_state_t, checksum));
 }
 
+static bool settings_version_is_supported(uint32_t version)
+{
+    return version == POMODORO_SETTINGS_VERSION ||
+           version == POMODORO_SETTINGS_VERSION - 1U;
+}
+
 static bool state_is_valid(const pomodoro_persisted_state_t *state)
 {
     return state != NULL &&
            state->version == POMODORO_PERSISTED_STATE_VERSION &&
-           state->settings.version == POMODORO_SETTINGS_VERSION &&
+           settings_version_is_supported(state->settings.version) &&
            state->timer.version == POMODORO_SNAPSHOT_VERSION &&
            state->statistics.version == POMODORO_STATISTICS_VERSION &&
            pomodoro_settings_are_valid(&state->settings.value) &&
@@ -71,7 +77,15 @@ bool pomodoro_persistence_pack(pomodoro_persisted_state_t *destination,
 
 bool pomodoro_persistence_migrate(pomodoro_persisted_state_t *state)
 {
-    return state_is_valid(state);
+    if (!state_is_valid(state)) {
+        return false;
+    }
+    if (state->settings.version != POMODORO_SETTINGS_VERSION) {
+        state->settings.version = POMODORO_SETTINGS_VERSION;
+        state->settings.value.opencode_status_enabled = true;
+        state->checksum = state_checksum(state);
+    }
+    return true;
 }
 
 bool pomodoro_persistence_unpack(pomodoro_persisted_state_t *source,
@@ -79,7 +93,8 @@ bool pomodoro_persistence_unpack(pomodoro_persisted_state_t *source,
                                  pomodoro_statistics_store_t *statistics,
                                  bool *was_migrated)
 {
-    bool current_schema = state_is_valid(source);
+    bool was_current = source != NULL &&
+        source->settings.version == POMODORO_SETTINGS_VERSION;
     if (was_migrated != NULL) {
         *was_migrated = false;
     }
@@ -99,9 +114,12 @@ bool pomodoro_persistence_unpack(pomodoro_persisted_state_t *source,
             ? model->settings.volume
             : 3U;
     }
+    if (!was_current) {
+        model->settings.opencode_status_enabled = true;
+    }
     *statistics = source->statistics;
     if (was_migrated != NULL) {
-        *was_migrated = !current_schema;
+        *was_migrated = !was_current;
     }
     return true;
 }

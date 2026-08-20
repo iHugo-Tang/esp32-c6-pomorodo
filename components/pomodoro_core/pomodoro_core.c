@@ -86,6 +86,7 @@ pomodoro_settings_t pomodoro_default_settings(void)
         .volume = 3,
         .brightness_percent = 70,
         .idle_brightness_percent = 20,
+        .opencode_status_enabled = true,
     };
 }
 

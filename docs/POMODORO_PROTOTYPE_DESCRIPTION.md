@@ -105,6 +105,7 @@ flowchart LR
 - Focus：`#FF5C5C`。
 - Short break：`#4DD17A`。
 - Long break：`#5B8CFF`。
+- OpenCode Status：Error `#FF5C5C`、Waiting `#FFD166`、Working `#5B8CFF`、Completed `#4DD17A`、Idle `#454B56`。
 - 页面背景：`#0F1115`；卡片：`#1A1F27`；抬升层：`#232A35`。
 - 主文字：`#F5F7FA`；辅助文字：`#A7B0BE`；分隔线：`#303846`。
 - 模式不能只依赖颜色区分，始终同时显示图标与文字。
@@ -166,8 +167,18 @@ flowchart LR
 4. 底部第一行：`Set N/4` + 4 个番茄轮廓标记。
 5. 底部第二行：三个不可点击的模式分页点。
 6. 右下角 48×48 px Sound IconButton，距边缘至少 24 px 安全边距。
+7. 左下角 28×28 px OpenCode Status 圆点，距左边 26 px，并与右侧声音按钮竖直居中对齐，使用 44×44 px 透明触控区。
 
-### 8.2 Mode 视觉变体
+### 8.2 OpenCode Status
+
+- 只在 Main 显示；子页面、平台错误状态和阻断 Dialog 隐藏或遮挡。
+- 汇总同一 OpenCode 进程内当前项目的全部会话，优先级为 Error、Waiting、Working、Completed、Idle。
+- Error 为红色并保持到点击确认、对应会话重新工作或 OpenCode 断开；确认后显示下一优先级状态。
+- Completed 为绿色，五秒后自动转为灰色 Idle；点击可提前确认。圆点不显示任何详情内容。
+- 收到有效的汇总状态变化时唤醒屏幕，包括 PWR 主动熄屏；重复心跳、本地确认、五秒到期和断线超时不重复唤醒。
+- OpenCode 未连接或 Settings 开关关闭时隐藏；圆点参与现有 ±2 px AMOLED 像素偏移，并随 UI Orientation 一起旋转。
+
+### 8.3 Mode 视觉变体
 
 | Mode | 图标建议 | 状态色 | 默认时长 | 分页点位置 |
 |---|---|---|---|---|
@@ -175,7 +186,7 @@ flowchart LR
 | Short break | 小杯或叶片 | 绿 `#4DD17A` | 05:00 | 第 2 点 |
 | Long break | 大杯或放松波纹 | 蓝 `#5B8CFF` | 15:00 | 第 3 点 |
 
-### 8.3 Ready 状态
+### 8.4 Ready 状态
 
 - 圆环内不显示状态描述文案。
 - 圆环完整显示，倒计时为配置值。
@@ -184,7 +195,7 @@ flowchart LR
 - 圆环和数字不响应点击；只有按钮可启动。
 - 左右滑动直接切换模式，不出现确认。
 
-### 8.4 Running 状态
+### 8.5 Running 状态
 
 - 圆环内不显示状态描述文案。
 - 圆环从 12 点方向顺时针消退，彩色区域代表剩余时间。
@@ -194,7 +205,7 @@ flowchart LR
 - 左右滑动切换模式前显示 D01。
 - 进入 Settings/Statistics 时计时继续；若后台完成，播放声音并自动返回完成态。
 
-### 8.5 Paused 状态
+### 8.6 Paused 状态
 
 - 不显示状态描述文案，并隐藏暂停时的倒计时。
 - 圆环停止，可使用低幅度呼吸效果。
@@ -202,14 +213,14 @@ flowchart LR
 - 圆环内显示较小、低强调的 `Reset` 次操作；两个按钮作为一个整体垂直居中。
 - 切换模式显示 D01；Reset 显示 D02。
 
-### 8.6 模式滑动
+### 8.7 模式滑动
 
 - 固定顺序：Focus → Short break → Long break。
 - 向左进入下一项，向右返回上一项。
 - 不首尾循环；边界处使用轻微回弹或短位移反馈。
 - 由于无 PSRAM，达到手势阈值后使用约 120 ms 的黑色遮罩淡入/淡出，不改变根 screen 的透明度，也不绘制全屏跟手动画。
 
-### 8.7 Sound 按钮
+### 8.8 Sound 按钮
 
 - 固定于主屏右下角，48×48 px，边缘安全边距至少 24 px。
 - 音量非零显示扬声器图标，静音显示静音图标。
@@ -320,6 +331,11 @@ flowchart LR
 
 - `Auto-start breaks` — Switch，默认 On。
 - `Auto-start focus` — Switch，默认 Off。
+
+#### OpenCode
+
+- `OpenCode status` — Switch，默认 On，立即保存。
+- Off 时隐藏状态圆、停止读取 OpenCode 状态且禁止 OpenCode 事件唤醒屏幕；重新开启后等待当前状态同步。
 
 #### Sound
 

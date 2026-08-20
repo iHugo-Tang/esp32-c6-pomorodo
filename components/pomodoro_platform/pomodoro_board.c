@@ -6,6 +6,7 @@
 #include "driver/i2c_master.h"
 #include "driver/gpio.h"
 #include "driver/i2s_std.h"
+#include "driver/usb_serial_jtag.h"
 #include "esp_codec_dev.h"
 #include "esp_codec_dev_defaults.h"
 #include "driver/spi_master.h"
@@ -795,4 +796,31 @@ esp_err_t pomodoro_board_initialize_touch(void)
 esp_err_t pomodoro_board_initialize_rtc(void)
 {
     return add_i2c_device(PCF85063_ADDRESS, &board.rtc);
+}
+
+esp_err_t pomodoro_board_initialize_usb_serial_jtag(void)
+{
+    static usb_serial_jtag_driver_config_t config =
+        USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
+    esp_err_t result = usb_serial_jtag_driver_install(&config);
+    if (result != ESP_OK && result != ESP_ERR_INVALID_STATE) {
+        return result;
+    }
+    return ESP_OK;
+}
+
+int pomodoro_board_read_usb_serial_jtag(uint8_t *buffer, size_t size)
+{
+    if (buffer == NULL || size == 0U) {
+        return 0;
+    }
+    return usb_serial_jtag_read_bytes(buffer, (uint32_t) size, 0U);
+}
+
+int pomodoro_board_write_usb_serial_jtag(const void *buffer, size_t size)
+{
+    if (buffer == NULL || size == 0U) {
+        return 0;
+    }
+    return usb_serial_jtag_write_bytes(buffer, size, 20U);
 }

@@ -1,9 +1,11 @@
 #include "pomodoro_application.h"
 #include "pomodoro_display_policy.h"
+#include "pomodoro_opencode_status.h"
 #include "pomodoro_settings_editor.h"
 #include "pomodoro_statistics_projection.h"
 
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -33,6 +35,8 @@ struct pomodoro_application {
     uint8_t effective_brightness_percent;
     pomodoro_application_manual_time_t manual_time_draft;
     bool time_setup_can_cancel;
+    pomodoro_opencode_status_t opencode_status;
+    uint64_t last_opencode_control_wall_time_seconds;
 };
 
 static uint16_t completed_pomodoros_on(
@@ -83,7 +87,9 @@ static bool platform_is_valid(const pomodoro_application_platform_t *platform)
            platform->load != NULL && platform->save != NULL &&
            platform->render != NULL &&
            platform->play_focus_complete != NULL &&
-           platform->play_break_complete != NULL;
+           platform->play_break_complete != NULL &&
+           platform->read_opencode_line != NULL &&
+           platform->write_opencode != NULL;
 }
 
 static void snapshot_view(pomodoro_application_t *application,
@@ -152,6 +158,39 @@ static void snapshot_view(pomodoro_application_t *application,
     application->view.statistics_available = application->view.rtc_is_valid;
     application->view.time_setup_can_cancel =
         application->time_setup_can_cancel;
+    uint64_t opencode_now = time != NULL
+        ? time->wall_time_seconds
+        : (application->has_last_time
+               ? application->last_time.wall_time_seconds
+               : 0U);
+    pomodoro_opencode_state_t opencode_state =
+        pomodoro_opencode_status_resolve(&application->opencode_status,
+                                         opencode_now);
+    application->view.opencode_state = opencode_state;
+    application->view.opencode_acknowledgeable =
+        opencode_state == POMODORO_OPENCODE_STATE_ERROR ||
+        opencode_state == POMODORO_OPENCODE_STATE_COMPLETED;
+    uint32_t opencode_color = 0U;
+    switch (opencode_state) {
+    case POMODORO_OPENCODE_STATE_ERROR:
+        opencode_color = 0xFF5C5C;
+        break;
+    case POMODORO_OPENCODE_STATE_WAITING:
+        opencode_color = 0xFFD166;
+        break;
+    case POMODORO_OPENCODE_STATE_WORKING:
+        opencode_color = 0x5B8CFF;
+        break;
+    case POMODORO_OPENCODE_STATE_COMPLETED:
+        opencode_color = 0x4DD17A;
+        break;
+    case POMODORO_OPENCODE_STATE_IDLE:
+        opencode_color = 0x454B56;
+        break;
+    default:
+        break;
+    }
+    application->view.opencode_color = opencode_color;
     pomodoro_statistics_project_view(
         &application->statistics,
         resolved_time != NULL ? resolved_time->local_date
@@ -451,6 +490,11 @@ static pomodoro_application_result_t boot(
         .hour = 12U,
         .minute = 0U,
     };
+    pomodoro_opencode_status_init(
+        &application->opencode_status,
+        application->model.settings.opencode_status_enabled,
+        time.wall_time_seconds);
+    application->last_opencode_control_wall_time_seconds = 0U;
     if (!application->platform.set_display_awake(
             application->platform.context, true) ||
         !application->platform.set_display_brightness_percent(
@@ -651,6 +695,51 @@ static pomodoro_application_result_t confirm_mode_switch(
     return save_and_render(application, NULL);
 }
 
+static pomodoro_application_result_t process_opencode_status(
+    pomodoro_application_t *application,
+    const pomodoro_application_time_t *time)
+{
+    if (time == NULL) {
+        return POMODORO_APPLICATION_OK;
+    }
+    uint64_t now = time->wall_time_seconds;
+    if (application->model.settings.opencode_status_enabled) {
+        char line[POMODORO_OPENCODE_MAX_LINE_LENGTH + 1U];
+        bool available = false;
+        while (application->platform.read_opencode_line(
+                   application->platform.context, line, sizeof(line),
+                   &available) && available) {
+            uint32_t revision = 0U;
+            uint8_t mask = 0U;
+            if (pomodoro_opencode_parse_line(line, strlen(line), &revision,
+                                             &mask) ==
+                POMODORO_OPENCODE_LINE_STATE) {
+                pomodoro_opencode_status_apply_state(
+                    &application->opencode_status, revision, mask, now);
+            }
+        }
+    }
+    pomodoro_opencode_status_tick(&application->opencode_status, now);
+    if (now - application->last_opencode_control_wall_time_seconds >=
+        POMODORO_OPENCODE_CONTROL_INTERVAL_SECONDS) {
+        application->last_opencode_control_wall_time_seconds = now;
+        const char *control =
+            application->model.settings.opencode_status_enabled
+                ? "OC1 ENABLED"
+                : "OC1 DISABLED";
+        (void) application->platform.write_opencode(
+            application->platform.context, control);
+    }
+    if (pomodoro_opencode_status_take_wake(&application->opencode_status)) {
+        application->display_manually_asleep = false;
+        application->last_interaction_wall_time_seconds = now;
+        return set_display_state(
+            application, true,
+            application->model.settings.brightness_percent);
+    }
+    return POMODORO_APPLICATION_OK;
+}
+
 static pomodoro_application_result_t tick(
     pomodoro_application_t *application)
 {
@@ -658,6 +747,10 @@ static pomodoro_application_result_t tick(
         application->last_time.rtc_is_valid;
     pomodoro_application_time_t time;
     pomodoro_application_result_t result = read_time(application, &time);
+    if (result != POMODORO_APPLICATION_OK) {
+        return result;
+    }
+    result = process_opencode_status(application, &time);
     if (result != POMODORO_APPLICATION_OK) {
         return result;
     }
@@ -688,6 +781,10 @@ static pomodoro_application_result_t tick_time_setup(
 {
     pomodoro_application_time_t time;
     pomodoro_application_result_t result = read_time(application, &time);
+    if (result != POMODORO_APPLICATION_OK) {
+        return result;
+    }
+    result = process_opencode_status(application, &time);
     if (result != POMODORO_APPLICATION_OK) {
         return result;
     }
@@ -1044,6 +1141,33 @@ pomodoro_application_result_t pomodoro_application_dispatch(
         }
         return pomodoro_application_confirm_settings(application, &settings);
     }
+    if (action == POMODORO_APPLICATION_ACTION_TOGGLE_OPENCODE_STATUS) {
+        pomodoro_settings_t settings = application->model.settings;
+        settings.opencode_status_enabled = !settings.opencode_status_enabled;
+        return pomodoro_application_confirm_settings(application, &settings);
+    }
+    if (action == POMODORO_APPLICATION_ACTION_ACK_OPENCODE_STATUS) {
+        if (application->page != POMODORO_APPLICATION_PAGE_MAIN) {
+            return POMODORO_APPLICATION_ERR_INVALID_STATE;
+        }
+        uint8_t acknowledged = 0U;
+        uint64_t now = application->has_last_time
+            ? application->last_time.wall_time_seconds
+            : 0U;
+        if (pomodoro_opencode_status_ack(&application->opencode_status, now,
+                                         &acknowledged)) {
+            char line[32];
+            int written = snprintf(
+                line, sizeof(line), "OC1 ACK %lu %u",
+                (unsigned long) application->opencode_status.revision,
+                (unsigned) acknowledged);
+            if (written > 0) {
+                (void) application->platform.write_opencode(
+                    application->platform.context, line);
+            }
+        }
+        return render(application, NULL, POMODORO_EVENT_NONE);
+    }
     return POMODORO_APPLICATION_ERR_INVALID_STATE;
 }
 
@@ -1181,6 +1305,12 @@ pomodoro_application_result_t pomodoro_application_confirm_settings(
         application->model.last_nonzero_volume = settings->volume;
     }
     application->model.settings = *settings;
+    pomodoro_opencode_status_set_enabled(
+        &application->opencode_status, settings->opencode_status_enabled,
+        application->has_last_time
+            ? application->last_time.wall_time_seconds
+            : 0U);
+    application->last_opencode_control_wall_time_seconds = 0U;
     if (application->model.timer.timer_state == POMODORO_TIMER_READY) {
         application->model.timer.configured_duration_seconds =
             pomodoro_duration_seconds(&application->model,

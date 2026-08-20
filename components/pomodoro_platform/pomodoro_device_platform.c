@@ -29,6 +29,9 @@ typedef struct {
     bool pending_power_action_set;
     pomodoro_application_action_t pending_power_action;
     pomodoro_orientation_resolver_t orientation;
+    char opencode_line_buffer[POMODORO_OPENCODE_MAX_LINE_LENGTH];
+    size_t opencode_line_length;
+    bool opencode_line_overflow;
 } runtime_context_t;
 
 static const char *TAG = "pomodoro_runtime";
@@ -128,6 +131,58 @@ static bool play_break_completion(void *context, uint8_t volume)
 {
     return context != NULL &&
            pomodoro_board_play_completion_tone(false, volume);
+}
+
+static bool read_opencode_line(void *context, char *line, size_t size,
+                               bool *available)
+{
+    runtime_context_t *target = context;
+    if (line == NULL || size == 0U || available == NULL) {
+        return false;
+    }
+    *available = false;
+    if (target == NULL) {
+        return true;
+    }
+    uint8_t byte = 0U;
+    while (pomodoro_board_read_usb_serial_jtag(&byte, 1U) == 1) {
+        if (byte == '\n') {
+            if (!target->opencode_line_overflow &&
+                target->opencode_line_length < size) {
+                memcpy(line, target->opencode_line_buffer,
+                       target->opencode_line_length);
+                line[target->opencode_line_length] = '\0';
+                *available = true;
+            }
+            target->opencode_line_length = 0U;
+            target->opencode_line_overflow = false;
+            return true;
+        } else if (byte == '\r') {
+            continue;
+        } else if (target->opencode_line_length <
+                   sizeof(target->opencode_line_buffer) - 1U) {
+            target->opencode_line_buffer[target->opencode_line_length++] =
+                (char) byte;
+        } else {
+            target->opencode_line_overflow = true;
+        }
+    }
+    return true;
+}
+
+static bool write_opencode(void *context, const char *line)
+{
+    runtime_context_t *target = context;
+    if (target == NULL || line == NULL) {
+        return false;
+    }
+    size_t length = strlen(line);
+    if (length == 0U || length > POMODORO_OPENCODE_MAX_LINE_LENGTH) {
+        return false;
+    }
+    return pomodoro_board_write_usb_serial_jtag(line, length) ==
+               (int) length &&
+           pomodoro_board_write_usb_serial_jtag("\n", 1U) == 1;
 }
 
 static void dispatch_action(pomodoro_application_action_t action,
@@ -341,6 +396,10 @@ esp_err_t pomodoro_platform_start(void)
     if (result != ESP_OK) {
         return fail_startup("Audio initialization failed", result);
     }
+    result = pomodoro_board_initialize_usb_serial_jtag();
+    if (result != ESP_OK) {
+        return fail_startup("USB Serial/JTAG initialization failed", result);
+    }
     pomodoro_orientation_resolver_init(&runtime.orientation);
     if (pomodoro_board_initialize_orientation() != ESP_OK) {
         ESP_LOGW(TAG, "Orientation sensor unavailable; timer keeps running");
@@ -368,6 +427,8 @@ esp_err_t pomodoro_platform_start(void)
         .render = render_view,
         .play_focus_complete = play_completion,
         .play_break_complete = play_break_completion,
+        .read_opencode_line = read_opencode_line,
+        .write_opencode = write_opencode,
     };
     pomodoro_application_result_t app_result =
         pomodoro_application_create(&runtime.application, &platform);

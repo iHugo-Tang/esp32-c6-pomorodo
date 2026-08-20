@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "pomodoro_opencode_status.h"
 #include "pomodoro_persistence.h"
 
 #ifdef __cplusplus
@@ -67,6 +68,8 @@ typedef enum {
     POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_DOWN,
     POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_UP,
     POMODORO_APPLICATION_ACTION_MANUAL_TIME_CONFIRM,
+    POMODORO_APPLICATION_ACTION_TOGGLE_OPENCODE_STATUS,
+    POMODORO_APPLICATION_ACTION_ACK_OPENCODE_STATUS,
 } pomodoro_application_action_t;
 
 typedef enum {
@@ -185,6 +188,9 @@ typedef struct {
     int8_t pixel_shift_x;
     int8_t pixel_shift_y;
     pomodoro_application_manual_time_t manual_time_draft;
+    pomodoro_opencode_state_t opencode_state;
+    uint32_t opencode_color;
+    bool opencode_acknowledgeable;
 } pomodoro_application_view_t;
 
 typedef struct {
@@ -207,6 +213,11 @@ typedef struct {
     bool (*save)(void *context, const pomodoro_persisted_state_t *state);
     /* Receives the complete read-only view after each visible state change. */
     bool (*render)(void *context, const pomodoro_application_view_t *view);
+    /* One newline-terminated protocol line, or none if no complete line is ready. */
+    bool (*read_opencode_line)(void *context, char *line, size_t size,
+                               bool *available);
+    /* Sends one protocol line (without a trailing newline) over the USB channel. */
+    bool (*write_opencode)(void *context, const char *line);
     bool (*play_focus_complete)(void *context, uint8_t volume);
     bool (*play_break_complete)(void *context, uint8_t volume);
 } pomodoro_application_platform_t;

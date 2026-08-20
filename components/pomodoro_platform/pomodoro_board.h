@@ -14,6 +14,9 @@ esp_err_t pomodoro_board_initialize_touch(void);
 esp_err_t pomodoro_board_initialize_rtc(void);
 esp_err_t pomodoro_board_initialize_controls(void);
 esp_err_t pomodoro_board_initialize_audio(void);
+esp_err_t pomodoro_board_initialize_usb_serial_jtag(void);
+int pomodoro_board_read_usb_serial_jtag(uint8_t *buffer, size_t size);
+int pomodoro_board_write_usb_serial_jtag(const void *buffer, size_t size);
 bool pomodoro_board_read_time(pomodoro_application_time_t *time);
 bool pomodoro_board_resolve_local_date(uint64_t wall_time_seconds,
                                        pomodoro_date_t *date);
