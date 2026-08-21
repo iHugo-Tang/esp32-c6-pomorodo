@@ -6,12 +6,12 @@
 
 **Status:** ready-for-human
 
-- [ ] OpenCode is fully quit and restarted before verification so the updated plugin is loaded.
-- [ ] The device is connected and actively synchronizing OpenCode Status before flashing begins.
-- [ ] Starting the supported flashing command causes the plugin to release the USB port without pausing or terminating OpenCode.
-- [ ] OpenCode remains responsive for the entire build and flash operation.
-- [ ] The latest firmware is written and verified successfully on the target device.
-- [ ] The reservation is absent after the flashing command exits.
-- [ ] The plugin reconnects automatically and OpenCode Status resumes without restarting OpenCode again.
-- [ ] Repeating the flash does not leave stale reader processes, serial handles, or reservation state.
-- [ ] Any observed failure and recovery evidence is recorded under this ticket's comments.
+- [x] OpenCode is fully quit and restarted before verification so the updated plugin is loaded.
+- [x] The device is connected and actively synchronizing OpenCode Status before flashing begins.
+- [x] Starting the supported flashing command causes the plugin to release the USB port without pausing or terminating OpenCode.
+- [x] OpenCode remains responsive for the entire build and flash operation.
+- [x] The latest firmware is written and verified successfully on the target device.
+- [x] The reservation is absent after the flashing command exits.
+- [x] The plugin reconnects automatically and OpenCode Status resumes without restarting OpenCode again.
+- [x] Repeating the flash does not leave stale reader processes, serial handles, or reservation state.
+- [x] Any observed failure and recovery evidence is recorded under this ticket's comments.
