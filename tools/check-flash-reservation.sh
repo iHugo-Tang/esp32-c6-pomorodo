@@ -89,4 +89,16 @@ grep -q "still held by another process" "$FLASH_LOG" \
   || fail "bounded-release timeout message missing"
 pass "timeout: clear failure and cleanup"
 
+# 4. Missing user state home: fail instead of reserving an unshared path.
+set +e
+env -u HOME -u XDG_STATE_HOME \
+  PATH="$CHECK_ROOT/fakebin:$PATH" \
+  "$CHECK_ROOT/tools/flash.sh" -p "$FAKE_PORT" > "$FLASH_LOG" 2>&1
+status=$?
+set -e
+[ "$status" -ne 0 ] || fail "missing user state home should fail"
+grep -q "cannot determine user state directory" "$FLASH_LOG" \
+  || fail "missing user state home error missing"
+pass "missing user state home: fails closed"
+
 echo "flash-reservation check: $checks checks passed"

@@ -122,6 +122,7 @@ export const OpenCodeStatusPlugin = async ({ project, client, directory }) => {
 
   function connect() {
     reconnectTimer = null
+    if (!reservationPath) return
     if (port) return
     if (reservation.held()) return
     const candidate = resolvePort()

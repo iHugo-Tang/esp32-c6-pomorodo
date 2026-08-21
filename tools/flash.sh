@@ -14,7 +14,8 @@ if [ -n "${XDG_STATE_HOME:-}" ]; then
 elif [ -n "${HOME:-}" ]; then
   POMODORO_STATE_DIR="${HOME}/.local/state/opencode/pomodoro-status"
 else
-  POMODORO_STATE_DIR="/tmp/opencode/pomodoro-status"
+  echo "error: cannot determine user state directory; set XDG_STATE_HOME or HOME" >&2
+  exit 1
 fi
 RESERVATION="$POMODORO_STATE_DIR/flash-reservation"
 RELEASE_TIMEOUT_S="${POMODORO_FLASH_RELEASE_TIMEOUT_S:-8}"
