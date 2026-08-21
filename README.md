@@ -59,7 +59,8 @@ flashing. Use the supported wrapper instead of calling `idf.py flash` directly:
 
 1. Connect the device and confirm its serial port, such as
    `/dev/cu.usbmodem11101`.
-2. If `.opencode/plugins/` changed, fully quit every OpenCode process and start
+2. If the user-level OpenCode Status plugin changed (under
+   `~/.config/opencode/plugin/`), fully quit every OpenCode process and start
    OpenCode again so the updated plugin is loaded.
 3. From the repository root, load ESP-IDF and run the wrapper:
 
@@ -84,6 +85,20 @@ also be given via `POMODORO_PORT` or auto-detected when exactly one
 If release times out, close another serial owner such as `idf.py monitor` and
 retry the same wrapper command. Do not use `erase-flash`; it deletes saved
 product state.
+
+## OpenCode Status
+
+The OpenCode Status plugin lives at the user level
+(`~/.config/opencode/plugin/opencode-status.js`) and loads in every OpenCode
+process, so the device can reflect whichever project you are working in. All
+processes share one user-level state directory
+(`$XDG_STATE_HOME/opencode/pomodoro-status`, default
+`~/.local/state/opencode/pomodoro-status`). The first process to load the
+plugin becomes the selected source and later processes do not steal it. Run
+`/pomodoro-select` inside any OpenCode to make that process the selected
+source, or let it fall back to the earliest alive process when the selected
+one exits or times out. Only the selected process drives the device, and a
+new selection always wakes it with a fresh state revision.
 
 The target integration uses the interfaces declared in
 `components/pomodoro_platform/include/pomodoro_platform.h` with exact,

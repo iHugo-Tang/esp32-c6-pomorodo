@@ -172,6 +172,11 @@ Status 插件释放串口后再执行 `idf.py flash`，并在成功、失败、�
 普通 `flash` 只更新 bootloader、分区表和 factory 应用地址范围；不要运行
 `erase-flash`，后者会删除保存的产品状态。
 
+OpenCode Status 插件现位于用户级配置目录（`~/.config/opencode/plugin/opencode-status.js`），
+在所有 OpenCode 进程中加载并共享上述状态目录；第一个加载的进程自动成为所选进程，
+可在任一进程中执行 `/pomodoro-select` 显式切换，所选进程退出后自动回退到仍存活的最早进程，
+只有所选进程占用 USB 串口。
+
 ## 2026-08-16 物理控制复验
 
 实机短按 PWR 暴露出应用的每秒显示策略会覆盖用户主动休眠，表现为熄屏后立即重新

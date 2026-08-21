@@ -1,5 +1,7 @@
 # 通过 USB 双向同步 OpenCode Status
 
+> **部分被 [ADR-0011](./0011-user-level-opencode-status-plugin.md) 取代**：插件现为用户级全局插件并在所有 OpenCode 进程中加载，设备状态来源由 Selected OpenCode Process 提供（显式选择 + 自动回退），烧录保留文件位于用户级共享状态目录。`OC1` 线路协议、设备解析与显示规则不变。
+
 设备与当前项目的 OpenCode 插件通过现有 USB Serial/JTAG 连接交换版本化协议，不为状态指示器或设备诊断启用 Wi-Fi、BLE 或常驻网络服务。`OC1` 短行协议只同步 OpenCode Status；独立的 `POMO1` 诊断协议只导出当前显示缓冲。USB 已由目标硬件与本地工作流验证，能在不引入配网、凭据和新依赖的情况下同时承载状态、只读诊断、固件刷写与调试；插件占用串口时，串口监视器或刷写工具需暂时取得独占访问，插件静默断开并在端口释放后重连。
 
 ## Consequences

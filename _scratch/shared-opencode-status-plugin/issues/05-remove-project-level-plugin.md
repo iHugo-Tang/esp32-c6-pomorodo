@@ -6,6 +6,6 @@
 
 **Status:** ready-for-agent
 
-- [ ] The project-level plugin directory and its check script are removed from the Pomodoro repository.
+- [x] The project-level plugin directory and its check script are removed from the Pomodoro repository.
 - [ ] A fresh OpenCode process in the Pomodoro repository loads exactly one plugin origin for OpenCode Status, and the device status, enable/disable, acknowledgement, reconnection, and flashing-release behaviors still work end to end.
-- [ ] No remaining repository file imports or references the removed project-level plugin files.
+- [x] No remaining repository file imports or references the removed project-level plugin files.

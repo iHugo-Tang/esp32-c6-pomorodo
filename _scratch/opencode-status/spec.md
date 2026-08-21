@@ -1,5 +1,7 @@
 # OpenCode Status Indicator
 
+> **部分被 [`_scratch/shared-opencode-status-plugin/spec.md`](../shared-opencode-status-plugin/spec.md) 取代**：插件已迁至用户级配置并在所有 OpenCode 进程中加载，多个进程通过显式选择 + 自动回退协调出唯一的状态来源，设备只显示所选进程的聚合状态，烧录保留也迁至用户级共享状态目录。本文档中“只汇总单个 OpenCode 进程、不合并多个独立进程”的表述仅适用于所选进程的来源；`OC1` 线路协议、设备解析与显示规则不变。
+
 Status: ready-for-agent
 
 ## Problem Statement
@@ -59,7 +61,7 @@ Status: ready-for-agent
 - 正常 `session.idle` → Completed；五秒后成为 Idle。
 - `session.error` → Error，并锁存到确认、该会话出现新工作或断开。
 - `session.deleted` 从聚合中移除该会话。
-- 插件只汇总其所在项目和单个 OpenCode 进程；首版不合并多个独立 OpenCode 进程。
+- 插件只汇总其所在项目和单个 OpenCode 进程；首版不合并多个独立 OpenCode 进程。（该表述已被用户级多进程协调取代：设备只显示所选进程的聚合状态，见 `_scratch/shared-opencode-status-plugin/spec.md`。）
 
 ## USB Protocol Decisions
 
@@ -83,7 +85,7 @@ Status: ready-for-agent
 
 - Wi-Fi、BLE、互联网服务、手机中继或云同步。
 - 在设备上回答问题、批准权限、查看会话详情或控制 OpenCode。
-- 同时合并多个 OpenCode 进程、多个项目或多台电脑。
+- 同时合并多个 OpenCode 进程、多个项目或多台电脑。（部分被取代：多进程通过显式选择 + 自动回退协调，但设备仍只显示所选进程的聚合状态，不跨进程合并。）
 - Windows 与 Linux 串口发现；首版只支持当前 macOS 工作流。
 - 改变 Pomodoro Timer、Pomodoro Set、Statistics 或完成提示规则。
 - 将 USB 状态协议扩展为固件更新或通用远程控制协议。

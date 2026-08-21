@@ -6,7 +6,7 @@
 
 **Status:** ready-for-agent
 
-- [ ] The glossary gains OpenCode Process (one running OpenCode instance with all sessions of its current project) and Selected OpenCode Process (the single process currently providing the aggregate status to the device), and the OpenCode Status entry reflects single-source selection with explicit reselection and automatic fallback.
-- [ ] A new ADR records the user-level plugin, explicit selection plus automatic fallback, the shared global revision, and the user-level flashing reservation, and explicitly supersedes the superseded statements in ADR 0010.
-- [ ] README and the hardware connection test notes describe the user-level plugin path, `/pomodoro-select`, and the user-level reservation without referencing the removed project plugin files.
-- [ ] The superseded OpenCode Status spec and its tickets note the parts replaced by this feature.
+- [x] The glossary gains OpenCode Process (one running OpenCode instance with all sessions of its current project) and Selected OpenCode Process (the single process currently providing the aggregate status to the device), and the OpenCode Status entry reflects single-source selection with explicit reselection and automatic fallback.
+- [x] A new ADR records the user-level plugin, explicit selection plus automatic fallback, the shared global revision, and the user-level flashing reservation, and explicitly supersedes the superseded statements in ADR 0010.
+- [x] README and the hardware connection test notes describe the user-level plugin path, `/pomodoro-select`, and the user-level reservation without referencing the removed project plugin files.
+- [x] The superseded OpenCode Status spec and its tickets note the parts replaced by this feature.

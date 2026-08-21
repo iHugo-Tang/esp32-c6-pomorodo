@@ -1,5 +1,7 @@
 # 02 — Add the project OpenCode Status plugin
 
+> **已被取代**：项目级插件迁移到用户级配置，见 `_scratch/shared-opencode-status-plugin/`（spec 与 issue 01–06）。`OC1` 协议与设备行为不变。
+
 **What to build:** Add a dependency-free project OpenCode plugin that maps current OpenCode events into the accepted aggregate status protocol, communicates over the selected macOS USB modem port, honors device `ENABLED`, `DISABLED`, and `ACK` messages, and never interrupts OpenCode when the device is absent or busy.
 
 **Blocked by:** None — the wire contract is fixed in the accepted spec and ADR 0010, so this may proceed independently of issue 01.

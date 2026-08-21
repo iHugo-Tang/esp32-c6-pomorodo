@@ -9,5 +9,5 @@
 - [x] `tools/flash.sh` creates the reservation marker (containing its PID) in the shared user-level state directory used by all plugin instances, and waits for the serial port to be released before flashing.
 - [x] The release wait is bounded by `POMODORO_FLASH_RELEASE_TIMEOUT_S` and fails with a clear message on timeout; the marker is removed on success, build/flash failure, timeout, and interruption.
 - [x] The script never sends stop or termination signals to any OpenCode process.
-- [x] With the selected OpenCode running in a different project, flashing from the Pomodoro repository still releases the serial link and the plugin reconnects automatically after the reservation is removed.
-- [x] The reservation check script covers acquisition, stale-PID release, cleanup on success and failure, and bounded-timeout failure, all against the shared path.
+- [ ] With the selected OpenCode running in a different project, flashing from the Pomodoro repository still releases the serial link and the plugin reconnects automatically after the reservation is removed.
+- [ ] The reservation check script covers acquisition, stale-PID release, cleanup on success and failure, and bounded-timeout failure, all against the shared path.
