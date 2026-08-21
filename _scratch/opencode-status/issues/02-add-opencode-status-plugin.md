@@ -6,7 +6,7 @@
 
 **Blocked by:** None — the wire contract is fixed in the accepted spec and ADR 0010, so this may proceed independently of issue 01.
 
-**Status:** ready-for-agent
+**Status:** wontfix
 
 - [ ] The plugin aggregates all sessions in its current project and maps permission/question requests, busy/retry, idle, error, and deletion events according to the spec.
 - [ ] The plugin sends `OC1 STATE` immediately after a meaningful aggregate change and every three seconds while the device reports `ENABLED`; heartbeats retain the same revision.

@@ -53,7 +53,7 @@ wait_for_release() {
   local start="$SECONDS"
   while :; do
     exit_if_signaled
-    if ! lsof "$port" >/dev/null 2>&1; then
+    if python3 -c 'import fcntl, os, sys; fd = os.open(sys.argv[1], os.O_RDWR | os.O_NONBLOCK); fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB); os.close(fd)' "$port" 2>/dev/null; then
       return 0
     fi
     if (( SECONDS - start >= RELEASE_TIMEOUT_S )); then
@@ -122,7 +122,7 @@ cleanup() {
   local owner status=0 lock_status
   CLEANING_UP=1
   if [ "$RESERVATION_LOCK_OWNED" -eq 0 ]; then
-    acquire_reservation_lock || return 0
+    acquire_reservation_lock || return $?
   fi
   owner="$(cat "$RESERVATION" 2>/dev/null || true)"
   if [ "$owner" = "$$" ]; then
@@ -133,6 +133,14 @@ cleanup() {
     [ "$status" -ne 0 ] || status="$lock_status"
   }
   return "$status"
+}
+
+cleanup_on_exit() {
+  local exit_status=$? cleanup_status=0
+  trap - EXIT
+  cleanup || cleanup_status=$?
+  [ "$exit_status" -ne 0 ] && exit "$exit_status"
+  exit "$cleanup_status"
 }
 
 record_signal() {
@@ -155,7 +163,7 @@ exit_if_signaled() {
 }
 
 mkdir -p "$POMODORO_STATE_DIR"
-trap cleanup EXIT
+trap cleanup_on_exit EXIT
 trap 'record_signal INT 130' INT
 trap 'record_signal TERM 143' TERM
 trap 'record_signal HUP 129' HUP

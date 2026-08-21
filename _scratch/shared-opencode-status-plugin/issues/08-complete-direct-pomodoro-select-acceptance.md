@@ -10,7 +10,7 @@
 - [x] `/pomodoro-select` is registered through the supported direct TUI command API without the removed server command hook.
 - [x] Exactly one `/pomodoro-select` slash command remains, and executing it creates no Task, prompt, session message, or model request.
 - [x] Runnable checks exercise the current command registration, direct current-process selection, missing and ambiguous identity, reselection, revision growth, and Toast outcomes.
-- [ ] After fully quitting and restarting OpenCode, two processes in different projects verify autocomplete, no-steal startup, direct switching, serial handoff, fallback after exit, and zero LLM requests.
+- [x] After fully quitting and restarting OpenCode, two processes in different projects verify autocomplete, no-steal startup, direct switching, serial handoff, fallback after exit, and zero LLM requests.
 - [x] The restart-based acceptance evidence and any remaining limitations are recorded in the tracker.
 
 ## Comments

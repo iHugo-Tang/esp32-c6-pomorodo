@@ -37,16 +37,20 @@ fi
 if [ -n "${FAKE_REPLACEMENT_OWNER:-}" ]; then
   printf '%s\n' "$FAKE_REPLACEMENT_OWNER" > "$FAKE_RESERVATION"
 fi
+if [ -n "${FAKE_LOCK_OWNER:-}" ]; then
+  printf '%s\n' "$FAKE_LOCK_OWNER" > "${FAKE_RESERVATION}.lock"
+fi
 sleep "${FAKE_IDF_SLEEP:-0.2}"
 exit "${FAKE_IDF_EXIT:-0}"
 EOF
 chmod +x "$CHECK_ROOT/fakebin/idf.py"
 
-run_flash() {
-  set +e
+flash() {
   PATH="$CHECK_ROOT/fakebin:$PATH" \
-    FAKE_IDF_EXIT="${1:-0}" \
-    FAKE_REPLACEMENT_OWNER="${2:-}" \
+    FAKE_IDF_EXIT="${FAKE_IDF_EXIT:-0}" \
+    FAKE_IDF_SLEEP="${FAKE_IDF_SLEEP:-}" \
+    FAKE_REPLACEMENT_OWNER="${FAKE_REPLACEMENT_OWNER:-}" \
+    FAKE_LOCK_OWNER="${FAKE_LOCK_OWNER:-}" \
     FAKE_RESERVATION="$RESERVATION" \
     RESERVATION_CHECK="$SAW_RESERVATION" \
     IDF_ARGS_LOG="$IDF_ARGS_LOG" \
@@ -54,6 +58,12 @@ run_flash() {
     XDG_STATE_HOME="$CHECK_ROOT/.local/state" \
     POMODORO_FLASH_RELEASE_TIMEOUT_S=2 \
     "$CHECK_ROOT/tools/flash.sh" -p "$FAKE_PORT" > "$FLASH_LOG" 2>&1
+}
+
+run_flash() {
+  set +e
+  FAKE_IDF_EXIT="${1:-0}" FAKE_REPLACEMENT_OWNER="${2:-}" \
+    FAKE_LOCK_OWNER="${3:-}" flash
   local status=$?
   set -e
   return $status
@@ -86,9 +96,15 @@ grep -q "reservation-present" "$SAW_RESERVATION" \
 [ ! -e "$RESERVATION" ] || fail "reservation left behind after flash failure"
 pass "flash failure: reservation removed"
 
-# 3. Timeout: a process keeps holding the port; clear failure and cleanup.
-( exec 3<>"$FAKE_PORT"; exec sleep 30 ) &
+# 3. Timeout: a process keeps the same exclusive lock used by pyserial.
+LOCK_READY="$CHECK_ROOT/port-lock-ready"
+python3 -c 'import fcntl, os, sys, time; fd = os.open(sys.argv[1], os.O_RDWR); fcntl.flock(fd, fcntl.LOCK_EX); open(sys.argv[2], "w").close(); time.sleep(30)' "$FAKE_PORT" "$LOCK_READY" &
 HOLDER=$!
+for _ in {1..50}; do
+  [ -e "$LOCK_READY" ] && break
+  sleep 0.05
+done
+[ -e "$LOCK_READY" ] || fail "port lock holder did not start"
 run_flash 0 && fail "held port should time out"
 kill "$HOLDER" 2>/dev/null || true
 wait "$HOLDER" 2>/dev/null || true
@@ -143,30 +159,35 @@ run_flash 0 "$$" || fail "flash with replacement owner exited non-zero"
 rm -f "$RESERVATION"
 pass "cleanup: preserves a replacement owner"
 
+# 8. Cleanup lock contention: retry for the bound and report cleanup failure.
+sleep 30 &
+LOCK_HOLDER=$!
+run_flash 0 "" "$LOCK_HOLDER" && fail "cleanup lock contention should fail"
+kill "$LOCK_HOLDER" 2>/dev/null || true
+wait "$LOCK_HOLDER" 2>/dev/null || true
+grep -q "timed out acquiring flash reservation lock" "$FLASH_LOG" \
+  || fail "cleanup lock timeout message missing"
+[ -e "$RESERVATION" ] || fail "contended cleanup removed the reservation without its lock"
+rm -f "$RESERVATION" "${RESERVATION}.lock"
+pass "cleanup lock contention: bounded retry and non-zero exit"
+
 check_interruption() {
-  local signal="$1" expected_status="$2" interrupted_flash_pid idf_pid status
+  local signal="$1" expected_status="$2" flash_job_pid interrupted_flash_pid idf_pid status
   rm -f "$IDF_PID_LOG"
   set -m
-  PATH="$CHECK_ROOT/fakebin:$PATH" \
-    FAKE_IDF_SLEEP=30 \
-    FAKE_RESERVATION="$RESERVATION" \
-    RESERVATION_CHECK="$SAW_RESERVATION" \
-    IDF_ARGS_LOG="$IDF_ARGS_LOG" \
-    FAKE_IDF_PID_LOG="$IDF_PID_LOG" \
-    XDG_STATE_HOME="$CHECK_ROOT/.local/state" \
-    POMODORO_FLASH_RELEASE_TIMEOUT_S=2 \
-    "$CHECK_ROOT/tools/flash.sh" -p "$FAKE_PORT" > "$FLASH_LOG" 2>&1 &
-  interrupted_flash_pid=$!
+  FAKE_IDF_SLEEP=30 flash &
+  flash_job_pid=$!
   set +m
   for _ in {1..50}; do
     [ -s "$IDF_PID_LOG" ] && break
     sleep 0.05
   done
   [ -s "$IDF_PID_LOG" ] || fail "$signal interrupted flash did not start idf.py"
+  interrupted_flash_pid="$(cat "$RESERVATION")"
   idf_pid="$(cat "$IDF_PID_LOG")"
   kill -s "$signal" "$interrupted_flash_pid"
   set +e
-  wait "$interrupted_flash_pid"
+  wait "$flash_job_pid"
   status=$?
   set -e
   [ "$status" -eq "$expected_status" ] \
@@ -177,7 +198,7 @@ check_interruption() {
   pass "$signal interruption: child stopped and ownership cleaned"
 }
 
-# 8-9. Interruption: stop the flash process group, then remove marker and lock.
+# 9-10. Interruption: stop the flash process group, then remove marker and lock.
 check_interruption TERM 143
 check_interruption INT 130
 

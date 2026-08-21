@@ -69,7 +69,7 @@ Status: ready-for-agent
 ### 全局 USB 烧录保留
 
 - 保留文件迁移到用户级状态目录；`tools/flash.sh` 与所有插件实例使用同一路径。
-- 保留期间所有插件实例不得竞选或打开串口；保留释放后自动恢复选举与连接。
+- 保留期间保留当前 Selected OpenCode Process，但所有插件实例不得竞选、发布状态或打开串口；保留释放后同一进程自动恢复连接，只有它已退出时才回退到最早存活进程。
 - 保留写入 PID、存在且 PID 存活时视为持有；PID 失效或文件移除即释放。
 - `tools/flash.sh` 保持超时等待、成功/失败/中断统一清理、绝不向 OpenCode 进程发送信号的既有保证。
 
@@ -81,7 +81,7 @@ Status: ready-for-agent
 
 ### 测试接缝
 
-只保留一个纯 Node 核心接缝：把事件映射、多会话聚合、进程仲裁、全局 revision 与保留协议做成无硬件依赖的纯模块，沿用现有 `check-opencode-status.mjs` 的 assert 风格可运行检查。插件接线层（串口、定时器、文件系统、OpenCode hook）保持薄层，不单独测试；通过端到端验收覆盖。
+保留一个纯 Node 核心接缝：把事件映射、多会话聚合、进程仲裁、全局 revision 与保留协议做成无硬件依赖的纯模块，沿用现有 `check-opencode-status.mjs` 的 assert 风格可运行检查。另保留一个最小 TUI 命令契约检查，以模拟 API 加载真实命令并验证唯一注册、直接执行与 Toast；串口、定时器和 OpenCode 事件 hook 等其余接线层保持薄层，不单独测试，通过端到端验收覆盖。
 
 ### 核心检查覆盖
 

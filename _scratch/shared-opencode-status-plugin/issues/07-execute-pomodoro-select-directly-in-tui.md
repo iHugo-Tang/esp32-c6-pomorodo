@@ -11,7 +11,7 @@
 - [x] The TUI displays success, pending-handoff, and failure Toast feedback without requiring a session reply.
 - [x] The old Markdown prompt command and server command hook are removed, leaving exactly one `/pomodoro-select` registration.
 - [x] Runnable checks cover current-process targeting, missing or ambiguous process identity, reselection, and revision behavior.
-- [ ] After fully restarting OpenCode, two processes verify autocomplete, no-steal startup, direct switching, fallback, and zero LLM requests.
+- [x] After fully restarting OpenCode, two processes verify autocomplete, no-steal startup, direct switching, fallback, and zero LLM requests.
 - [x] The feature specification, ticket 03, and architecture decision describe the direct TUI command path.
 
 ## Comments
