@@ -41,7 +41,7 @@ Status: ready-for-agent
 
 - 插件实现从 Pomodoro 仓库 `.opencode/plugins/` 迁至用户配置仓库，作为全局插件加载；Pomodoro 仓库不再包含插件文件，避免同一插件被加载两次。
 - 插件不引入 npm 依赖，不建立额外服务；只使用 Node 内置能力与 macOS `/dev/cu.usbmodem*` 设备文件。
-- `/pomodoro-select` 作为全局命令提供；插件通过 `command.execute.before` hook 拦截并在当前进程上执行选择，用 Toast 与简短会话回复给出成功反馈。
+- `/pomodoro-select` 作为 TUI 插件命令注册（`tui.json` 加载 `plugin/pomodoro-select.tsx`），出现在斜杠自动补全与命令面板中，在当前进程上直接执行选择，不创建 Task、会话消息或模型请求；成功、待移交与失败均通过 TUI Toast 反馈。旧的 Markdown 提示命令与服务器 `command.execute.before` hook 被移除，全局只保留这一处 `/pomodoro-select` 注册。
 - 所有加载该用户插件的 OpenCode 进程都参与协调，不区分交互式 TUI 与一次性 CLI（插件 API 没有稳定标志，不依赖脆弱的启动参数猜测）。
 
 ### 用户级运行状态目录
@@ -86,7 +86,7 @@ Status: ready-for-agent
 ### 核心检查覆盖
 
 - 首实例自动成为所选进程，后续实例不抢占。
-- `/pomodoro-select` 原子切换、开启新状态周期并给出反馈。
+- `/pomodoro-select` 在 TUI 中直接执行：以当前进程 PID 为目标，原子切换、开启新状态周期并通过 Toast 给出成功、待移交与失败反馈。
 - 所选进程心跳超时或退出后回退最早存活实例；无存活实例时断开。
 - 过期实例记录清理与并发竞选唯一性。
 - 任意时刻至多一个实例持有串口（竞选 + 保留的互斥）。

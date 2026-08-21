@@ -98,7 +98,9 @@ plugin becomes the selected source and later processes do not steal it. Run
 `/pomodoro-select` inside any OpenCode to make that process the selected
 source, or let it fall back to the earliest alive process when the selected
 one exits or times out. Only the selected process drives the device, and a
-new selection always wakes it with a fresh state revision.
+new selection always wakes it with a fresh state revision. `/pomodoro-select`
+is a TUI command that executes directly in the current process without a
+model request, and only the selected process owns the serial port.
 
 The target integration uses the interfaces declared in
 `components/pomodoro_platform/include/pomodoro_platform.h` with exact,

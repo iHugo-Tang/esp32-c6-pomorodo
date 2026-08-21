@@ -11,7 +11,7 @@ OpenCode Status 插件从项目级 `.opencode/plugins/` 迁至用户配置仓库
 
 - 插件实现从 Pomodoro 仓库 `.opencode/plugins/` 迁至用户配置仓库 `plugin/opencode-status.js`，纯协调核心为 `plugin/opencode-status-core.mjs`；Pomodoro 仓库不再包含插件文件，避免同一插件被加载两次。
 - 所有加载该插件的 OpenCode 进程在共享状态目录 `${XDG_STATE_HOME:-$HOME/.local/state}/opencode/pomodoro-status/` 下注册实例（随机实例 ID、PID、启动时间、心跳），第一个成功注册的实例自动成为所选进程，后续实例不抢占。
-- 在任一进程中执行 `/pomodoro-select`（全局命令，插件通过 `command.execute.before` 拦截）原子地把所选进程切换为当前进程，并总是开启新的状态周期：分配新的全局 revision、清除旧来源的本地确认并唤醒设备，即使聚合颜色未变化。
+- 在任一进程中执行 `/pomodoro-select`（TUI 插件命令，`tui.json` 加载 `plugin/pomodoro-select.tsx`，不创建 Task、会话消息或模型请求）直接以当前进程 PID 为目标原子地把所选进程切换为当前进程，并总是开启新的状态周期：分配新的全局 revision、清除旧来源的本地确认并唤醒设备，即使聚合颜色未变化。选择结果通过 TUI Toast 反馈；服务器插件不再注册 `command.execute.before` hook，全局只保留这一处 `/pomodoro-select` 注册。
 - 所选进程心跳超时或退出后，其余实例按启动时间回退到最早的存活实例；没有存活实例时断开等待。短暂存活的辅助进程不引入额外启发式，回退目标始终是仍在运行的最早进程。
 - 全局 revision 在共享状态目录中单调递增、跨进程共享；来源切换与所选进程的聚合状态变化都会递增，心跳保持同一 revision，ACK 只作用于当前已发布 revision。
 - 只有所选进程打开 USB 串口并发送三秒心跳；非所选进程持续聚合事件但不发送。存储不可用（目录无法创建、写失败或锁超时）时插件 fail closed，不连接、不竞选，恢复后自动重连。
