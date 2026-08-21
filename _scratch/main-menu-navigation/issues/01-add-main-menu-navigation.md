@@ -17,5 +17,5 @@ predictable Back navigation through Menu to Main.
       returns to Main.
 - [x] Application navigation is covered through the public dispatch/view seam,
       and the complete host test suite and ESP-IDF firmware build pass.
-- [x] The updated firmware is exercised on the target device and the ticket
+- [ ] The updated firmware is exercised on the target device and the ticket
       records any remaining human-only visual verification.

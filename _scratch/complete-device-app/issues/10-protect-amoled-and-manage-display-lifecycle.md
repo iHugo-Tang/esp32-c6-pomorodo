@@ -11,7 +11,7 @@
 - [x] The first touch while off wakes only the display; later input works normally and restores chosen brightness.
 - [x] Timer completion wakes the display and preserves visual feedback even when sound is muted.
 - [x] Static content receives an unobtrusive periodic ±2 px shift without moving blocking dialogs incorrectly.
-- [x] Host timing tests and hardware tests cover idle thresholds, wake consumption, completion wake, and brightness restoration.
+- [ ] Host timing tests and hardware tests cover idle thresholds, wake consumption, completion wake, and brightness restoration.
 
 ## Comments
 

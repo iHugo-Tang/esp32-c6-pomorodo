@@ -4,7 +4,7 @@
 
 **Blocked by:** 03 — pomodoro-select command with feedback.
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 - [x] `/pomodoro-select` appears in TUI slash autocomplete and executes plugin code directly without creating a Task, prompt, session message, or model request.
 - [x] Selecting or reselecting the current OpenCode Process is atomic, increments the shared revision, clears previous local acknowledgement state, and wakes the device even when the aggregate color is unchanged.

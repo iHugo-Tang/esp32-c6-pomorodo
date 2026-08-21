@@ -18,7 +18,13 @@ else
   exit 1
 fi
 RESERVATION="$POMODORO_STATE_DIR/flash-reservation"
+RESERVATION_LOCK="${RESERVATION}.lock"
 RELEASE_TIMEOUT_S="${POMODORO_FLASH_RELEASE_TIMEOUT_S:-8}"
+RESERVATION_LOCK_OWNED=0
+FLASH_PID=""
+SIGNAL_NAME=""
+SIGNAL_STATUS=0
+CLEANING_UP=0
 
 # Resolve an explicit port from the arguments without consuming them.
 PORT=""
@@ -46,6 +52,7 @@ wait_for_release() {
   local port="$1"
   local start="$SECONDS"
   while :; do
+    exit_if_signaled
     if ! lsof "$port" >/dev/null 2>&1; then
       return 0
     fi
@@ -58,18 +65,120 @@ wait_for_release() {
   done
 }
 
-cleanup() {
-  rm -f "$RESERVATION"
+acquire_reservation_lock() {
+  local start="$SECONDS"
+  while :; do
+    if /usr/bin/shlock -p "$$" -f "$RESERVATION_LOCK"; then
+      RESERVATION_LOCK_OWNED=1
+      exit_if_signaled
+      return 0
+    fi
+    exit_if_signaled
+    if (( SECONDS - start >= RELEASE_TIMEOUT_S )); then
+      echo "error: timed out acquiring flash reservation lock" >&2
+      return 1
+    fi
+    sleep 0.1
+  done
 }
-trap cleanup EXIT INT TERM HUP
+
+release_reservation_lock() {
+  local owner status=0
+  [ "$RESERVATION_LOCK_OWNED" -eq 1 ] || return 0
+  owner="$(cat "$RESERVATION_LOCK" 2>/dev/null || true)"
+  if [ "$owner" = "$$" ]; then
+    rm -f "$RESERVATION_LOCK" || status=$?
+  fi
+  RESERVATION_LOCK_OWNED=0
+  return "$status"
+}
+
+pid_is_alive() {
+  case "${1:-}" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  kill -0 "$1" 2>/dev/null
+}
+
+acquire_reservation() {
+  local owner tmp
+  acquire_reservation_lock || return 1
+  owner="$(cat "$RESERVATION" 2>/dev/null || true)"
+  if pid_is_alive "$owner"; then
+    release_reservation_lock
+    echo "error: flash reservation is already held by process $owner" >&2
+    return 1
+  fi
+  tmp="${RESERVATION}.$$.$RANDOM.tmp"
+  if ! printf '%s\n' "$$" > "$tmp" || ! mv -f "$tmp" "$RESERVATION"; then
+    rm -f "$tmp"
+    release_reservation_lock
+    return 1
+  fi
+  release_reservation_lock
+}
+
+cleanup() {
+  local owner status=0 lock_status
+  CLEANING_UP=1
+  if [ "$RESERVATION_LOCK_OWNED" -eq 0 ]; then
+    acquire_reservation_lock || return 0
+  fi
+  owner="$(cat "$RESERVATION" 2>/dev/null || true)"
+  if [ "$owner" = "$$" ]; then
+    rm -f "$RESERVATION" || status=$?
+  fi
+  release_reservation_lock || {
+    lock_status=$?
+    [ "$status" -ne 0 ] || status="$lock_status"
+  }
+  return "$status"
+}
+
+record_signal() {
+  local signal="$1" status="$2"
+  SIGNAL_NAME="$signal"
+  SIGNAL_STATUS="$status"
+  forward_pending_signal
+}
+
+forward_pending_signal() {
+  if [ -n "$FLASH_PID" ] && [ -n "$SIGNAL_NAME" ]; then
+    kill -s "$SIGNAL_NAME" -- "-$FLASH_PID" 2>/dev/null || true
+  fi
+}
+
+exit_if_signaled() {
+  if [ "$SIGNAL_STATUS" -ne 0 ] && [ "$CLEANING_UP" -eq 0 ]; then
+    exit "$SIGNAL_STATUS"
+  fi
+}
 
 mkdir -p "$POMODORO_STATE_DIR"
+trap cleanup EXIT
+trap 'record_signal INT 130' INT
+trap 'record_signal TERM 143' TERM
+trap 'record_signal HUP 129' HUP
 # Reserve before the port is opened; the plugin observes this file.
-printf '%s\n' "$$" > "$RESERVATION"
+acquire_reservation
+exit_if_signaled
 
 if [ -n "$PORT" ]; then
   echo "Waiting for OpenCode to release $PORT ..."
   wait_for_release "$PORT" || exit 1
 fi
+exit_if_signaled
 
-idf.py "$@" flash
+set -m
+idf.py "$@" flash &
+FLASH_PID=$!
+set +m
+forward_pending_signal
+if wait "$FLASH_PID"; then
+  status=0
+else
+  status=$?
+fi
+FLASH_PID=""
+exit_if_signaled
+exit "$status"
