@@ -111,11 +111,13 @@ static void test_priority_and_revision_dedup(void)
            POMODORO_OPENCODE_STATE_IDLE);
     assert(!pomodoro_opencode_status_take_wake(&status));
 
-    /* Same-revision mask change still updates the display without a wake. */
+    /* A conflicting mask for the current revision is not a heartbeat. */
     pomodoro_opencode_status_apply_state(&status, 5U, 0x02U, 60U);
     assert(!pomodoro_opencode_status_take_wake(&status));
     assert(pomodoro_opencode_status_resolve(&status, 60U) ==
-           POMODORO_OPENCODE_STATE_WAITING);
+           POMODORO_OPENCODE_STATE_IDLE);
+    pomodoro_opencode_status_tick(&status, 60U);
+    assert(!pomodoro_opencode_status_connected(&status));
 }
 
 static void test_completed_expires_after_five_seconds(void)

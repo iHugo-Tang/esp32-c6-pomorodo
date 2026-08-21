@@ -123,11 +123,12 @@ void pomodoro_opencode_status_apply_state(
     if (status == NULL || !status->enabled) {
         return;
     }
+    uint8_t next_mask = mask_bits(mask);
     if (status->connected && status->has_revision &&
-        revision < status->revision) {
+        (revision < status->revision ||
+         (revision == status->revision && next_mask != status->raw_mask))) {
         return;
     }
-    uint8_t next_mask = mask_bits(mask);
     bool first_state = !status->has_revision;
     bool reconnecting = status->has_revision && !status->connected;
     bool revision_changed = status->has_revision &&

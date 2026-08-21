@@ -2802,6 +2802,47 @@ static void test_opencode_status_renders_priority_and_wakes_display(void)
     pomodoro_application_destroy(application);
 }
 
+static void test_opencode_status_wakes_auto_sleep_without_changing_pomodoro(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_wall_time_seconds = 100U;
+    fake_enable_journal(&fake);
+    pomodoro_application_t *application = boot_application(&fake);
+
+    fake.now_wall_time_seconds = 400U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(!fake.rendered_view.display_awake);
+
+    pomodoro_timer_state_t timer_state = fake.rendered_view.timer_state;
+    uint32_t remaining_seconds = fake.rendered_view.remaining_seconds;
+    uint8_t set_progress = fake.rendered_view.set_progress;
+    uint16_t completed_pomodoros =
+        fake.rendered_view.today_completed_pomodoros;
+    uint32_t completed_focus_seconds =
+        fake.rendered_view.today_completed_focus_seconds;
+
+    fake_enqueue_opencode_line(&fake, "OC1 STATE 1 4");
+    fake.now_wall_time_seconds = 401U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.display_awake);
+    assert(fake.rendered_view.opencode_state ==
+           POMODORO_OPENCODE_STATE_WORKING);
+    assert(fake.rendered_view.timer_state == timer_state);
+    assert(fake.rendered_view.remaining_seconds == remaining_seconds);
+    assert(fake.rendered_view.set_progress == set_progress);
+    assert(fake.rendered_view.today_completed_pomodoros ==
+           completed_pomodoros);
+    assert(fake.rendered_view.today_completed_focus_seconds ==
+           completed_focus_seconds);
+
+    pomodoro_application_destroy(application);
+}
+
 static void test_opencode_status_ack_reveals_next_priority(void)
 {
     fake_platform_t fake;
@@ -3052,6 +3093,7 @@ int main(void)
     test_year_month_change_converges_day();
     test_local_midnight_decides_statistics_day();
     test_opencode_status_renders_priority_and_wakes_display();
+    test_opencode_status_wakes_auto_sleep_without_changing_pomodoro();
     test_opencode_status_ack_reveals_next_priority();
     test_opencode_status_switch_persists_and_disables();
     test_pomodoro_completion_transition_migration_defaults_to_ten_seconds();
