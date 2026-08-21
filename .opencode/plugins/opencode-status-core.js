@@ -140,7 +140,7 @@ export function createProtocol() {
 }
 
 // Cooperative USB port reservation. The flashing command writes a
-// project-scoped marker containing its PID before opening the port; the plugin
+// user-scoped marker containing its PID before opening the port; the plugin
 // polls it and releases the serial link for the duration. Pure transitions so
 // the plugin can be wired to timers and fs without losing testability.
 export function createReservation() {

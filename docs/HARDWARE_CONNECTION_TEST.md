@@ -167,7 +167,7 @@ tools/flash.sh -p /dev/cu.usbmodem11101
 idf.py -p /dev/cu.usbmodem11101 monitor
 ```
 
-`tools/flash.sh` 保留 USB 端口（写入 `.pomodoro/flash-reservation`），等 OpenCode
+`tools/flash.sh` 保留 USB 端口（写入用户级 `~/.local/state/opencode/pomodoro-status/flash-reservation`，或 `$XDG_STATE_HOME` 下的对应路径），等 OpenCode
 Status 插件释放串口后再执行 `idf.py flash`，并在成功、失败、超时或中断时清理保留；
 普通 `flash` 只更新 bootloader、分区表和 factory 应用地址范围；不要运行
 `erase-flash`，后者会删除保存的产品状态。

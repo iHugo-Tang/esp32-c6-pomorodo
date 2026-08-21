@@ -10,14 +10,14 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CHECK_ROOT="$(mktemp -d)"
 trap 'rm -rf "$CHECK_ROOT"' EXIT
 
-mkdir -p "$CHECK_ROOT/tools" "$CHECK_ROOT/.pomodoro" "$CHECK_ROOT/fakebin"
+mkdir -p "$CHECK_ROOT/.local/state/opencode/pomodoro-status" "$CHECK_ROOT/tools" "$CHECK_ROOT/fakebin"
 cp "$ROOT/tools/flash.sh" "$CHECK_ROOT/tools/flash.sh"
 chmod +x "$CHECK_ROOT/tools/flash.sh"
 
 FAKE_PORT="$CHECK_ROOT/fake-port"
 : > "$FAKE_PORT"
 
-RESERVATION="$CHECK_ROOT/.pomodoro/flash-reservation"
+RESERVATION="$CHECK_ROOT/.local/state/opencode/pomodoro-status/flash-reservation"
 SAW_RESERVATION="$CHECK_ROOT/reservation-seen"
 FLASH_LOG="$CHECK_ROOT/flash.log"
 IDF_ARGS_LOG="$CHECK_ROOT/idf-args.log"
@@ -43,6 +43,7 @@ run_flash() {
     FAKE_RESERVATION="$RESERVATION" \
     RESERVATION_CHECK="$SAW_RESERVATION" \
     IDF_ARGS_LOG="$IDF_ARGS_LOG" \
+    XDG_STATE_HOME="$CHECK_ROOT/.local/state" \
     POMODORO_FLASH_RELEASE_TIMEOUT_S=2 \
     "$CHECK_ROOT/tools/flash.sh" -p "$FAKE_PORT" > "$FLASH_LOG" 2>&1
   local status=$?

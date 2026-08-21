@@ -11,6 +11,13 @@ const HEARTBEAT_MS = 3000
 const RECONNECT_MS = 2000
 const RESERVATION_POLL_MS = 500
 
+function getReservationPath() {
+  const stateHome = process.env.XDG_STATE_HOME ||
+    (process.env.HOME ? path.join(process.env.HOME, ".local", "state") : null)
+  if (!stateHome) return null
+  return path.join(stateHome, "opencode", "pomodoro-status", "flash-reservation")
+}
+
 export const OpenCodeStatusPlugin = async ({ project, client, directory }) => {
   const log = (message) => {
     try {
@@ -22,7 +29,7 @@ export const OpenCodeStatusPlugin = async ({ project, client, directory }) => {
 
   const protocol = createProtocol()
   const reservation = createReservation()
-  const reservationPath = path.join(directory, ".pomodoro", "flash-reservation")
+  const reservationPath = getReservationPath()
   let port = null
   let outFd = -1
   let reader = null
@@ -151,6 +158,9 @@ export const OpenCodeStatusPlugin = async ({ project, client, directory }) => {
   }
 
   function pollReservation() {
+    if (!reservationPath) {
+      return
+    }
     let exists = false
     let pidAlive = true
     try {

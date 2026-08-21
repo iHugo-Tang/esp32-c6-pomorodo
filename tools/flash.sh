@@ -1,15 +1,22 @@
 #!/usr/bin/env bash
-# Supported firmware flashing flow. Reserves the project USB port so the
-# OpenCode Status plugin releases its serial link before `idf.py flash` opens
-# it, then always removes the reservation. Never signals the OpenCode process.
+# Supported firmware flashing flow. Reserves the user-level USB state directory
+# marker so the OpenCode Status plugin releases its serial link before `idf.py
+# flash` opens it, then always removes the reservation. Never signals the
+# OpenCode process.
 #
 # Usage: tools/flash.sh [-p PORT] [idf.py flash arguments...]
 #   Port resolution: explicit -p/--port, else $POMODORO_PORT, else the sole
 #   /dev/cu.usbmodem* device. If none can be resolved the wait is skipped.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RESERVATION="$ROOT/.pomodoro/flash-reservation"
+if [ -n "${XDG_STATE_HOME:-}" ]; then
+  POMODORO_STATE_DIR="${XDG_STATE_HOME}/opencode/pomodoro-status"
+elif [ -n "${HOME:-}" ]; then
+  POMODORO_STATE_DIR="${HOME}/.local/state/opencode/pomodoro-status"
+else
+  POMODORO_STATE_DIR="/tmp/opencode/pomodoro-status"
+fi
+RESERVATION="$POMODORO_STATE_DIR/flash-reservation"
 RELEASE_TIMEOUT_S="${POMODORO_FLASH_RELEASE_TIMEOUT_S:-8}"
 
 # Resolve an explicit port from the arguments without consuming them.
@@ -55,7 +62,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM HUP
 
-mkdir -p "$ROOT/.pomodoro"
+mkdir -p "$POMODORO_STATE_DIR"
 # Reserve before the port is opened; the plugin observes this file.
 printf '%s\n' "$$" > "$RESERVATION"
 

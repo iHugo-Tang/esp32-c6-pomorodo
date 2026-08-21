@@ -72,7 +72,8 @@ flashing. Use the supported wrapper instead of calling `idf.py flash` directly:
    wrapper then removes its reservation and OpenCode Status reconnects
    automatically.
 
-The wrapper writes `.pomodoro/flash-reservation` (containing its PID) before
+The wrapper writes `opencode/pomodoro-status/flash-reservation` in
+`$XDG_STATE_HOME` (or `~/.local/state` if unset) (containing its PID) before
 opening the port, waits up to `POMODORO_FLASH_RELEASE_TIMEOUT_S` (default 8 s)
 for the OpenCode Status plugin to release the serial link, runs `idf.py flash`,
 and always removes the reservation on success, failure, interruption, or
