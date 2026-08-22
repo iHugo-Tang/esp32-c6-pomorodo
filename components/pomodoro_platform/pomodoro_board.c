@@ -42,6 +42,7 @@
 #define DISPLAY_WIDTH 480U
 #define DISPLAY_HEIGHT 480U
 #define DRAW_BUFFER_ROWS 20U
+#define SCREENSHOT_STALL_TIMEOUT_US 30000000LL
 #define I2C_TIMEOUT_MS 250
 #define AXP2101_ADDRESS 0x34U
 #define PCF85063_ADDRESS 0x51U
@@ -90,6 +91,7 @@ static bool audio_busy;
 static bool queued_focus_tone;
 static uint8_t queued_tone_volume;
 static bool screenshot_active;
+static int64_t screenshot_last_progress_us;
 
 static bool write_usb_all(const void *buffer, size_t size)
 {
@@ -114,6 +116,7 @@ static void capture_flush(lv_event_t *event)
     if (!screenshot_active) {
         return;
     }
+    screenshot_last_progress_us = esp_timer_get_time();
     lv_area_t *area = lv_event_get_param(event);
     lv_draw_buf_t *draw_buffer = lv_display_get_buf_active(board.display);
     if (area == NULL || draw_buffer == NULL || draw_buffer->data == NULL) {
@@ -881,7 +884,11 @@ int pomodoro_board_write_usb_serial_jtag(const void *buffer, size_t size)
         return 0;
     }
     if (screenshot_active) {
-        return 0;
+        if (esp_timer_get_time() - screenshot_last_progress_us <
+            SCREENSHOT_STALL_TIMEOUT_US) {
+            return 0;
+        }
+        screenshot_active = false;
     }
     return usb_serial_jtag_write_bytes(buffer, size, 20U);
 }
@@ -896,6 +903,7 @@ bool pomodoro_board_request_screenshot(void)
         (uint8_t) DISPLAY_HEIGHT, (uint8_t) (DISPLAY_HEIGHT >> 8U),
     };
     screenshot_active = true;
+    screenshot_last_progress_us = esp_timer_get_time();
     if (!write_usb_all(POMODORO_SCREENSHOT_HEADER_MAGIC,
                        POMODORO_SCREENSHOT_HEADER_MAGIC_LENGTH) ||
         !write_usb_all(dimensions, sizeof(dimensions))) {
