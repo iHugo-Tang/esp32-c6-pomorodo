@@ -185,21 +185,23 @@ bool pomodoro_statistics_apply(pomodoro_statistics_store_t *store,
         return false;
     }
 
+    if (completion->mode == POMODORO_MODE_FOCUS) {
+        if (!rtc_is_valid) {
+            store->pending_completed_pomodoros++;
+            store->pending_focus_seconds +=
+                completion->configured_duration_seconds;
+        } else {
+            pomodoro_daily_statistics_t *day =
+                find_or_insert(store, completion_date);
+            if (day == NULL) {
+                return false;
+            }
+            day->completed_pomodoros++;
+            day->completed_focus_seconds +=
+                completion->configured_duration_seconds;
+        }
+    }
     store->last_applied_settlement_sequence = completion->settlement_sequence;
-    if (completion->mode != POMODORO_MODE_FOCUS) {
-        return true;
-    }
-    if (!rtc_is_valid) {
-        store->pending_completed_pomodoros++;
-        store->pending_focus_seconds += completion->configured_duration_seconds;
-        return true;
-    }
-    pomodoro_daily_statistics_t *day = find_or_insert(store, completion_date);
-    if (day == NULL) {
-        return false;
-    }
-    day->completed_pomodoros++;
-    day->completed_focus_seconds += completion->configured_duration_seconds;
     return true;
 }
 

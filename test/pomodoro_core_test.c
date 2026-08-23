@@ -269,6 +269,30 @@ static void test_statistics_evicts_oldest_of_366_days(void)
     assert(pomodoro_statistics_find(&statistics, date) != NULL);
 }
 
+static void test_statistics_rejection_does_not_consume_settlement_sequence(void)
+{
+    pomodoro_statistics_store_t statistics;
+    pomodoro_statistics_init(&statistics);
+    pomodoro_date_t date = {.year = 2025, .month = 1, .day = 2};
+    pomodoro_completion_record_t completion = {
+        .mode = POMODORO_MODE_FOCUS,
+        .configured_duration_seconds = 1500U,
+    };
+    for (uint16_t index = 0; index < POMODORO_STATISTICS_CAPACITY; index++) {
+        completion.settlement_sequence = (uint32_t) index + 1U;
+        assert(pomodoro_statistics_apply(&statistics, &completion, true,
+                                         date));
+        assert(pomodoro_date_add_days(date, 1, &date));
+    }
+
+    completion.settlement_sequence++;
+    pomodoro_date_t too_old_date = {.year = 2025, .month = 1, .day = 1};
+    assert(!pomodoro_statistics_apply(&statistics, &completion, true,
+                                      too_old_date));
+    assert(statistics.last_applied_settlement_sequence ==
+           POMODORO_STATISTICS_CAPACITY);
+}
+
 static void test_local_time_round_trips_through_wall_time(void)
 {
     uint64_t wall_time;
@@ -382,6 +406,7 @@ int main(void)
     test_auto_start_can_be_due_or_cancelled();
     test_statistics_are_deduplicated_and_pending_is_assigned();
     test_statistics_evicts_oldest_of_366_days();
+    test_statistics_rejection_does_not_consume_settlement_sequence();
     test_local_time_round_trips_through_wall_time();
     test_persistence_detects_corruption();
     test_journal_survives_torn_write();
