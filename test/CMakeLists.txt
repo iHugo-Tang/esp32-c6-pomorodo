@@ -26,6 +26,8 @@ add_executable(
     ../components/pomodoro_app/pomodoro_display_policy.c
     ../components/pomodoro_app/pomodoro_settings_editor.c
     ../components/pomodoro_app/pomodoro_statistics_projection.c
+    ../components/pomodoro_app/pomodoro_agent_status.c
+    ../components/pomodoro_app/pomodoro_oc1_protocol.c
     ../components/pomodoro_app/pomodoro_opencode_status.c
     ../components/pomodoro_core/pomodoro_core.c
     ../components/pomodoro_core/pomodoro_statistics.c
@@ -59,6 +61,8 @@ add_test(NAME pomodoro_orientation_test COMMAND pomodoro_orientation_test)
 add_executable(
     pomodoro_opencode_status_test
     pomodoro_opencode_status_test.c
+    ../components/pomodoro_app/pomodoro_agent_status.c
+    ../components/pomodoro_app/pomodoro_oc1_protocol.c
     ../components/pomodoro_app/pomodoro_opencode_status.c
 )
 target_include_directories(
@@ -70,3 +74,33 @@ target_compile_options(
     pomodoro_opencode_status_test PRIVATE -Wall -Wextra -Werror -pedantic)
 
 add_test(NAME pomodoro_opencode_status_test COMMAND pomodoro_opencode_status_test)
+
+add_executable(
+    pomodoro_agent_status_test
+    pomodoro_agent_status_test.c
+    ../components/pomodoro_app/pomodoro_agent_status.c
+)
+target_include_directories(
+    pomodoro_agent_status_test PRIVATE
+    ../components/pomodoro_app/include
+)
+target_compile_features(pomodoro_agent_status_test PRIVATE c_std_11)
+target_compile_options(
+    pomodoro_agent_status_test PRIVATE -Wall -Wextra -Werror -pedantic)
+
+add_test(NAME pomodoro_agent_status_test COMMAND pomodoro_agent_status_test)
+
+add_executable(
+    pomodoro_oc1_protocol_test
+    pomodoro_oc1_protocol_test.c
+    ../components/pomodoro_app/pomodoro_oc1_protocol.c
+)
+target_include_directories(
+    pomodoro_oc1_protocol_test PRIVATE
+    ../components/pomodoro_app/include
+)
+target_compile_features(pomodoro_oc1_protocol_test PRIVATE c_std_11)
+target_compile_options(
+    pomodoro_oc1_protocol_test PRIVATE -Wall -Wextra -Werror -pedantic)
+
+add_test(NAME pomodoro_oc1_protocol_test COMMAND pomodoro_oc1_protocol_test)

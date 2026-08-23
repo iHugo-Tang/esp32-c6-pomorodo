@@ -5,7 +5,6 @@
 #include "pomodoro_statistics_projection.h"
 
 #include <stddef.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -712,16 +711,15 @@ static pomodoro_application_result_t process_opencode_status(
     }
     uint64_t now = time->wall_time_seconds;
     if (application->model.settings.opencode_status_enabled) {
-        char line[POMODORO_OPENCODE_MAX_LINE_LENGTH + 1U];
+        char line[POMODORO_OC1_MAX_LINE_LENGTH + 1U];
         bool available = false;
         while (application->platform.read_opencode_line(
                    application->platform.context, line, sizeof(line),
                    &available) && available) {
             uint32_t revision = 0U;
             uint8_t mask = 0U;
-            if (pomodoro_opencode_parse_line(line, strlen(line), &revision,
-                                             &mask) ==
-                POMODORO_OPENCODE_LINE_STATE) {
+            if (pomodoro_oc1_parse_line(line, strlen(line), &revision,
+                                        &mask) == POMODORO_OC1_LINE_STATE) {
                 pomodoro_opencode_status_apply_state(
                     &application->opencode_status, revision, mask, now);
             }
@@ -729,14 +727,15 @@ static pomodoro_application_result_t process_opencode_status(
     }
     pomodoro_opencode_status_tick(&application->opencode_status, now);
     if (now - application->last_opencode_control_wall_time_seconds >=
-        POMODORO_OPENCODE_CONTROL_INTERVAL_SECONDS) {
+        POMODORO_OC1_CONTROL_INTERVAL_SECONDS) {
         application->last_opencode_control_wall_time_seconds = now;
-        const char *control =
-            application->model.settings.opencode_status_enabled
-                ? "OC1 ENABLED"
-                : "OC1 DISABLED";
-        (void) application->platform.write_opencode(
-            application->platform.context, control);
+        char control[POMODORO_OC1_MAX_LINE_LENGTH + 1U];
+        if (pomodoro_oc1_format_control(
+                application->model.settings.opencode_status_enabled,
+                control, sizeof(control))) {
+            (void) application->platform.write_opencode(
+                application->platform.context, control);
+        }
     }
     if (pomodoro_opencode_status_take_wake(&application->opencode_status)) {
         application->display_manually_asleep = false;
@@ -1164,12 +1163,10 @@ pomodoro_application_result_t pomodoro_application_dispatch(
             : 0U;
         if (pomodoro_opencode_status_ack(&application->opencode_status, now,
                                          &acknowledged)) {
-            char line[32];
-            int written = snprintf(
-                line, sizeof(line), "OC1 ACK %lu %u",
-                (unsigned long) application->opencode_status.revision,
-                (unsigned) acknowledged);
-            if (written > 0) {
+            char line[POMODORO_OC1_MAX_LINE_LENGTH + 1U];
+            if (pomodoro_oc1_format_ack(
+                    application->opencode_status.revision, acknowledged,
+                    line, sizeof(line))) {
                 (void) application->platform.write_opencode(
                     application->platform.context, line);
             }
