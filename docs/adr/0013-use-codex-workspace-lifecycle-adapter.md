@@ -14,5 +14,5 @@ Codex 通过个人全局插件 `pomodoro-agent-status` 的 lifecycle hooks 向�
 - hooks 与 reporter 使用短路径、权限受限的临时 Unix socket；只有确认没有监听者时才清理陈旧 socket。broker 不可用或响应损坏不会阻塞 Codex，reporter 保留状态并重试。
 - hooks 映射五态并锁存可观察到的结构化工具 Error；`compact` 不重置，真实 prompt/tool 工作清除 Error，subagent 以独立成员加入和移除。
 - `$pomodoro-select` 由 `UserPromptSubmit` hook 完成 report 与 `select` 后把结果交给同名 skill；skill 不调用工具。控制 turn 不上报 Working 或 Completed，重复选择仍只由 broker 开启一个新 revision。
-- 插件不启动或后台化 broker，不创建 LaunchAgent，不新增 npm 依赖，也不修改 broker 的 `report`、`select`、`remove` schema。
+- broker 的启动生命周期由 [ADR-0014](./0014-start-agent-status-broker-on-selection.md) 取代本 ADR 原先“插件不启动 broker”的约束；IPC schema 与零 npm 依赖约束不变。
 - 安装后的 hooks 必须由用户通过 `/hooks` 审查并信任；源码以本仓库版本为准，个人插件目录仅为安装副本。

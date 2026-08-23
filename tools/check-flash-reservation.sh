@@ -10,14 +10,14 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CHECK_ROOT="$(mktemp -d)"
 trap 'rm -rf "$CHECK_ROOT"' EXIT
 
-mkdir -p "$CHECK_ROOT/.local/state/opencode/pomodoro-status" "$CHECK_ROOT/tools" "$CHECK_ROOT/fakebin"
+mkdir -p "$CHECK_ROOT/.local/state/pomodoro/agent-status" "$CHECK_ROOT/tools" "$CHECK_ROOT/fakebin"
 cp "$ROOT/tools/flash.sh" "$CHECK_ROOT/tools/flash.sh"
 chmod +x "$CHECK_ROOT/tools/flash.sh"
 
 FAKE_PORT="$CHECK_ROOT/fake-port"
 : > "$FAKE_PORT"
 
-RESERVATION="$CHECK_ROOT/.local/state/opencode/pomodoro-status/flash-reservation"
+RESERVATION="$CHECK_ROOT/.local/state/pomodoro/agent-status/flash-reservation"
 SAW_RESERVATION="$CHECK_ROOT/reservation-seen"
 FLASH_LOG="$CHECK_ROOT/flash.log"
 IDF_ARGS_LOG="$CHECK_ROOT/idf-args.log"

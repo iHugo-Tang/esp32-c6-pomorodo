@@ -27,7 +27,7 @@ function pass(name) {
 
 function report(overrides = {}) {
   return {
-    type: "report", client: "opencode", groupId: "group-a", memberId: "one",
+    type: "report", groupId: "group-a", memberId: "one",
     pid: process.pid, startedAt: 1_700_000_000_000, mask: 1, ...overrides,
   };
 }
@@ -69,13 +69,14 @@ async function testValidationAndCore() {
     persist: async (state) => persisted.push(structuredClone(state)),
   });
   assert.throws(() => validateRequest({ ...report({ pid: 10 }), extra: true }, () => true));
+  assert.throws(() => validateRequest({ ...report({ pid: 10 }), client: "codex" }, () => true));
   assert.throws(() => validateRequest(report({ pid: 99 }), (pid) => alive.has(pid)));
   assert.throws(() => validateRequest(report({ mask: 16 }), () => true));
   assert.throws(() => validateRequest({ type: "wat" }, () => true));
 
   let result = await core.handle(report({ pid: 10 }));
   assert.equal(result.ok, true);
-  assert.deepEqual(result.selected, { client: "opencode", groupId: "group-a" });
+  assert.equal(result.selected, "group-a");
   assert.equal(result.revision, 1);
   assert.deepEqual(core.publication(), { revision: 1, mask: 1 });
 
@@ -86,32 +87,32 @@ async function testValidationAndCore() {
   await core.handle(report({ pid: 10, mask: 4 }));
   assert.deepEqual(core.publication(), { revision: 3, mask: 4 }, "shared bits remain aggregated");
 
-  await core.handle(report({ client: "codex", groupId: "workspace", memberId: "agent", pid: 12, mask: 8 }));
+  await core.handle(report({ groupId: "workspace", memberId: "agent", pid: 12, mask: 8 }));
   assert.deepEqual(core.publication(), { revision: 3, mask: 4 }, "sources stay isolated");
-  result = await core.handle({ type: "select", client: "codex", groupId: "workspace" });
+  result = await core.handle({ type: "select", groupId: "workspace" });
   assert.equal(result.revision, 4);
-  result = await core.handle({ type: "select", client: "codex", groupId: "workspace" });
+  result = await core.handle({ type: "select", groupId: "workspace" });
   assert.equal(result.revision, 5, "repeat select opens a revision");
 
   alive.delete(12);
   await core.reap();
   assert.equal(core.publication(), null);
-  assert.deepEqual(core.selected, { client: "codex", groupId: "workspace" }, "selection is retained");
-  assert.equal((await core.handle({ type: "select", client: "opencode", groupId: "missing" })).ok, false);
+  assert.equal(core.selected, "workspace", "selection is retained");
+  assert.equal((await core.handle({ type: "select", groupId: "missing" })).ok, false);
   assert.equal(core.publication(), null, "another source cannot take over automatically");
 
   alive.add(12);
-  result = await core.handle(report({ client: "codex", groupId: "workspace", memberId: "agent", pid: 12, mask: 8 }));
+  result = await core.handle(report({ groupId: "workspace", memberId: "agent", pid: 12, mask: 8 }));
   assert.equal(result.revision, 6, "selected source recovery opens a revision");
   now += MEMBER_LEASE_MS;
   await core.reap();
   assert.equal(core.publication(), null, "lease expiry removes members");
-  assert.deepEqual(persisted.at(-1), { selected: { client: "codex", groupId: "workspace" }, revision: 6 });
+  assert.deepEqual(persisted.at(-1), { selected: "workspace", revision: 6 });
 
   const removals = new BrokerCore({ now: () => now, isAlive: () => true });
   await removals.handle(report({ pid: 10, mask: 1 }));
   await removals.handle(report({ pid: 11, memberId: "zero", mask: 0 }));
-  result = await removals.handle({ type: "remove", client: "opencode", groupId: "group-a", memberId: "one" });
+  result = await removals.handle({ type: "remove", groupId: "group-a", memberId: "one" });
   assert.equal(result.revision, 2);
   assert.deepEqual(removals.publication(), { revision: 2, mask: 0 });
 
@@ -121,9 +122,9 @@ async function testValidationAndCore() {
   });
   await Promise.all([
     raced.handle(report({ pid: 10 })),
-    raced.handle(report({ client: "codex", groupId: "workspace", memberId: "agent", pid: 11 })),
+    raced.handle(report({ groupId: "workspace", memberId: "agent", pid: 11 })),
   ]);
-  assert.deepEqual(raced.selected, { client: "opencode", groupId: "group-a" });
+  assert.equal(raced.selected, "group-a");
   assert.equal(raced.revision, 1, "concurrent first reports serialize without stealing");
 
   const exhausted = new BrokerCore({ revision: MAX_REVISION, isAlive: () => true });
@@ -147,7 +148,7 @@ async function testSocketAndPersistence() {
     assert.equal(first.revision, 1);
     const parallel = await Promise.all([
       request(broker.socketPath, report({ memberId: "two", mask: 2 })),
-      request(broker.socketPath, report({ client: "codex", groupId: "other", memberId: "x", mask: 4 })),
+      request(broker.socketPath, report({ groupId: "other", memberId: "x", mask: 4 })),
     ]);
     assert.equal(parallel.every((item) => item.ok), true);
     const saved = JSON.parse(await readFile(path.join(root, "agent-coordination.json"), "utf8"));
@@ -260,18 +261,44 @@ async function testSerialPublisher() {
   pass("serial enable/disable, heartbeat, ACK, retry, reservation, disconnect, and source loss");
 }
 
+async function testIdleLifecycle() {
+  const root = await mkdtemp("/tmp/pb-idle-");
+  let transport;
+  const broker = await runBroker({
+    stateDir: root,
+    idleMs: 300,
+    logger: () => {},
+    publisherOptions: {
+      resolvePort: async () => "/tmp/fake-port",
+      connect: async () => transport = {
+        closed: false,
+        write: async () => {},
+        close: async () => { transport.closed = true; },
+      },
+    },
+  });
+  const renewal = setInterval(() => void request(broker.socketPath, report()), 100);
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  clearInterval(renewal);
+  assert.equal((await request(broker.socketPath, { type: "select", groupId: "group-a" })).ok, true);
+  assert.equal((await request(broker.socketPath, "{")).ok, false);
+  await waitFor(() => stat(broker.socketPath).then(() => false, () => true), 1_500);
+  assert.equal(transport.closed, true);
+  pass("idle mode renews only on valid reports, then closes serial and socket");
+}
+
 async function testCliSignalsAndCorruptExit() {
   const root = await mkdtemp("/tmp/pb-cli-");
   const script = path.resolve("tools/pomodoro-agent-status-broker.mjs");
   const child = spawn(process.execPath, [script], { env: { ...process.env, XDG_STATE_HOME: root, POMODORO_PORT: "/missing" } });
-  const socketPath = path.join(root, "opencode", "pomodoro-status", "agent-status.sock");
+  const socketPath = path.join(root, "pomodoro", "agent-status", "agent-status.sock");
   await waitFor(async () => stat(socketPath).then(() => true).catch(() => false));
   await request(socketPath, report());
   child.kill("SIGTERM");
   const exit = await new Promise((resolve) => child.once("exit", (code, signal) => resolve({ code, signal })));
   assert.equal(exit.code, 143);
   assert.equal(await stat(socketPath).then(() => true).catch(() => false), false);
-  const statePath = path.join(root, "opencode", "pomodoro-status", "agent-coordination.json");
+  const statePath = path.join(root, "pomodoro", "agent-status", "agent-coordination.json");
   assert.equal(JSON.parse(await readFile(statePath, "utf8")).revision, 1, "selection survives shutdown");
 
   await writeFile(statePath, "bad");
@@ -288,5 +315,6 @@ async function testCliSignalsAndCorruptExit() {
 await testValidationAndCore();
 await testSocketAndPersistence();
 await testSerialPublisher();
+await testIdleLifecycle();
 await testCliSignalsAndCorruptExit();
 console.log(`agent-status-broker check: ${checks} checks passed`);

@@ -57,7 +57,7 @@ _Avoid_：设备姿态、屏幕旋转、IMU 手势
 _Avoid_：Charging、充电状态、USB 连接
 
 **Agent Source**：
-一个可被独立选择、并把一个或多个成员聚合成 Agent Status 的状态来源。OpenCode Process 与 Codex Workspace 是两种 Agent Source。
+一个可被独立选择、并把一个或多个存活成员聚合成 Agent Status 的 Codex Workspace。
 _Avoid_：会话、成员、串口所有者
 
 **Selected Agent Source**：
@@ -67,10 +67,6 @@ _Avoid_：主进程、活动会话、自动回退来源
 **Agent Status**：
 Selected Agent Source 全部存活成员的汇总状态，按优先级取 Error、Waiting、Working、Completed 或 Idle；Completed 在确认或短暂展示后回到 Idle。
 _Avoid_：Pomodoro Mode、单个成员状态
-
-**OpenCode Process**：
-以一个独立运行的 OpenCode 实例及其当前项目内全部会话为边界的 Agent Source。
-_Avoid_：项目、窗口、标签页
 
 **Codex Workspace**：
 同一代码库内全部 Codex chat、fork、side chat 与 subagent 共享的 Agent Source；Git 仓库以规范化根目录为边界，非 Git 目录以规范化工作目录为边界。

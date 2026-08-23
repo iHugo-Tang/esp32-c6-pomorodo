@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Supported firmware flashing flow. Reserves the user-level USB state directory
-# marker so the OpenCode Status plugin releases its serial link before `idf.py
-# flash` opens it, then always removes the reservation. Never signals the
-# OpenCode process.
+# marker so the Agent Status broker releases its serial link before `idf.py`
+# opens it, then always removes the reservation. Never signals the broker.
 #
 # Usage: tools/flash.sh [-p PORT] [idf.py flash arguments...]
 #   Port resolution: explicit -p/--port, else $POMODORO_PORT, else the sole
@@ -10,9 +9,9 @@
 set -euo pipefail
 
 if [ -n "${XDG_STATE_HOME:-}" ]; then
-  POMODORO_STATE_DIR="${XDG_STATE_HOME}/opencode/pomodoro-status"
+  POMODORO_STATE_DIR="${XDG_STATE_HOME}/pomodoro/agent-status"
 elif [ -n "${HOME:-}" ]; then
-  POMODORO_STATE_DIR="${HOME}/.local/state/opencode/pomodoro-status"
+  POMODORO_STATE_DIR="${HOME}/.local/state/pomodoro/agent-status"
 else
   echo "error: cannot determine user state directory; set XDG_STATE_HOME or HOME" >&2
   exit 1
@@ -172,7 +171,7 @@ acquire_reservation
 exit_if_signaled
 
 if [ -n "$PORT" ]; then
-  echo "Waiting for OpenCode to release $PORT ..."
+  echo "Waiting for Agent Status broker to release $PORT ..."
   wait_for_release "$PORT" || exit 1
 fi
 exit_if_signaled

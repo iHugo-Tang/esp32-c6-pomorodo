@@ -7,12 +7,12 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const MASK = Object.freeze({ IDLE: 0, ERROR: 1, WAITING: 2, WORKING: 4, COMPLETED: 8 });
 export const REPORT_INTERVAL_MS = 3_000;
 export const MAX_LINE_BYTES = 8 * 1024;
-const CONTROL_PROMPT = "$pomodoro-select";
+const SELECTION_PROMPTS = new Set(["$pomodoro-agent-status:pomodoro-select", "$pomodoro-select"]);
 const EVENTS = new Set([
   "SessionStart", "SessionEnd", "UserPromptSubmit", "PermissionRequest",
   "PreToolUse", "PostToolUse", "SubagentStart", "SubagentStop", "Stop",
@@ -43,7 +43,7 @@ export function reporterSocketPath(sessionId, uid = process.getuid?.() ?? 0) {
 
 export function brokerSocketPath(env = process.env) {
   const base = env.XDG_STATE_HOME || (env.HOME && path.join(env.HOME, ".local", "state"));
-  return base ? path.join(base, "opencode", "pomodoro-status", "agent-status.sock") : null;
+  return base ? path.join(base, "pomodoro", "agent-status", "agent-status.sock") : null;
 }
 
 export function validateHookInput(value) {
@@ -58,6 +58,10 @@ export function validateHookInput(value) {
   if (event === "PostToolUse" && !("tool_response" in value)) throw new Error("invalid PostToolUse input");
   if (["SubagentStart", "SubagentStop"].includes(event) && typeof value.agent_id !== "string") throw new Error(`invalid ${event} input`);
   return value;
+}
+
+export function isSelectionPrompt(input) {
+  return input.hook_event_name === "UserPromptSubmit" && SELECTION_PROMPTS.has(input.prompt.trim());
 }
 
 export function structuredFailure(value, seen = new Set()) {
@@ -83,7 +87,7 @@ export class StatusState {
         this.subagents.clear();
       }
     } else if (event === "UserPromptSubmit") {
-      if (input.prompt.trim() === CONTROL_PROMPT) return { control: true };
+      if (isSelectionPrompt(input)) return { control: true };
       this.work();
     } else if (event === "PermissionRequest") {
       this.main = MASK.WAITING;
@@ -162,6 +166,33 @@ export function request(socketPath, value, timeoutMs = 500) {
   });
 }
 
+function brokerHasListener(socketPath) {
+  return new Promise((resolve, reject) => {
+    if (!socketPath) return resolve(false);
+    const socket = net.createConnection(socketPath);
+    socket.once("connect", () => { socket.destroy(); resolve(true); });
+    socket.once("error", (error) => {
+      if (["ECONNREFUSED", "ENOENT", "ENOTSOCK"].includes(error.code)) resolve(false);
+      else reject(error);
+    });
+  });
+}
+
+export async function ensureBroker(socketPath, { env = process.env, timeoutMs = 750,
+  brokerScript = path.join(path.dirname(fileURLToPath(import.meta.url)), "broker.mjs") } = {}) {
+  if (await brokerHasListener(socketPath)) return false;
+  const child = spawn(process.execPath, [brokerScript, "--idle"], {
+    detached: true, stdio: "ignore", env,
+  });
+  child.unref();
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await brokerHasListener(socketPath)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error("broker did not start");
+}
+
 async function removeStaleSocket(socketPath) {
   const entry = await lstat(socketPath).catch((error) => error.code === "ENOENT" ? null : Promise.reject(error));
   if (!entry) return;
@@ -207,7 +238,7 @@ export async function startReporter({ sessionId, cwd, hostPid, env = process.env
     const members = [[mainMemberId, state.main], ...[...state.subagents].map(([id, mask]) => [hashId(`${sessionId}:${id}`), mask])];
     let last;
     for (const [memberId, mask] of members) {
-      last = await request(brokerSocket, { type: "report", client: "codex", groupId, memberId, pid: process.pid, startedAt, mask });
+      last = await request(brokerSocket, { type: "report", groupId, memberId, pid: process.pid, startedAt, mask });
       if (!last?.ok) throw new Error(last?.error || "broker rejected report");
     }
     return last;
@@ -215,7 +246,7 @@ export async function startReporter({ sessionId, cwd, hostPid, env = process.env
 
   const removeAll = async () => {
     for (const memberId of [mainMemberId, ...[...state.subagents.keys()].map((id) => hashId(`${sessionId}:${id}`))]) {
-      await request(brokerSocket, { type: "remove", client: "codex", groupId, memberId }).catch(() => {});
+      await request(brokerSocket, { type: "remove", groupId, memberId }).catch(() => {});
     }
   };
 
@@ -244,14 +275,15 @@ export async function startReporter({ sessionId, cwd, hostPid, env = process.env
         const stoppedSubagent = input.hook_event_name === "SubagentStop" ? input.agent_id : null;
         const outcome = state.apply(input);
         if (outcome.control) {
+          await ensureBroker(brokerSocket, { env });
           await report();
-          const selected = await request(brokerSocket, { type: "select", client: "codex", groupId });
+          const selected = await request(brokerSocket, { type: "select", groupId });
           if (!selected?.ok) throw new Error(selected?.error || "selection rejected");
           socket.end(`${JSON.stringify({ ok: true, revision: selected.revision })}\n`);
         } else {
           if (stoppedSubagent) {
             await request(brokerSocket, {
-              type: "remove", client: "codex", groupId,
+              type: "remove", groupId,
               memberId: hashId(`${sessionId}:${stoppedSubagent}`),
             }).catch(() => {});
           }
