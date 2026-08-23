@@ -2,7 +2,7 @@
 
 ## Goal
 
-用一个前台、零 npm 依赖的 Node CLI broker 汇集 OpenCode 与 Codex 的 Agent Status。broker 是唯一 USB 串口持有者；适配器只通过本地 IPC 上报，不创建 LaunchAgent。
+用一个零 npm 依赖的 Node broker 汇集 OpenCode 与 Codex 的 Agent Status。broker 是唯一 USB 串口持有者；适配器只通过本地 IPC 上报，不创建 LaunchAgent。
 
 ## Source selection
 
@@ -13,7 +13,7 @@
 
 ## IPC
 
-- CLI 入口为前台可执行脚本 `tools/pomodoro-agent-status-broker.mjs`。
+- broker 唯一实现位于 `plugins/pomodoro-agent-status/scripts/broker.mjs`；`tools/pomodoro-agent-status-broker.mjs` 是保持常驻行为的薄前台入口。
 - socket 为 `${XDG_STATE_HOME:-$HOME/.local/state}/opencode/pomodoro-status/agent-status.sock`；目录权限 `0700`，socket 权限 `0600`。
 - 活跃 broker 已占用 socket 时第二实例立即失败；只有确认没有监听者时才移除陈旧 socket。
 - IPC 使用 JSON line，每行最多 8 KiB：
@@ -38,6 +38,8 @@
 - 状态映射为：普通 prompt 和真实工具工作 → Working；权限请求和 `request_user_input` → Waiting；结构化工具失败 → Error；无锁存 Error 的 Stop → Completed；SessionStart → Idle，但 compact 不重置状态。
 - Error 保持到下一次普通 prompt 或真实工具工作；SubagentStart/Stop 分别增加和移除同 Workspace 的 Working 成员。
 - `$pomodoro-select` 是受支持的 skill。其 prompt hook 先确保当前来源已 report，再发 `select`；该控制 turn 不产生 Working/Completed，只由选择本身开启一个 revision。
+- 只有 `$pomodoro-select` 控制事件在 socket 无监听者时 detached 启动插件内 broker；并发启动继续由 Unix socket 排他监听收敛为单实例。普通 lifecycle hook 不启动 broker。
+- 自动实例从启动起按十秒空闲期限运行，只有严格校验成功的 `report` 刷新期限；`select`、`remove`、无效请求和串口 `OC1` 心跳均不刷新。到期后关闭串口、客户端 socket 和监听 socket。手工前台入口不启用空闲退出。
 
 ## USB and reservation
 
@@ -49,7 +51,7 @@
 
 ## Out of scope
 
-- 后台化、LaunchAgent、安装到 `~/.local/bin`，以及 start/stop/status 子命令。
+- LaunchAgent、PID 文件、安装到 `~/.local/bin`，以及 start/stop/status 子命令。
 - 改写 `/Users/hugo/.config/opencode`；OpenCode adapter 仍是后续 issue。
 - 网络服务、新 npm 依赖、非 macOS 串口工作流、固件或 `OC1` 协议变更。
 - Codex cloud、远程执行、IDE 手工验收和原生裸 slash command。
@@ -61,3 +63,4 @@
 - 可控串口接缝覆盖 `ENABLED`/`DISABLED`、三秒心跳、ACK、占用重试、断线、reservation 与释放。
 - `tools/check-flash-reservation.sh` 继续通过。
 - Codex 插件自检覆盖 Workspace 归一化、严格 hook 输入、祖先进程发现、状态映射、Error 锁存、控制 turn、subagent 聚合、租约、选源与 broker 重启恢复。
+- 自检覆盖选择时按需启动、并发单实例、复用现有 broker，以及仅由有效 `report` 续命的十秒空闲退出；前台入口仍只响应信号退出。
