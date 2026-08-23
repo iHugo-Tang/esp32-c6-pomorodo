@@ -24,32 +24,51 @@ static void test_priority_acknowledgement_and_wake(void)
     assert(!pomodoro_agent_status_take_wake(&status));
     assert(pomodoro_agent_status_resolve(&status, 13U) ==
            POMODORO_AGENT_STATUS_WAITING);
+
+    pomodoro_agent_status_apply(
+        &status, 2U,
+        POMODORO_AGENT_STATUS_WORKING_BIT |
+            POMODORO_AGENT_STATUS_COMPLETED_BIT,
+        20U);
+    assert(pomodoro_agent_status_resolve(&status, 20U) ==
+           POMODORO_AGENT_STATUS_WORKING);
+    assert(pomodoro_agent_status_take_wake(&status));
 }
 
 static void test_completed_timeout_stale_revision_and_disconnect(void)
 {
     pomodoro_agent_status_t status;
+    uint8_t acknowledged = 0U;
     pomodoro_agent_status_init(&status, true, 0U);
 
     pomodoro_agent_status_apply(&status, 2U,
                                 POMODORO_AGENT_STATUS_COMPLETED_BIT, 100U);
     assert(pomodoro_agent_status_resolve(&status, 104U) ==
            POMODORO_AGENT_STATUS_COMPLETED);
-    assert(pomodoro_agent_status_resolve(&status, 105U) ==
+    assert(pomodoro_agent_status_acknowledge(&status, 104U,
+                                             &acknowledged));
+    assert(acknowledged == POMODORO_AGENT_STATUS_COMPLETED_BIT);
+    assert(pomodoro_agent_status_resolve(&status, 104U) ==
            POMODORO_AGENT_STATUS_IDLE);
     assert(pomodoro_agent_status_take_wake(&status));
 
-    pomodoro_agent_status_apply(&status, 1U,
-                                POMODORO_AGENT_STATUS_ERROR_BIT, 106U);
-    assert(pomodoro_agent_status_resolve(&status, 106U) ==
+    pomodoro_agent_status_apply(&status, 3U,
+                                POMODORO_AGENT_STATUS_COMPLETED_BIT, 110U);
+    assert(pomodoro_agent_status_resolve(&status, 115U) ==
+           POMODORO_AGENT_STATUS_IDLE);
+    assert(pomodoro_agent_status_take_wake(&status));
+
+    pomodoro_agent_status_apply(&status, 2U,
+                                POMODORO_AGENT_STATUS_ERROR_BIT, 116U);
+    assert(pomodoro_agent_status_resolve(&status, 116U) ==
            POMODORO_AGENT_STATUS_IDLE);
     assert(!pomodoro_agent_status_take_wake(&status));
 
-    pomodoro_agent_status_tick(&status, 109U);
+    pomodoro_agent_status_tick(&status, 119U);
     assert(pomodoro_agent_status_connected(&status));
-    pomodoro_agent_status_tick(&status, 110U);
+    pomodoro_agent_status_tick(&status, 120U);
     assert(!pomodoro_agent_status_connected(&status));
-    assert(pomodoro_agent_status_resolve(&status, 110U) ==
+    assert(pomodoro_agent_status_resolve(&status, 120U) ==
            POMODORO_AGENT_STATUS_IDLE);
 }
 
@@ -72,6 +91,7 @@ static void test_disable_requires_resync(void)
                                 POMODORO_AGENT_STATUS_ERROR_BIT, 4U);
     assert(pomodoro_agent_status_resolve(&status, 4U) ==
            POMODORO_AGENT_STATUS_ERROR);
+    assert(!pomodoro_agent_status_take_wake(&status));
 }
 
 int main(void)

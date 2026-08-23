@@ -40,12 +40,12 @@ typedef struct {
     bool fail_save;
     bool fail_render;
     bool fail_focus_audio;
-    char opencode_input_lines[8][POMODORO_OPENCODE_MAX_LINE_LENGTH + 1U];
-    unsigned opencode_input_count;
-    unsigned opencode_input_index;
-    unsigned opencode_read_count;
-    unsigned opencode_write_count;
-    char opencode_writes[16][POMODORO_OPENCODE_MAX_LINE_LENGTH + 1U];
+    char oc1_input_lines[8][POMODORO_OC1_MAX_LINE_LENGTH + 1U];
+    unsigned oc1_input_count;
+    unsigned oc1_input_index;
+    unsigned oc1_read_count;
+    unsigned oc1_write_count;
+    char oc1_writes[16][POMODORO_OC1_MAX_LINE_LENGTH + 1U];
 } fake_platform_t;
 
 static void fake_enable_journal(fake_platform_t *fake)
@@ -199,52 +199,52 @@ static bool fake_play_break_complete(void *context, uint8_t volume)
     return true;
 }
 
-static bool fake_read_opencode_line(void *context, char *line, size_t size,
+static bool fake_read_oc1_line(void *context, char *line, size_t size,
                                     bool *available)
 {
     fake_platform_t *fake = context;
     if (line == NULL || size == 0U || available == NULL) {
         return false;
     }
-    fake->opencode_read_count++;
+    fake->oc1_read_count++;
     *available = false;
-    if (fake->opencode_input_index >= fake->opencode_input_count) {
+    if (fake->oc1_input_index >= fake->oc1_input_count) {
         return true;
     }
     snprintf(line, size, "%s",
-             fake->opencode_input_lines[fake->opencode_input_index]);
-    fake->opencode_input_index++;
+             fake->oc1_input_lines[fake->oc1_input_index]);
+    fake->oc1_input_index++;
     *available = true;
     return true;
 }
 
-static bool fake_write_opencode(void *context, const char *line)
+static bool fake_write_oc1_line(void *context, const char *line)
 {
     fake_platform_t *fake = context;
-    if (line == NULL || fake->opencode_write_count >=
-                            sizeof(fake->opencode_writes) /
-                                sizeof(fake->opencode_writes[0])) {
+    if (line == NULL || fake->oc1_write_count >=
+                            sizeof(fake->oc1_writes) /
+                                sizeof(fake->oc1_writes[0])) {
         return false;
     }
-    snprintf(fake->opencode_writes[fake->opencode_write_count],
-             sizeof(fake->opencode_writes[fake->opencode_write_count]), "%s",
+    snprintf(fake->oc1_writes[fake->oc1_write_count],
+             sizeof(fake->oc1_writes[fake->oc1_write_count]), "%s",
              line);
-    fake->opencode_write_count++;
+    fake->oc1_write_count++;
     return true;
 }
 
-static void fake_enqueue_opencode_line(fake_platform_t *fake,
+static void fake_enqueue_oc1_line(fake_platform_t *fake,
                                        const char *line)
 {
-    if (fake->opencode_input_count >=
-        sizeof(fake->opencode_input_lines) /
-            sizeof(fake->opencode_input_lines[0])) {
+    if (fake->oc1_input_count >=
+        sizeof(fake->oc1_input_lines) /
+            sizeof(fake->oc1_input_lines[0])) {
         return;
     }
-    snprintf(fake->opencode_input_lines[fake->opencode_input_count],
-             sizeof(fake->opencode_input_lines[fake->opencode_input_count]),
+    snprintf(fake->oc1_input_lines[fake->oc1_input_count],
+             sizeof(fake->oc1_input_lines[fake->oc1_input_count]),
              "%s", line);
-    fake->opencode_input_count++;
+    fake->oc1_input_count++;
 }
 
 static pomodoro_application_platform_t fake_platform_services(
@@ -265,8 +265,8 @@ static pomodoro_application_platform_t fake_platform_services(
         .render = fake_render,
         .play_focus_complete = fake_play_focus_complete,
         .play_break_complete = fake_play_break_complete,
-        .read_opencode_line = fake_read_opencode_line,
-        .write_opencode = fake_write_opencode,
+        .read_oc1_line = fake_read_oc1_line,
+        .write_oc1_line = fake_write_oc1_line,
     };
 }
 
@@ -2724,7 +2724,7 @@ static void test_hardware_controls_remain_available_during_time_setup(void)
 }
 
 
-static void test_opencode_status_renders_priority_and_wakes_display(void)
+static void test_agent_status_renders_priority_and_wakes_display(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
@@ -2732,77 +2732,77 @@ static void test_opencode_status_renders_priority_and_wakes_display(void)
     fake_enable_journal(&fake);
     pomodoro_application_t *application = boot_application(&fake);
 
-    assert(fake.rendered_view.settings.opencode_status_enabled);
-    assert(fake.rendered_view.opencode_state == POMODORO_OPENCODE_STATE_HIDDEN);
+    assert(fake.rendered_view.settings.agent_status_enabled);
+    assert(!fake.rendered_view.agent_status_visible);
 
     /* Idle heartbeat with no state yet stays hidden. */
     fake.now_wall_time_seconds = 110U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
-    assert(fake.rendered_view.opencode_state == POMODORO_OPENCODE_STATE_HIDDEN);
-    assert(fake.opencode_write_count == 1U);
-    assert(strcmp(fake.opencode_writes[0], "OC1 ENABLED") == 0);
+    assert(!fake.rendered_view.agent_status_visible);
+    assert(fake.oc1_write_count == 1U);
+    assert(strcmp(fake.oc1_writes[0], "OC1 ENABLED") == 0);
 
     /* First connection is a real status change and wakes a manually-slept screen. */
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TOGGLE_DISPLAY) ==
            POMODORO_APPLICATION_OK);
     assert(!fake.rendered_view.display_awake);
-    fake_enqueue_opencode_line(&fake, "OC1 STATE 1 2");
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 1 2");
     fake.now_wall_time_seconds = 111U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.display_awake);
-    assert(fake.rendered_view.opencode_state ==
-           POMODORO_OPENCODE_STATE_WAITING);
-    assert(fake.rendered_view.opencode_color == 0xFFD166);
-    assert(!fake.rendered_view.opencode_acknowledgeable);
+    assert(fake.rendered_view.agent_status ==
+           POMODORO_AGENT_STATUS_WAITING);
+    assert(fake.rendered_view.agent_status_visible);
+    assert(fake.rendered_view.agent_status_color == 0xFFD166);
+    assert(!fake.rendered_view.agent_status_acknowledgeable);
 
     /* Repeated heartbeat with the same revision does not wake again. */
-    fake_enqueue_opencode_line(&fake, "OC1 STATE 1 2");
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 1 2");
     fake.now_wall_time_seconds = 113U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
-    assert(fake.rendered_view.opencode_state ==
-           POMODORO_OPENCODE_STATE_WAITING);
+    assert(fake.rendered_view.agent_status ==
+           POMODORO_AGENT_STATUS_WAITING);
     assert(fake.rendered_view.display_awake);
 
     /* New revision is a real change and wakes the display. */
-    fake_enqueue_opencode_line(&fake, "OC1 STATE 2 4");
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 2 4");
     fake.now_wall_time_seconds = 114U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
-    assert(fake.rendered_view.opencode_state ==
-           POMODORO_OPENCODE_STATE_WORKING);
-    assert(fake.rendered_view.opencode_color == 0x5B8CFF);
+    assert(fake.rendered_view.agent_status ==
+           POMODORO_AGENT_STATUS_WORKING);
+    assert(fake.rendered_view.agent_status_color == 0x5B8CFF);
     assert(fake.rendered_view.display_awake);
 
     /* Malformed or non-protocol lines are ignored without affecting state. */
-    fake_enqueue_opencode_line(&fake, "not a protocol line");
-    fake_enqueue_opencode_line(&fake, "OC1 NOPE 1 2");
+    fake_enqueue_oc1_line(&fake, "not a protocol line");
+    fake_enqueue_oc1_line(&fake, "OC1 NOPE 1 2");
     fake.now_wall_time_seconds = 117U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
-    assert(fake.rendered_view.opencode_state ==
-           POMODORO_OPENCODE_STATE_WORKING);
+    assert(fake.rendered_view.agent_status ==
+           POMODORO_AGENT_STATUS_WORKING);
 
     /* Disconnect hides the circle after ten seconds without a wake. */
     fake.now_wall_time_seconds = 128U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
-    assert(fake.rendered_view.opencode_state ==
-           POMODORO_OPENCODE_STATE_HIDDEN);
+    assert(!fake.rendered_view.agent_status_visible);
 
     pomodoro_application_destroy(application);
 }
 
-static void test_opencode_status_wakes_auto_sleep_without_changing_pomodoro(void)
+static void test_agent_status_wakes_auto_sleep_without_changing_pomodoro(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
@@ -2824,14 +2824,14 @@ static void test_opencode_status_wakes_auto_sleep_without_changing_pomodoro(void
     uint32_t completed_focus_seconds =
         fake.rendered_view.today_completed_focus_seconds;
 
-    fake_enqueue_opencode_line(&fake, "OC1 STATE 1 4");
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 1 4");
     fake.now_wall_time_seconds = 401U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.display_awake);
-    assert(fake.rendered_view.opencode_state ==
-           POMODORO_OPENCODE_STATE_WORKING);
+    assert(fake.rendered_view.agent_status ==
+           POMODORO_AGENT_STATUS_WORKING);
     assert(fake.rendered_view.timer_state == timer_state);
     assert(fake.rendered_view.remaining_seconds == remaining_seconds);
     assert(fake.rendered_view.set_progress == set_progress);
@@ -2843,7 +2843,7 @@ static void test_opencode_status_wakes_auto_sleep_without_changing_pomodoro(void
     pomodoro_application_destroy(application);
 }
 
-static void test_opencode_status_ack_reveals_next_priority(void)
+static void test_agent_status_ack_reveals_next_priority(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
@@ -2851,74 +2851,74 @@ static void test_opencode_status_ack_reveals_next_priority(void)
     fake_enable_journal(&fake);
     pomodoro_application_t *application = boot_application(&fake);
 
-    fake_enqueue_opencode_line(&fake, "OC1 STATE 1 3");
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 1 3");
     fake.now_wall_time_seconds = 101U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
-    assert(fake.rendered_view.opencode_state ==
-           POMODORO_OPENCODE_STATE_ERROR);
-    assert(fake.rendered_view.opencode_acknowledgeable);
+    assert(fake.rendered_view.agent_status ==
+           POMODORO_AGENT_STATUS_ERROR);
+    assert(fake.rendered_view.agent_status_acknowledgeable);
 
-    unsigned writes_before_ack = fake.opencode_write_count;
+    unsigned writes_before_ack = fake.oc1_write_count;
     assert(pomodoro_application_dispatch(
-               application, POMODORO_APPLICATION_ACTION_ACK_OPENCODE_STATUS) ==
+               application, POMODORO_APPLICATION_ACTION_ACK_AGENT_STATUS) ==
            POMODORO_APPLICATION_OK);
-    assert(fake.opencode_write_count == writes_before_ack + 1U);
-    assert(strcmp(fake.opencode_writes[writes_before_ack], "OC1 ACK 1 1") == 0);
-    assert(fake.rendered_view.opencode_state ==
-           POMODORO_OPENCODE_STATE_WAITING);
+    assert(fake.oc1_write_count == writes_before_ack + 1U);
+    assert(strcmp(fake.oc1_writes[writes_before_ack], "OC1 ACK 1 1") == 0);
+    assert(fake.rendered_view.agent_status ==
+           POMODORO_AGENT_STATUS_WAITING);
 
     /* Same-revision heartbeat keeps the acknowledgement and does not wake. */
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TOGGLE_DISPLAY) ==
            POMODORO_APPLICATION_OK);
     assert(!fake.rendered_view.display_awake);
-    fake_enqueue_opencode_line(&fake, "OC1 STATE 1 3");
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 1 3");
     fake.now_wall_time_seconds = 104U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
-    assert(fake.rendered_view.opencode_state ==
-           POMODORO_OPENCODE_STATE_WAITING);
+    assert(fake.rendered_view.agent_status ==
+           POMODORO_AGENT_STATUS_WAITING);
     assert(!fake.rendered_view.display_awake);
 
     /* New revision with a fresh error is not cleared by the old ack. */
-    fake_enqueue_opencode_line(&fake, "OC1 STATE 2 3");
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 2 3");
     fake.now_wall_time_seconds = 110U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
-    assert(fake.rendered_view.opencode_state ==
-           POMODORO_OPENCODE_STATE_ERROR);
-    writes_before_ack = fake.opencode_write_count;
+    assert(fake.rendered_view.agent_status ==
+           POMODORO_AGENT_STATUS_ERROR);
+    writes_before_ack = fake.oc1_write_count;
     assert(pomodoro_application_dispatch(
-               application, POMODORO_APPLICATION_ACTION_ACK_OPENCODE_STATUS) ==
+               application, POMODORO_APPLICATION_ACTION_ACK_AGENT_STATUS) ==
            POMODORO_APPLICATION_OK);
-    assert(strcmp(fake.opencode_writes[writes_before_ack], "OC1 ACK 2 1") == 0);
-    assert(fake.rendered_view.opencode_state ==
-           POMODORO_OPENCODE_STATE_WAITING);
+    assert(strcmp(fake.oc1_writes[writes_before_ack], "OC1 ACK 2 1") == 0);
+    assert(fake.rendered_view.agent_status ==
+           POMODORO_AGENT_STATUS_WAITING);
 
     /* Completed is ackable before expiry and then falls to Idle. */
-    fake_enqueue_opencode_line(&fake, "OC1 STATE 3 8");
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 3 8");
     fake.now_wall_time_seconds = 120U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
-    assert(fake.rendered_view.opencode_state ==
-           POMODORO_OPENCODE_STATE_COMPLETED);
-    writes_before_ack = fake.opencode_write_count;
+    assert(fake.rendered_view.agent_status ==
+           POMODORO_AGENT_STATUS_COMPLETED);
+    writes_before_ack = fake.oc1_write_count;
     assert(pomodoro_application_dispatch(
-               application, POMODORO_APPLICATION_ACTION_ACK_OPENCODE_STATUS) ==
+               application, POMODORO_APPLICATION_ACTION_ACK_AGENT_STATUS) ==
            POMODORO_APPLICATION_OK);
-    assert(strcmp(fake.opencode_writes[writes_before_ack], "OC1 ACK 3 8") == 0);
-    assert(fake.rendered_view.opencode_state ==
-           POMODORO_OPENCODE_STATE_IDLE);
+    assert(strcmp(fake.oc1_writes[writes_before_ack], "OC1 ACK 3 8") == 0);
+    assert(fake.rendered_view.agent_status ==
+           POMODORO_AGENT_STATUS_IDLE);
 
     pomodoro_application_destroy(application);
 }
 
-static void test_opencode_status_switch_persists_and_disables(void)
+static void test_agent_status_switch_persists_and_disables(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
@@ -2930,50 +2930,48 @@ static void test_opencode_status_switch_persists_and_disables(void)
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
-    assert(fake.opencode_write_count >= 1U);
-    assert(strcmp(fake.opencode_writes[0], "OC1 ENABLED") == 0);
+    assert(fake.oc1_write_count >= 1U);
+    assert(strcmp(fake.oc1_writes[0], "OC1 ENABLED") == 0);
 
     unsigned saves_before_toggle = fake.save_count;
     assert(pomodoro_application_dispatch(
                application,
-               POMODORO_APPLICATION_ACTION_TOGGLE_OPENCODE_STATUS) ==
+               POMODORO_APPLICATION_ACTION_TOGGLE_AGENT_STATUS) ==
            POMODORO_APPLICATION_OK);
-    assert(!fake.rendered_view.settings.opencode_status_enabled);
-    assert(fake.rendered_view.opencode_state ==
-           POMODORO_OPENCODE_STATE_HIDDEN);
+    assert(!fake.rendered_view.settings.agent_status_enabled);
+    assert(!fake.rendered_view.agent_status_visible);
     assert(fake.save_count == saves_before_toggle + 1U);
-    assert(!fake.persisted.settings.value.opencode_status_enabled);
+    assert(!fake.persisted.settings.value.agent_status_enabled);
 
     /* While disabled the device emits DISABLED and ignores incoming state. */
-    fake_enqueue_opencode_line(&fake, "OC1 STATE 1 1");
-    unsigned reads_before_disabled_tick = fake.opencode_read_count;
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 1 1");
+    unsigned reads_before_disabled_tick = fake.oc1_read_count;
     fake.now_wall_time_seconds = 105U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
-    assert(fake.opencode_write_count >= 2U);
-    assert(strcmp(fake.opencode_writes[1], "OC1 DISABLED") == 0);
-    assert(fake.rendered_view.opencode_state ==
-           POMODORO_OPENCODE_STATE_HIDDEN);
-    assert(fake.opencode_read_count == reads_before_disabled_tick);
+    assert(fake.oc1_write_count >= 2U);
+    assert(strcmp(fake.oc1_writes[1], "OC1 DISABLED") == 0);
+    assert(!fake.rendered_view.agent_status_visible);
+    assert(fake.oc1_read_count == reads_before_disabled_tick + 2U);
 
     /* Re-enabling restores the current snapshot without replaying stale state. */
     assert(pomodoro_application_dispatch(
                application,
-               POMODORO_APPLICATION_ACTION_TOGGLE_OPENCODE_STATUS) ==
+               POMODORO_APPLICATION_ACTION_TOGGLE_AGENT_STATUS) ==
            POMODORO_APPLICATION_OK);
-    assert(fake.rendered_view.settings.opencode_status_enabled);
+    assert(fake.rendered_view.settings.agent_status_enabled);
     fake.now_wall_time_seconds = 106U;
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_TICK) ==
            POMODORO_APPLICATION_OK);
-    assert(strcmp(fake.opencode_writes[fake.opencode_write_count - 1U],
+    assert(strcmp(fake.oc1_writes[fake.oc1_write_count - 1U],
                   "OC1 ENABLED") == 0);
 
     pomodoro_application_destroy(application);
 }
 
-static void test_pomodoro_completion_transition_migration_defaults_to_ten_seconds(void)
+static void test_legacy_settings_version_is_treated_as_empty(void)
 {
     fake_platform_t fake;
     pomodoro_model_t model;
@@ -2983,7 +2981,7 @@ static void test_pomodoro_completion_transition_migration_defaults_to_ten_second
     fake_enable_journal(&fake);
     pomodoro_settings_t settings = pomodoro_default_settings();
     settings.daily_goal = 12U;
-    settings.opencode_status_enabled = false;
+    settings.agent_status_enabled = false;
     settings.pomodoro_completion_transition_seconds = 1U;
     assert(pomodoro_init(&model, &settings) == POMODORO_OK);
     pomodoro_statistics_init(&statistics);
@@ -3004,16 +3002,16 @@ static void test_pomodoro_completion_transition_migration_defaults_to_ten_second
 
     pomodoro_application_t *application = boot_application(&fake);
     assert(fake.rendered_view.phase == POMODORO_APPLICATION_PHASE_ACTIVE);
-    assert(!fake.rendered_view.settings.opencode_status_enabled);
+    assert(fake.rendered_view.settings.agent_status_enabled);
     assert(fake.rendered_view.settings
                .pomodoro_completion_transition_seconds == 10U);
-    assert(fake.rendered_view.settings.daily_goal == 12U);
+    assert(fake.rendered_view.settings.daily_goal == 8U);
     assert(fake.rendered_view.settings.focus_minutes == 25U);
-    assert(fake.memory_journal.slots[1].state.settings.value
+    assert(fake.memory_journal.slots[0].state.settings.value
                .pomodoro_completion_transition_seconds == 10U);
-    assert(fake.memory_journal.slots[1].state.settings.version ==
+    assert(fake.memory_journal.slots[0].state.settings.version ==
            POMODORO_SETTINGS_VERSION);
-    assert(fake.memory_journal.slots[1].state.settings.value.daily_goal == 12U);
+    assert(fake.memory_journal.slots[0].state.settings.value.daily_goal == 8U);
     assert(fake.save_count == 1U);
     pomodoro_application_destroy(application);
 }
@@ -3092,11 +3090,11 @@ int main(void)
     test_manual_time_batch_renders_once();
     test_year_month_change_converges_day();
     test_local_midnight_decides_statistics_day();
-    test_opencode_status_renders_priority_and_wakes_display();
-    test_opencode_status_wakes_auto_sleep_without_changing_pomodoro();
-    test_opencode_status_ack_reveals_next_priority();
-    test_opencode_status_switch_persists_and_disables();
-    test_pomodoro_completion_transition_migration_defaults_to_ten_seconds();
+    test_agent_status_renders_priority_and_wakes_display();
+    test_agent_status_wakes_auto_sleep_without_changing_pomodoro();
+    test_agent_status_ack_reveals_next_priority();
+    test_agent_status_switch_persists_and_disables();
+    test_legacy_settings_version_is_treated_as_empty();
     puts("pomodoro_application_test: all tests passed");
     return 0;
 }

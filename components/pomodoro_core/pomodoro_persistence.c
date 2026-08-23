@@ -22,27 +22,18 @@ static uint32_t state_checksum(const pomodoro_persisted_state_t *state)
     return crc32(state, offsetof(pomodoro_persisted_state_t, checksum));
 }
 
-static bool settings_version_is_supported(uint32_t version)
-{
-    return version == POMODORO_SETTINGS_VERSION ||
-           version == POMODORO_SETTINGS_VERSION - 1U;
-}
-
 static bool persisted_settings_are_valid(
     const pomodoro_persisted_settings_t *settings)
 {
-    pomodoro_settings_t value = settings->value;
-    if (settings->version == POMODORO_SETTINGS_VERSION - 1U) {
-        value.pomodoro_completion_transition_seconds = 10U;
-    }
-    return pomodoro_settings_are_valid(&value);
+    return settings->version == POMODORO_SETTINGS_VERSION &&
+           pomodoro_settings_are_valid(&settings->value);
 }
 
 static bool state_is_valid(const pomodoro_persisted_state_t *state)
 {
     return state != NULL &&
            state->version == POMODORO_PERSISTED_STATE_VERSION &&
-           settings_version_is_supported(state->settings.version) &&
+           state->settings.version == POMODORO_SETTINGS_VERSION &&
            state->timer.version == POMODORO_SNAPSHOT_VERSION &&
            state->statistics.version == POMODORO_STATISTICS_VERSION &&
            persisted_settings_are_valid(&state->settings) &&
@@ -85,31 +76,16 @@ bool pomodoro_persistence_pack(pomodoro_persisted_state_t *destination,
     return true;
 }
 
-bool pomodoro_persistence_migrate(pomodoro_persisted_state_t *state)
-{
-    if (!state_is_valid(state)) {
-        return false;
-    }
-    if (state->settings.version != POMODORO_SETTINGS_VERSION) {
-        state->settings.version = POMODORO_SETTINGS_VERSION;
-        state->settings.value.pomodoro_completion_transition_seconds = 10U;
-        state->checksum = state_checksum(state);
-    }
-    return true;
-}
-
 bool pomodoro_persistence_unpack(pomodoro_persisted_state_t *source,
                                  pomodoro_model_t *model,
                                  pomodoro_statistics_store_t *statistics,
                                  bool *was_migrated)
 {
-    bool was_current = source != NULL &&
-        source->settings.version == POMODORO_SETTINGS_VERSION;
     if (was_migrated != NULL) {
         *was_migrated = false;
     }
     if (model == NULL || statistics == NULL ||
-        !pomodoro_persistence_migrate(source)) {
+        !state_is_valid(source)) {
         return false;
     }
 
@@ -125,9 +101,6 @@ bool pomodoro_persistence_unpack(pomodoro_persisted_state_t *source,
             : 3U;
     }
     *statistics = source->statistics;
-    if (was_migrated != NULL) {
-        *was_migrated = !was_current;
-    }
     return true;
 }
 

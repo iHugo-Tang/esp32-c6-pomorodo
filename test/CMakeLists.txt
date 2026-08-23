@@ -28,7 +28,6 @@ add_executable(
     ../components/pomodoro_app/pomodoro_statistics_projection.c
     ../components/pomodoro_app/pomodoro_agent_status.c
     ../components/pomodoro_app/pomodoro_oc1_protocol.c
-    ../components/pomodoro_app/pomodoro_opencode_status.c
     ../components/pomodoro_core/pomodoro_core.c
     ../components/pomodoro_core/pomodoro_statistics.c
     ../components/pomodoro_core/pomodoro_persistence.c
@@ -57,23 +56,6 @@ target_compile_features(pomodoro_orientation_test PRIVATE c_std_11)
 target_compile_options(pomodoro_orientation_test PRIVATE -Wall -Wextra -Werror -pedantic)
 
 add_test(NAME pomodoro_orientation_test COMMAND pomodoro_orientation_test)
-
-add_executable(
-    pomodoro_opencode_status_test
-    pomodoro_opencode_status_test.c
-    ../components/pomodoro_app/pomodoro_agent_status.c
-    ../components/pomodoro_app/pomodoro_oc1_protocol.c
-    ../components/pomodoro_app/pomodoro_opencode_status.c
-)
-target_include_directories(
-    pomodoro_opencode_status_test PRIVATE
-    ../components/pomodoro_app/include
-)
-target_compile_features(pomodoro_opencode_status_test PRIVATE c_std_11)
-target_compile_options(
-    pomodoro_opencode_status_test PRIVATE -Wall -Wextra -Werror -pedantic)
-
-add_test(NAME pomodoro_opencode_status_test COMMAND pomodoro_opencode_status_test)
 
 add_executable(
     pomodoro_agent_status_test

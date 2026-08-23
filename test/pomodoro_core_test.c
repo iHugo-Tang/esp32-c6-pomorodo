@@ -356,6 +356,8 @@ static void test_journal_survives_torn_write(void)
 
 static void test_legacy_persisted_version_is_treated_as_empty(void)
 {
+    assert(POMODORO_SETTINGS_VERSION == 9U);
+    assert(POMODORO_PERSISTED_STATE_VERSION == 6U);
     pomodoro_test_memory_journal_t memory;
     pomodoro_journal_t journal;
     pomodoro_model_t model = fresh_model();
@@ -382,7 +384,6 @@ static void test_legacy_persisted_version_is_treated_as_empty(void)
     assert(pomodoro_journal_load(&journal, &loaded) ==
            POMODORO_JOURNAL_READ_EMPTY);
 
-    assert(!pomodoro_persistence_migrate(&old_format));
     pomodoro_model_t restored;
     pomodoro_statistics_store_t restored_statistics;
     assert(!pomodoro_persistence_unpack(&old_format, &restored,

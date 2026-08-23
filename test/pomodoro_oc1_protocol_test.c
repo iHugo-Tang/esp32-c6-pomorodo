@@ -36,6 +36,15 @@ static void test_parse_state(void)
     memcpy(long_line, "OC1 STATE 1 2", 13U);
     assert(pomodoro_oc1_parse_line(long_line, sizeof(long_line), &revision,
                                    &mask) == POMODORO_OC1_LINE_NONE);
+
+    char maximum_line[POMODORO_OC1_MAX_LINE_LENGTH];
+    memset(maximum_line, '0', sizeof(maximum_line));
+    memcpy(maximum_line, "OC1 STATE 1 ", 12U);
+    assert(pomodoro_oc1_parse_line(maximum_line, sizeof(maximum_line),
+                                   &revision, &mask) ==
+           POMODORO_OC1_LINE_STATE);
+    assert(revision == 1U);
+    assert(mask == 0U);
 }
 
 static void test_format_control_and_ack(void)
