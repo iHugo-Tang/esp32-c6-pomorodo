@@ -1,6 +1,6 @@
 # 统一 Codex-only Agent Status 领域与协议边界
 
-Status: ready-for-agent
+Status: complete
 
 ## Problem Statement
 
