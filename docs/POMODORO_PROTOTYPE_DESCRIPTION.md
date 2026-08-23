@@ -105,7 +105,7 @@ flowchart LR
 - Focus：`#FF5C5C`。
 - Short break：`#4DD17A`。
 - Long break：`#5B8CFF`。
-- OpenCode Status：Error `#FF5C5C`、Waiting `#FFD166`、Working `#5B8CFF`、Completed `#4DD17A`、Idle `#454B56`。
+- Agent Status：Error `#FF5C5C`、Waiting `#FFD166`、Working `#5B8CFF`、Completed `#4DD17A`、Idle `#454B56`。
 - 页面背景：`#0F1115`；卡片：`#1A1F27`；抬升层：`#232A35`。
 - 主文字：`#F5F7FA`；辅助文字：`#A7B0BE`；分隔线：`#303846`。
 - 模式不能只依赖颜色区分，始终同时显示图标与文字。
@@ -168,17 +168,17 @@ flowchart LR
 3. 圆环内从上到下：状态文案、`MM:SS`、主按钮；Paused 时增加 Reset 文本操作。
 4. 底部第一行：`Set N/4` + 4 个番茄轮廓标记。
 5. 底部第二行：三个不可点击的模式分页点。
-6. 右下角 48×48 px Sound IconButton，图标可视尺寸为 28×28 px，与左侧 OpenCode Status 圆点相同，距边缘至少 24 px 安全边距。
-7. 左下角 28×28 px OpenCode Status 圆点，距左边 26 px，并与右侧声音按钮竖直居中对齐，使用 44×44 px 透明触控区。
+6. 右下角 48×48 px Sound IconButton，图标可视尺寸为 28×28 px，与左侧 Agent Status 圆点相同，距边缘至少 24 px 安全边距。
+7. 左下角 28×28 px Agent Status 圆点，距左边 26 px，并与右侧声音按钮竖直居中对齐，使用 44×44 px 透明触控区。
 
-### 8.2 OpenCode Status
+### 8.2 Agent Status
 
 - 只在 Main 显示；子页面、平台错误状态和阻断 Dialog 隐藏或遮挡。
-- 汇总同一 OpenCode 进程内当前项目的全部会话，优先级为 Error、Waiting、Working、Completed、Idle。
-- Error 为红色并保持到点击确认、对应会话重新工作或 OpenCode 断开；确认后显示下一优先级状态。
+- 汇总 Selected Agent Source（Codex Workspace）的全部存活成员，优先级为 Error、Waiting、Working、Completed、Idle。
+- Error 为红色并保持到点击确认、对应成员重新工作或 Workspace 断开；确认后显示下一优先级状态。
 - Completed 为绿色，五秒后自动转为灰色 Idle；点击可提前确认。圆点不显示任何详情内容。
 - 收到有效的汇总状态变化时唤醒屏幕，包括 PWR 主动熄屏；重复心跳、本地确认、五秒到期和断线超时不重复唤醒。
-- OpenCode 未连接或 Settings 开关关闭时隐藏；圆点参与现有 ±2 px AMOLED 像素偏移，并随 UI Orientation 一起旋转。
+- Selected Agent Source 未连接或 Settings 开关关闭时隐藏；圆点参与现有 ±2 px AMOLED 像素偏移，并随 UI Orientation 一起旋转。
 
 ### 8.3 Mode 视觉变体
 
@@ -224,7 +224,7 @@ flowchart LR
 
 ### 8.8 Sound 按钮
 
-- 固定于主屏右下角，48×48 px 触控区内使用 28×28 px 图标，与左侧 OpenCode Status 圆点可视尺寸相同，边缘安全边距至少 24 px。
+- 固定于主屏右下角，48×48 px 触控区内使用 28×28 px 图标，与左侧 Agent Status 圆点可视尺寸相同，边缘安全边距至少 24 px。
 - 音量非零显示扬声器图标，静音显示静音图标。
 - Ready、Running、Paused 与完成态均可见；非 Main 页面与平台错误状态隐藏。
 - 点击切换声音：静音或恢复最后一个非零音量，并显示 O01 Volume overlay 两秒。
@@ -334,10 +334,10 @@ flowchart LR
 - `Auto-start breaks` — Switch，默认 On。
 - `Auto-start focus` — Switch，默认 Off。
 
-#### OpenCode
+#### Agent
 
-- `OpenCode status` — Switch，默认 On，立即保存。
-- Off 时隐藏状态圆、停止读取 OpenCode 状态且禁止 OpenCode 事件唤醒屏幕；重新开启后等待当前状态同步。
+- `Agent status` — Switch，默认 On，立即保存。
+- Off 时隐藏状态圆、停止应用 Agent Status 且禁止状态事件唤醒屏幕；重新开启后等待当前 Workspace 同步。
 
 #### Sound
 

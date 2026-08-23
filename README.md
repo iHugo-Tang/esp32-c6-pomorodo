@@ -52,33 +52,30 @@ idf.py set-target esp32c6
 idf.py build
 ```
 
-## Flash firmware while OpenCode is running
+## Flash firmware while Agent Status is running
 
-The project USB port is shared between the OpenCode Status plugin and firmware
+The project USB port is shared between the Agent Status broker and firmware
 flashing. Use the supported wrapper instead of calling `idf.py flash` directly:
 
 1. Connect the device and confirm its serial port, such as
    `/dev/cu.usbmodem11101`.
-2. If the user-level OpenCode Status plugin changed (under
-   `~/.config/opencode/plugin/`), fully quit every OpenCode process and start
-   OpenCode again so the updated plugin is loaded.
-3. From the repository root, load ESP-IDF and run the wrapper:
+2. From the repository root, load ESP-IDF and run the wrapper:
 
    ```sh
    . "$HOME/esp/esp-idf/export.sh"
    tools/flash.sh -p /dev/cu.usbmodem11101
    ```
 
-4. Wait for `Hash of data verified` and `Hard resetting via RTS pin`. The
-   wrapper then removes its reservation and OpenCode Status reconnects
+3. Wait for `Hash of data verified` and `Hard resetting via RTS pin`. The
+   wrapper then removes its reservation and Agent Status reconnects
    automatically.
 
-The wrapper writes `opencode/pomodoro-status/flash-reservation` in
+The wrapper writes `pomodoro/agent-status/flash-reservation` in
 `$XDG_STATE_HOME` (or `~/.local/state` if unset) (containing its PID) before
 opening the port, waits up to `POMODORO_FLASH_RELEASE_TIMEOUT_S` (default 8 s)
-for the OpenCode Status plugin to release the serial link, runs `idf.py flash`,
+for the Agent Status broker to release the serial link, runs `idf.py flash`,
 and always removes the reservation on success, failure, interruption, or
-timeout. It never sends stop or termination signals to OpenCode. The port can
+timeout. It never sends stop or termination signals to the broker. The port can
 also be given via `POMODORO_PORT` or auto-detected when exactly one
 `/dev/cu.usbmodem*` exists.
 
@@ -88,17 +85,27 @@ product state.
 
 ## Agent Status
 
-Start the dependency-free broker in a foreground terminal before using an
-OpenCode or Codex adapter:
+`$pomodoro-select` starts the dependency-free broker on demand when no broker
+socket is listening. That automatic instance exits and releases the serial
+port after ten seconds without a valid Agent `report`. To keep a broker
+running independently, start the foreground entry point:
 
 ```sh
 node tools/pomodoro-agent-status-broker.mjs
 ```
 
 The broker is the only Agent Status serial owner. It keeps selection and
-revision under `$XDG_STATE_HOME/opencode/pomodoro-status` (default
-`~/.local/state/opencode/pomodoro-status`) and never starts itself or installs
-a LaunchAgent.
+revision under `$XDG_STATE_HOME/pomodoro/agent-status` (default
+`~/.local/state/pomodoro/agent-status`). The foreground entry remains
+running until interrupted; neither mode installs a LaunchAgent or PID file.
+
+Before first using this Codex-only version, stop any broker from an older
+development build and manually remove its obsolete state directory. The new
+runtime deliberately does not inspect, migrate, or delete it:
+
+```sh
+rm -rf -- "${XDG_STATE_HOME:-$HOME/.local/state}/opencode/pomodoro-status"
+```
 
 ### Install the Codex Workspace adapter
 
