@@ -229,9 +229,10 @@ typedef struct {
 typedef struct pomodoro_application pomodoro_application_t;
 
 /*
- * The application boundary is create plus dispatch. Platform adapters provide
- * observations and execute effects. The application owns all mutable state and
- * releases it with destroy.
+ * Dispatch is the primary application behavior interface. Platform adapters
+ * provide observations and execute effects. Manual-time rollers may submit a
+ * batch adjustment, touch handling reports whether wake consumed the contact,
+ * and destroy releases the state allocated by create.
  */
 pomodoro_application_result_t pomodoro_application_create(
     pomodoro_application_t **application,
@@ -239,26 +240,9 @@ pomodoro_application_result_t pomodoro_application_create(
 pomodoro_application_result_t pomodoro_application_dispatch(
     pomodoro_application_t *application,
     pomodoro_application_action_t action);
-pomodoro_application_result_t pomodoro_application_confirm_settings(
-    pomodoro_application_t *application,
-    const pomodoro_settings_t *settings);
-pomodoro_application_result_t pomodoro_application_confirm_manual_time(
-    pomodoro_application_t *application,
-    const pomodoro_application_manual_time_t *manual_time);
 pomodoro_application_result_t pomodoro_application_adjust_manual_time(
     pomodoro_application_t *application,
     pomodoro_application_action_t action, uint16_t steps);
-pomodoro_application_result_t pomodoro_application_open_numeric_setting(
-    pomodoro_application_t *application,
-    pomodoro_application_numeric_setting_t setting);
-pomodoro_application_result_t pomodoro_application_adjust_numeric_setting(
-    pomodoro_application_t *application, int delta);
-pomodoro_application_result_t pomodoro_application_confirm_numeric_setting(
-    pomodoro_application_t *application);
-pomodoro_application_result_t pomodoro_application_preview_brightness(
-    pomodoro_application_t *application, uint8_t percent);
-pomodoro_application_result_t pomodoro_application_confirm_brightness(
-    pomodoro_application_t *application, uint8_t percent);
 pomodoro_application_result_t pomodoro_application_handle_touch(
     pomodoro_application_t *application, bool *consumed);
 void pomodoro_application_destroy(pomodoro_application_t *application);

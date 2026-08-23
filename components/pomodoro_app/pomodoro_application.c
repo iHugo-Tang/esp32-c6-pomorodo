@@ -39,6 +39,20 @@ struct pomodoro_application {
     uint64_t last_oc1_control_wall_time_seconds;
 };
 
+static pomodoro_application_result_t confirm_settings(
+    pomodoro_application_t *application,
+    const pomodoro_settings_t *settings);
+static pomodoro_application_result_t confirm_manual_time(
+    pomodoro_application_t *application,
+    const pomodoro_application_manual_time_t *manual_time);
+static pomodoro_application_result_t open_numeric_setting(
+    pomodoro_application_t *application,
+    pomodoro_application_numeric_setting_t setting);
+static pomodoro_application_result_t adjust_numeric_setting(
+    pomodoro_application_t *application, int delta);
+static pomodoro_application_result_t confirm_numeric_setting(
+    pomodoro_application_t *application);
+
 static uint16_t completed_pomodoros_on(
     const pomodoro_statistics_store_t *statistics, pomodoro_date_t date)
 {
@@ -965,7 +979,7 @@ pomodoro_application_result_t pomodoro_application_dispatch(
                 application, action, 1U);
         }
         if (action == POMODORO_APPLICATION_ACTION_MANUAL_TIME_CONFIRM) {
-            return pomodoro_application_confirm_manual_time(
+            return confirm_manual_time(
                 application, &application->manual_time_draft);
         }
         if (action == POMODORO_APPLICATION_ACTION_VOLUME_UP ||
@@ -1127,19 +1141,19 @@ pomodoro_application_result_t pomodoro_application_dispatch(
     }
     if (action >= POMODORO_APPLICATION_ACTION_OPEN_FOCUS_MINUTES &&
         action <= POMODORO_APPLICATION_ACTION_OPEN_IDLE_BRIGHTNESS) {
-        return pomodoro_application_open_numeric_setting(
+        return open_numeric_setting(
             application,
             (pomodoro_application_numeric_setting_t) (
                 action - POMODORO_APPLICATION_ACTION_OPEN_FOCUS_MINUTES));
     }
     if (action == POMODORO_APPLICATION_ACTION_NUMERIC_DECREMENT ||
         action == POMODORO_APPLICATION_ACTION_NUMERIC_INCREMENT) {
-        return pomodoro_application_adjust_numeric_setting(
+        return adjust_numeric_setting(
             application,
             action == POMODORO_APPLICATION_ACTION_NUMERIC_INCREMENT ? 1 : -1);
     }
     if (action == POMODORO_APPLICATION_ACTION_NUMERIC_CONFIRM) {
-        return pomodoro_application_confirm_numeric_setting(application);
+        return confirm_numeric_setting(application);
     }
     if (action == POMODORO_APPLICATION_ACTION_TOGGLE_AUTO_FOCUS ||
         action == POMODORO_APPLICATION_ACTION_TOGGLE_AUTO_BREAK) {
@@ -1149,12 +1163,12 @@ pomodoro_application_result_t pomodoro_application_dispatch(
         } else {
             settings.auto_start_breaks = !settings.auto_start_breaks;
         }
-        return pomodoro_application_confirm_settings(application, &settings);
+        return confirm_settings(application, &settings);
     }
     if (action == POMODORO_APPLICATION_ACTION_TOGGLE_AGENT_STATUS) {
         pomodoro_settings_t settings = application->model.settings;
         settings.agent_status_enabled = !settings.agent_status_enabled;
-        return pomodoro_application_confirm_settings(application, &settings);
+        return confirm_settings(application, &settings);
     }
     if (action == POMODORO_APPLICATION_ACTION_ACK_AGENT_STATUS) {
         if (application->page != POMODORO_APPLICATION_PAGE_MAIN) {
@@ -1179,7 +1193,7 @@ pomodoro_application_result_t pomodoro_application_dispatch(
     return POMODORO_APPLICATION_ERR_INVALID_STATE;
 }
 
-pomodoro_application_result_t pomodoro_application_open_numeric_setting(
+static pomodoro_application_result_t open_numeric_setting(
     pomodoro_application_t *application,
     pomodoro_application_numeric_setting_t setting)
 {
@@ -1198,7 +1212,7 @@ pomodoro_application_result_t pomodoro_application_open_numeric_setting(
     return render(application, NULL, POMODORO_EVENT_NONE);
 }
 
-pomodoro_application_result_t pomodoro_application_adjust_numeric_setting(
+static pomodoro_application_result_t adjust_numeric_setting(
     pomodoro_application_t *application, int delta)
 {
     if (application == NULL) {
@@ -1222,7 +1236,7 @@ pomodoro_application_result_t pomodoro_application_adjust_numeric_setting(
     return render(application, NULL, POMODORO_EVENT_NONE);
 }
 
-pomodoro_application_result_t pomodoro_application_confirm_numeric_setting(
+static pomodoro_application_result_t confirm_numeric_setting(
     pomodoro_application_t *application)
 {
     if (application == NULL) {
@@ -1235,40 +1249,7 @@ pomodoro_application_result_t pomodoro_application_confirm_numeric_setting(
     pomodoro_numeric_editor_apply(&application->numeric_editor, &settings);
     application->brightness_preview_percent = 0U;
     application->page = POMODORO_APPLICATION_PAGE_SETTINGS;
-    return pomodoro_application_confirm_settings(application, &settings);
-}
-
-pomodoro_application_result_t pomodoro_application_preview_brightness(
-    pomodoro_application_t *application, uint8_t percent)
-{
-    if (application == NULL || percent < 10U || percent > 100U ||
-        percent % 5U != 0U) {
-        return POMODORO_APPLICATION_ERR_INVALID_ARGUMENT;
-    }
-    if (application->page != POMODORO_APPLICATION_PAGE_SETTINGS) {
-        return POMODORO_APPLICATION_ERR_INVALID_STATE;
-    }
-    if (!application->platform.set_display_brightness_percent(
-            application->platform.context, percent)) {
-        return fail_platform(application, POMODORO_APPLICATION_ERROR_DISPLAY);
-    }
-    application->brightness_preview_percent = percent;
-    application->effective_brightness_percent = percent;
-    return render(application, NULL, POMODORO_EVENT_NONE);
-}
-
-pomodoro_application_result_t pomodoro_application_confirm_brightness(
-    pomodoro_application_t *application, uint8_t percent)
-{
-    pomodoro_application_result_t result =
-        pomodoro_application_preview_brightness(application, percent);
-    if (result != POMODORO_APPLICATION_OK) {
-        return result;
-    }
-    pomodoro_settings_t settings = application->model.settings;
-    settings.brightness_percent = percent;
-    application->brightness_preview_percent = 0U;
-    return pomodoro_application_confirm_settings(application, &settings);
+    return confirm_settings(application, &settings);
 }
 
 pomodoro_application_result_t pomodoro_application_adjust_manual_time(
@@ -1291,7 +1272,7 @@ pomodoro_application_result_t pomodoro_application_adjust_manual_time(
     return render(application, NULL, POMODORO_EVENT_NONE);
 }
 
-pomodoro_application_result_t pomodoro_application_confirm_settings(
+static pomodoro_application_result_t confirm_settings(
     pomodoro_application_t *application,
     const pomodoro_settings_t *settings)
 {
@@ -1329,7 +1310,7 @@ pomodoro_application_result_t pomodoro_application_confirm_settings(
     return save_and_render(application, NULL);
 }
 
-pomodoro_application_result_t pomodoro_application_confirm_manual_time(
+static pomodoro_application_result_t confirm_manual_time(
     pomodoro_application_t *application,
     const pomodoro_application_manual_time_t *manual_time)
 {
@@ -1337,8 +1318,7 @@ pomodoro_application_result_t pomodoro_application_confirm_manual_time(
         return POMODORO_APPLICATION_ERR_INVALID_ARGUMENT;
     }
     if (!application->booted ||
-        (application->view.phase != POMODORO_APPLICATION_PHASE_ACTIVE &&
-         application->view.phase != POMODORO_APPLICATION_PHASE_TIME_SETUP)) {
+        application->view.phase != POMODORO_APPLICATION_PHASE_TIME_SETUP) {
         return POMODORO_APPLICATION_ERR_INVALID_STATE;
     }
     uint64_t wall_time_seconds = 0U;

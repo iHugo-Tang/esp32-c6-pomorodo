@@ -289,6 +289,16 @@ static pomodoro_application_t *boot_application(fake_platform_t *fake)
     return application;
 }
 
+static void dispatch_repeated(pomodoro_application_t *application,
+                              pomodoro_application_action_t action,
+                              unsigned count)
+{
+    for (unsigned index = 0U; index < count; index++) {
+        assert(pomodoro_application_dispatch(application, action) ==
+               POMODORO_APPLICATION_OK);
+    }
+}
+
 static void test_boot_without_saved_state_shows_default_focus_ready(void)
 {
     fake_platform_t fake;
@@ -502,7 +512,7 @@ static void test_invalid_rtc_boot_requires_non_skippable_time_setup(void)
     pomodoro_application_destroy(application);
 }
 
-static void test_manual_time_validates_writes_local_time_and_enters_main(void)
+static void test_manual_time_confirm_writes_selected_time_and_enters_main(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
@@ -510,36 +520,35 @@ static void test_manual_time_validates_writes_local_time_and_enters_main(void)
     fake.rtc_is_invalid = true;
     fake_enable_journal(&fake);
     pomodoro_application_t *application = boot_application(&fake);
-    pomodoro_application_manual_time_t manual = {
-        .local_date = {.year = 2026, .month = 2, .day = 29},
-        .hour = 14U,
-        .minute = 30U,
-    };
-
-    assert(pomodoro_application_confirm_manual_time(application, &manual) ==
-           POMODORO_APPLICATION_ERR_INVALID_ARGUMENT);
-    assert(fake.write_time_count == 0U);
-
-    manual.local_date = (pomodoro_date_t) {
-        .year = 2019, .month = 12, .day = 31,
-    };
-    assert(pomodoro_application_confirm_manual_time(application, &manual) ==
-           POMODORO_APPLICATION_ERR_INVALID_ARGUMENT);
-    manual.local_date.year = 2070U;
-    assert(pomodoro_application_confirm_manual_time(application, &manual) ==
-           POMODORO_APPLICATION_ERR_INVALID_ARGUMENT);
-    assert(fake.write_time_count == 0U);
-
-    manual.local_date = (pomodoro_date_t) {
-        .year = 2026, .month = 8, .day = 15,
-    };
-    assert(pomodoro_application_confirm_manual_time(application, &manual) ==
+    assert(pomodoro_application_adjust_manual_time(
+               application, POMODORO_APPLICATION_ACTION_MANUAL_YEAR_DOWN,
+               100U) == POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_adjust_manual_time(
+               application, POMODORO_APPLICATION_ACTION_MANUAL_MONTH_DOWN,
+               12U) == POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_adjust_manual_time(
+               application, POMODORO_APPLICATION_ACTION_MANUAL_DAY_DOWN,
+               31U) == POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_adjust_manual_time(
+               application, POMODORO_APPLICATION_ACTION_MANUAL_HOUR_DOWN,
+               24U) == POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_adjust_manual_time(
+               application, POMODORO_APPLICATION_ACTION_MANUAL_HOUR_UP,
+               14U) == POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_adjust_manual_time(
+               application, POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_UP,
+               30U) == POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.manual_time_draft.local_date.year == 2020U);
+    assert(fake.rendered_view.manual_time_draft.local_date.month == 1U);
+    assert(fake.rendered_view.manual_time_draft.local_date.day == 1U);
+    assert(fake.rendered_view.manual_time_draft.hour == 14U);
+    assert(fake.rendered_view.manual_time_draft.minute == 30U);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_MANUAL_TIME_CONFIRM) ==
            POMODORO_APPLICATION_OK);
     assert(fake.write_time_count == 1U);
-    uint64_t expected;
-    assert(pomodoro_local_datetime_to_wall_time(
-        manual.local_date, manual.hour, manual.minute, &expected));
-    assert(fake.written_wall_time_seconds == expected);
+    const uint64_t expected_wall_time_seconds = 1577889000U;
+    assert(fake.written_wall_time_seconds == expected_wall_time_seconds);
     assert(fake.rendered_view.phase == POMODORO_APPLICATION_PHASE_ACTIVE);
     assert(fake.rendered_view.rtc_is_valid);
     pomodoro_application_destroy(application);
@@ -561,12 +570,17 @@ static void test_time_correction_preserves_running_remaining_duration(void)
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.remaining_seconds == 20U * 60U);
 
-    pomodoro_application_manual_time_t manual = {
-        .local_date = {.year = 2026, .month = 8, .day = 15},
-        .hour = 14U,
-        .minute = 30U,
-    };
-    assert(pomodoro_application_confirm_manual_time(application, &manual) ==
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_SETTINGS) ==
+           POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_DATE_TIME) ==
+           POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_adjust_manual_time(
+               application, POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_UP,
+               30U) == POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_MANUAL_TIME_CONFIRM) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.timer_state == POMODORO_TIMER_RUNNING);
     assert(fake.rendered_view.remaining_seconds == 20U * 60U);
@@ -937,14 +951,14 @@ static void test_numeric_stepper_discards_back_and_saves_confirm(void)
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_OPEN_SETTINGS) ==
            POMODORO_APPLICATION_OK);
-    assert(pomodoro_application_open_numeric_setting(
-               application,
-               POMODORO_APPLICATION_SETTING_FOCUS_MINUTES) ==
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_FOCUS_MINUTES) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.numeric_draft_value == 25U);
     assert(fake.rendered_view.numeric_minimum == 5U);
     assert(fake.rendered_view.numeric_maximum == 60U);
-    assert(pomodoro_application_adjust_numeric_setting(application, 1) ==
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_NUMERIC_INCREMENT) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.numeric_draft_value == 26U);
     unsigned saves_before_back = fake.save_count;
@@ -954,14 +968,15 @@ static void test_numeric_stepper_discards_back_and_saves_confirm(void)
     assert(fake.rendered_view.page == POMODORO_APPLICATION_PAGE_SETTINGS);
     assert(fake.save_count == saves_before_back);
 
-    assert(pomodoro_application_open_numeric_setting(
-               application,
-               POMODORO_APPLICATION_SETTING_FOCUS_MINUTES) ==
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_FOCUS_MINUTES) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.numeric_draft_value == 25U);
-    assert(pomodoro_application_adjust_numeric_setting(application, 1) ==
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_NUMERIC_INCREMENT) ==
            POMODORO_APPLICATION_OK);
-    assert(pomodoro_application_confirm_numeric_setting(application) ==
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_NUMERIC_CONFIRM) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.page == POMODORO_APPLICATION_PAGE_SETTINGS);
     assert(fake.rendered_view.settings.focus_minutes == 26U);
@@ -1007,13 +1022,14 @@ static void test_duration_change_does_not_alter_running_timer(void)
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_OPEN_SETTINGS) ==
            POMODORO_APPLICATION_OK);
-    assert(pomodoro_application_open_numeric_setting(
-               application,
-               POMODORO_APPLICATION_SETTING_FOCUS_MINUTES) ==
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_FOCUS_MINUTES) ==
            POMODORO_APPLICATION_OK);
-    assert(pomodoro_application_adjust_numeric_setting(application, 1) ==
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_NUMERIC_INCREMENT) ==
            POMODORO_APPLICATION_OK);
-    assert(pomodoro_application_confirm_numeric_setting(application) ==
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_NUMERIC_CONFIRM) ==
            POMODORO_APPLICATION_OK);
     assert(fake.rendered_view.settings.focus_minutes == 26U);
     assert(fake.rendered_view.configured_duration_seconds == 25U * 60U);
@@ -1021,7 +1037,7 @@ static void test_duration_change_does_not_alter_running_timer(void)
     pomodoro_application_destroy(application);
 }
 
-static void test_switches_and_brightness_save_with_specified_timing(void)
+static void test_switch_saves_and_survives_reboot(void)
 {
     fake_platform_t fake;
     memset(&fake, 0, sizeof(fake));
@@ -1031,28 +1047,15 @@ static void test_switches_and_brightness_save_with_specified_timing(void)
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_OPEN_SETTINGS) ==
            POMODORO_APPLICATION_OK);
-    pomodoro_settings_t settings = fake.rendered_view.settings;
-    settings.auto_start_breaks = false;
     unsigned saves_before_switch = fake.save_count;
-    assert(pomodoro_application_confirm_settings(application, &settings) ==
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TOGGLE_AUTO_BREAK) ==
            POMODORO_APPLICATION_OK);
     assert(fake.save_count == saves_before_switch + 1U);
-
-    unsigned saves_before_preview = fake.save_count;
-    assert(pomodoro_application_preview_brightness(application, 85U) ==
-           POMODORO_APPLICATION_OK);
-    assert(fake.brightness_percent == 85U);
-    assert(fake.rendered_view.brightness_preview_percent == 85U);
-    assert(fake.save_count == saves_before_preview);
-    assert(pomodoro_application_confirm_brightness(application, 85U) ==
-           POMODORO_APPLICATION_OK);
-    assert(fake.save_count == saves_before_preview + 1U);
     pomodoro_application_destroy(application);
 
     application = boot_application(&fake);
     assert(!fake.rendered_view.settings.auto_start_breaks);
-    assert(fake.rendered_view.settings.brightness_percent == 85U);
-    assert(fake.brightness_percent == 85U);
     pomodoro_application_destroy(application);
 }
 
@@ -2238,14 +2241,28 @@ static void test_confirmed_settings_save_and_survive_reboot(void)
     fake.now_wall_time_seconds = 100U;
     fake_enable_journal(&fake);
     pomodoro_application_t *application = boot_application(&fake);
-    pomodoro_settings_t settings = fake.rendered_view.settings;
-    settings.daily_goal = 12U;
-    settings.pomodoro_completion_transition_seconds = 12U;
     unsigned saves_before_confirmation = fake.save_count;
-
-    assert(pomodoro_application_confirm_settings(application, &settings) ==
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_SETTINGS) ==
            POMODORO_APPLICATION_OK);
-    assert(fake.save_count == saves_before_confirmation + 1U);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_DAILY_GOAL) ==
+           POMODORO_APPLICATION_OK);
+    dispatch_repeated(application,
+                      POMODORO_APPLICATION_ACTION_NUMERIC_INCREMENT, 4U);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_NUMERIC_CONFIRM) ==
+           POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_dispatch(
+               application,
+               POMODORO_APPLICATION_ACTION_OPEN_POMODORO_COMPLETION_TRANSITION) ==
+           POMODORO_APPLICATION_OK);
+    dispatch_repeated(application,
+                      POMODORO_APPLICATION_ACTION_NUMERIC_INCREMENT, 2U);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_NUMERIC_CONFIRM) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.save_count == saves_before_confirmation + 2U);
     assert(fake.rendered_view.settings.daily_goal == 12U);
     assert(fake.rendered_view.settings
                .pomodoro_completion_transition_seconds == 12U);
@@ -2255,7 +2272,7 @@ static void test_confirmed_settings_save_and_survive_reboot(void)
     assert(fake.rendered_view.settings.daily_goal == 12U);
     assert(fake.rendered_view.settings
                .pomodoro_completion_transition_seconds == 12U);
-    assert(fake.save_count == saves_before_confirmation + 1U);
+    assert(fake.save_count == saves_before_confirmation + 2U);
     pomodoro_application_destroy(application);
 }
 
@@ -2675,9 +2692,16 @@ static void test_recovery_tick_assigns_outage_completion_to_recovery_day(void)
     fake.now_wall_time_seconds = 100U;
     fake.local_date = (pomodoro_date_t) {.year = 2026, .month = 8, .day = 15};
     pomodoro_application_t *application = boot_application(&fake);
-    pomodoro_settings_t settings = fake.rendered_view.settings;
-    settings.focus_minutes = 5U;
-    assert(pomodoro_application_confirm_settings(application, &settings) ==
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_SETTINGS) ==
+           POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_FOCUS_MINUTES) ==
+           POMODORO_APPLICATION_OK);
+    dispatch_repeated(application,
+                      POMODORO_APPLICATION_ACTION_NUMERIC_DECREMENT, 20U);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_NUMERIC_CONFIRM) ==
            POMODORO_APPLICATION_OK);
     assert(pomodoro_application_dispatch(
                application, POMODORO_APPLICATION_ACTION_START) ==
@@ -3025,7 +3049,7 @@ int main(void)
     test_boot_platform_failures_are_visible();
     test_boot_does_not_overwrite_state_when_journal_read_fails();
     test_invalid_rtc_boot_requires_non_skippable_time_setup();
-    test_manual_time_validates_writes_local_time_and_enters_main();
+    test_manual_time_confirm_writes_selected_time_and_enters_main();
     test_time_correction_preserves_running_remaining_duration();
     test_rtc_failure_uses_pending_statistics_until_time_recovers();
     test_statistics_view_shows_today_and_trailing_seven_days();
@@ -3037,7 +3061,7 @@ int main(void)
     test_completion_behind_statistics_returns_to_main();
     test_numeric_stepper_discards_back_and_saves_confirm();
     test_duration_change_does_not_alter_running_timer();
-    test_switches_and_brightness_save_with_specified_timing();
+    test_switch_saves_and_survives_reboot();
     test_brightness_numeric_page_previews_and_saves_on_confirm();
     test_idle_brightness_multiplier_saves_and_dims_ready_display();
     test_volume_buttons_and_sound_toggle_persist_last_nonzero_volume();
