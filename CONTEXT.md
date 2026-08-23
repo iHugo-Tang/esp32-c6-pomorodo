@@ -56,14 +56,22 @@ _Avoid_：设备姿态、屏幕旋转、IMU 手势
 设备正在通过 USB 接收外部电源的状态，与电池是否正在充电以及 USB 串口是否连接无关。USB Power 期间禁用基于电池的显示省电行为。
 _Avoid_：Charging、充电状态、USB 连接
 
+**Agent Source**：
+一个可被独立选择、并把一个或多个成员聚合成 Agent Status 的状态来源。OpenCode Process 与 Codex Workspace 是两种 Agent Source。
+_Avoid_：会话、成员、串口所有者
+
+**Selected Agent Source**：
+当前唯一向设备提供 Agent Status 的 Agent Source。来源暂时消失时仍保留选择并等待它恢复，只有显式选择才会切换来源。
+_Avoid_：主进程、活动会话、自动回退来源
+
+**Agent Status**：
+Selected Agent Source 全部存活成员的汇总状态，按优先级取 Error、Waiting、Working、Completed 或 Idle；Completed 在确认或短暂展示后回到 Idle。
+_Avoid_：Pomodoro Mode、单个成员状态
+
 **OpenCode Process**：
-一个独立运行的 OpenCode 实例，含其当前项目内全部会话。所有加载用户级 Status 插件的进程共享同一份实现，并在共享状态目录中注册参与设备状态来源的协调。
+以一个独立运行的 OpenCode 实例及其当前项目内全部会话为边界的 Agent Source。
 _Avoid_：项目、窗口、标签页
 
-**Selected OpenCode Process**：
-当前向设备提供聚合状态的唯一 OpenCode 进程。第一个加载插件的进程自动成为所选进程，后续进程不抢占；可在任一进程中执行 `/pomodoro-select` 显式切换，所选进程退出或心跳超时后自动回退到仍存活的最早进程。
-_Avoid_：主进程、活动会话
-
-**OpenCode Status**：
-Selected OpenCode Process 当前项目内全部会话的汇总状态，按优先级取 Error、Waiting、Working、Completed 或 Idle；Completed 在确认或短暂展示后回到 Idle。
-_Avoid_：Agent 状态、Pomodoro Mode
+**Codex Workspace**：
+同一代码库内全部 Codex chat、fork、side chat 与 subagent 共享的 Agent Source；Git 仓库以规范化根目录为边界，非 Git 目录以规范化工作目录为边界。
+_Avoid_：Codex Process、单个 agent、单个 chat

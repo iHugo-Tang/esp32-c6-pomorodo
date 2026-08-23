@@ -86,21 +86,48 @@ If release times out, close another serial owner such as `idf.py monitor` and
 retry the same wrapper command. Do not use `erase-flash`; it deletes saved
 product state.
 
-## OpenCode Status
+## Agent Status
 
-The OpenCode Status plugin lives at the user level
-(`~/.config/opencode/plugin/opencode-status.js`) and loads in every OpenCode
-process, so the device can reflect whichever project you are working in. All
-processes share one user-level state directory
-(`$XDG_STATE_HOME/opencode/pomodoro-status`, default
-`~/.local/state/opencode/pomodoro-status`). The first process to load the
-plugin becomes the selected source and later processes do not steal it. Run
-`/pomodoro-select` inside any OpenCode to make that process the selected
-source, or let it fall back to the earliest alive process when the selected
-one exits or times out. Only the selected process drives the device, and a
-new selection always wakes it with a fresh state revision. `/pomodoro-select`
-is a TUI command that executes directly in the current process without a
-model request, and only the selected process owns the serial port.
+Start the dependency-free broker in a foreground terminal before using an
+OpenCode or Codex adapter:
+
+```sh
+node tools/pomodoro-agent-status-broker.mjs
+```
+
+The broker is the only Agent Status serial owner. It keeps selection and
+revision under `$XDG_STATE_HOME/opencode/pomodoro-status` (default
+`~/.local/state/opencode/pomodoro-status`) and never starts itself or installs
+a LaunchAgent.
+
+### Install the Codex Workspace adapter
+
+The source of truth is [`plugins/pomodoro-agent-status`](plugins/pomodoro-agent-status).
+Create the personal marketplace entry with the Codex `plugin-creator` helper,
+copy this directory to `~/plugins/pomodoro-agent-status`, then install it:
+
+```sh
+python3 ~/.codex/skills/.system/plugin-creator/scripts/create_basic_plugin.py \
+  pomodoro-agent-status --with-marketplace
+ditto plugins/pomodoro-agent-status "$HOME/plugins/pomodoro-agent-status"
+codex plugin add pomodoro-agent-status@personal
+```
+
+Open a new thread, run `/hooks`, and review and trust the plugin hooks. Restart
+Codex Desktop before Desktop acceptance. Run `$pomodoro-select` in a Codex
+thread to select its Codex Workspace. Chats and subagents opened anywhere
+inside the same Git repository share one Agent Source; non-Git directories are
+grouped by their resolved working directory.
+
+For updates, copy the repository directory again, run
+`update_plugin_cachebuster.py` from the `plugin-creator` skill against the
+installed copy, reinstall from the personal marketplace, and test in a new
+thread. Do not edit the installed copy independently.
+
+Codex hooks and their trust flow are documented in the
+[official hooks documentation](https://learn.chatgpt.com/docs/hooks). The
+selection command is a skill because
+[custom prompts are deprecated](https://learn.chatgpt.com/docs/custom-prompts).
 
 The target integration uses the interfaces declared in
 `components/pomodoro_platform/include/pomodoro_platform.h` with exact,
