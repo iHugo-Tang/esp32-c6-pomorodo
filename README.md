@@ -2,6 +2,8 @@
 
 Offline Pomodoro firmware for the Waveshare ESP32-C6-Touch-AMOLED-2.16.
 
+![Pomodoro timer running on the ESP32 display](docs/esp32-screen.png)
+
 The repository currently contains an executable device slice of the product:
 
 - a deterministic, host-testable timer and Pomodoro Set state machine;
