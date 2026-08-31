@@ -15,15 +15,38 @@ typedef struct {
 } confetti_piece_t;
 
 static const confetti_piece_t completion_confetti[] = {
-    {.x = -72, .y = 8, .color = 0xFFD166},
-    {.x = -54, .y = 48, .color = 0x5B8CFF},
-    {.x = -42, .y = -2, .color = 0x4DD17A},
-    {.x = 44, .y = -4, .color = 0xFFD166},
-    {.x = 58, .y = 45, .color = 0xFF5C5C},
-    {.x = 72, .y = 14, .color = 0x5B8CFF},
+    {.x = -72, .y = 20, .color = 0xFFD166},
+    {.x = -54, .y = 60, .color = 0x5B8CFF},
+    {.x = -42, .y = 10, .color = 0x4DD17A},
+    {.x = 44, .y = 8, .color = 0xFFD166},
+    {.x = 58, .y = 57, .color = 0xFF5C5C},
+    {.x = 72, .y = 26, .color = 0x5B8CFF},
 };
 
 enum {
+    UI_COLOR_BACKGROUND = 0x0F1115,
+    UI_COLOR_SURFACE = 0x1A1F27,
+    UI_COLOR_SURFACE_RAISED = 0x232A35,
+    UI_COLOR_TEXT_PRIMARY = 0xF5F7FA,
+    UI_COLOR_TEXT_SECONDARY = 0xA7B0BE,
+    UI_COLOR_ON_ACCENT = 0x0F1115,
+    UI_COLOR_VALUE = 0x9FC2FF,
+    UI_COLOR_DIVIDER = 0x303846,
+    UI_COLOR_MUTED = 0x454B56,
+    UI_COLOR_FOCUS = 0xFF5C5C,
+    UI_COLOR_SHORT_BREAK = 0x4DD17A,
+    UI_COLOR_LONG_BREAK = 0x5B8CFF,
+    UI_COLOR_INTERACTIVE = UI_COLOR_LONG_BREAK,
+    UI_COLOR_DANGER = 0xFF6B6B,
+    UI_COLOR_WARNING = 0xFFB74D,
+    UI_COLOR_CHART = 0x5B7396,
+    UI_TOUCH_TARGET = 48,
+    UI_BUTTON_HEIGHT = 52,
+    UI_ROW_HEIGHT = 56,
+    UI_RADIUS_SMALL = 12,
+    UI_RADIUS_MEDIUM = 16,
+    UI_RADIUS_LARGE = 24,
+    UI_PAGE_INSET = 26,
     COMPLETION_CONFETTI_COUNT =
         sizeof(completion_confetti) / sizeof(completion_confetti[0]),
     TIMER_RING_CENTER_Y = -18,
@@ -31,12 +54,18 @@ enum {
     TIMER_PRIMARY_CENTER_Y = 19,
     COMPLETION_MANUAL_GROUP_Y = 12,
     COMPLETION_MANUAL_PRIMARY_Y = 83,
-    COMPLETION_AUTO_GROUP_Y = -11,
-    COMPLETION_AUTO_PRIMARY_Y = 59,
-    COMPLETION_AUTO_SECONDARY_Y = 112,
-    SETTINGS_SECTION_TEXT_COLOR = 0xAAB1BE,
-    SETTINGS_ITEM_TEXT_COLOR = 0xF5F7FA,
-    SETTINGS_VALUE_TEXT_COLOR = 0x9FC2FF,
+    COMPLETION_AUTO_GROUP_Y = -19,
+    COMPLETION_AUTO_PRIMARY_Y = 64,
+    COMPLETION_AUTO_SECONDARY_Y = 126,
+    PAUSED_PRIMARY_CENTER_Y = TIMER_RING_CENTER_Y - 32,
+    PAUSED_SECONDARY_CENTER_Y = TIMER_RING_CENTER_Y + 32,
+    CONFIRMATION_DIALOG_MAX_HEIGHT = 250,
+    CONFIRMATION_DIALOG_BODY_MAX_HEIGHT = 90,
+    CONFIRMATION_DIALOG_ACTION_WIDTH = 181,
+    CONFIRMATION_DIALOG_ACTION_GAP = 16,
+    SETTINGS_SECTION_TEXT_COLOR = UI_COLOR_TEXT_SECONDARY,
+    SETTINGS_ITEM_TEXT_COLOR = UI_COLOR_TEXT_PRIMARY,
+    SETTINGS_VALUE_TEXT_COLOR = UI_COLOR_VALUE,
 };
 
 typedef struct {
@@ -58,7 +87,7 @@ static const struct {
     {POMODORO_APPLICATION_ACTION_TOGGLE_AUTO_BREAK, "Auto breaks"},
     {POMODORO_APPLICATION_ACTION_TOGGLE_AUTO_FOCUS, "Auto focus"},
     {POMODORO_APPLICATION_ACTION_TOGGLE_SOUND, "Sound"},
-    {POMODORO_APPLICATION_ACTION_OPEN_STATISTICS, "Stats"},
+    {POMODORO_APPLICATION_ACTION_OPEN_STATISTICS, "Statistics"},
     {POMODORO_APPLICATION_ACTION_OPEN_SETTINGS, "Settings"},
     {POMODORO_APPLICATION_ACTION_REQUEST_CLEAR_SET_PROGRESS,
      "Clear set progress"},
@@ -106,6 +135,7 @@ typedef struct {
     lv_obj_t *confirmation_mask;
     lv_obj_t *confirmation_overlay;
     lv_obj_t *confirmation_title;
+    lv_obj_t *confirmation_body_viewport;
     lv_obj_t *confirmation_body;
     lv_obj_t *confirmation_button_label;
     lv_obj_t *mode_transition_overlay;
@@ -157,6 +187,7 @@ typedef struct {
     lv_timer_t *tick_timer;
     lv_timer_t *mode_transition_timer;
     pomodoro_application_action_t pending_mode_action;
+    pomodoro_application_confirmation_t rendered_confirmation;
     int32_t gesture_start_x;
     bool numeric_roller_rendering;
     bool manual_roller_rendering;
@@ -172,6 +203,123 @@ typedef struct {
 static const char *TAG = "pomodoro_view";
 static device_view_context_t view_context;
 static lv_font_t countdown_font;
+
+static struct {
+    bool initialized;
+    lv_style_t button;
+    lv_style_t button_pressed;
+    lv_style_t disabled;
+    lv_style_t setting_row;
+    lv_style_t setting_row_pressed;
+    lv_style_t switch_main;
+    lv_style_t switch_checked;
+    lv_style_t switch_knob;
+    lv_style_t switch_knob_checked;
+    lv_style_t roller;
+    lv_style_t roller_selected;
+    lv_style_t status_badge;
+} ui_styles;
+
+static void initialize_ui_styles(void)
+{
+    if (ui_styles.initialized) {
+        return;
+    }
+
+    lv_style_init(&ui_styles.button);
+    lv_style_set_bg_color(&ui_styles.button,
+                          lv_color_hex(UI_COLOR_SURFACE_RAISED));
+    lv_style_set_bg_opa(&ui_styles.button, LV_OPA_COVER);
+    lv_style_set_border_width(&ui_styles.button, 1);
+    lv_style_set_border_color(&ui_styles.button,
+                              lv_color_hex(UI_COLOR_DIVIDER));
+    lv_style_set_radius(&ui_styles.button, UI_RADIUS_MEDIUM);
+    lv_style_set_shadow_width(&ui_styles.button, 0);
+    lv_style_set_text_color(&ui_styles.button,
+                            lv_color_hex(UI_COLOR_TEXT_PRIMARY));
+    lv_style_set_text_font(&ui_styles.button, &lv_font_montserrat_16);
+    lv_style_set_pad_hor(&ui_styles.button, 16);
+
+    lv_style_init(&ui_styles.button_pressed);
+    lv_style_set_bg_color(&ui_styles.button_pressed,
+                          lv_color_hex(UI_COLOR_SURFACE));
+
+    lv_style_init(&ui_styles.disabled);
+    lv_style_set_opa(&ui_styles.disabled, LV_OPA_50);
+
+    lv_style_init(&ui_styles.setting_row);
+    lv_style_set_bg_color(&ui_styles.setting_row,
+                          lv_color_hex(UI_COLOR_SURFACE));
+    lv_style_set_bg_opa(&ui_styles.setting_row, LV_OPA_COVER);
+    lv_style_set_border_width(&ui_styles.setting_row, 1);
+    lv_style_set_border_color(&ui_styles.setting_row,
+                              lv_color_hex(UI_COLOR_DIVIDER));
+    lv_style_set_radius(&ui_styles.setting_row, UI_RADIUS_MEDIUM);
+    lv_style_set_pad_hor(&ui_styles.setting_row, 16);
+    lv_style_set_pad_ver(&ui_styles.setting_row, 0);
+
+    lv_style_init(&ui_styles.setting_row_pressed);
+    lv_style_set_bg_color(&ui_styles.setting_row_pressed,
+                          lv_color_hex(UI_COLOR_SURFACE_RAISED));
+
+    lv_style_init(&ui_styles.switch_main);
+    lv_style_set_bg_color(&ui_styles.switch_main,
+                          lv_color_hex(UI_COLOR_DIVIDER));
+    lv_style_set_border_width(&ui_styles.switch_main, 0);
+    lv_style_set_radius(&ui_styles.switch_main, LV_RADIUS_CIRCLE);
+
+    lv_style_init(&ui_styles.switch_checked);
+    lv_style_set_bg_color(&ui_styles.switch_checked,
+                          lv_color_hex(UI_COLOR_INTERACTIVE));
+    lv_style_set_radius(&ui_styles.switch_checked, LV_RADIUS_CIRCLE);
+
+    lv_style_init(&ui_styles.switch_knob);
+    lv_style_set_bg_color(&ui_styles.switch_knob,
+                          lv_color_hex(UI_COLOR_TEXT_SECONDARY));
+    lv_style_set_radius(&ui_styles.switch_knob, LV_RADIUS_CIRCLE);
+
+    lv_style_init(&ui_styles.switch_knob_checked);
+    lv_style_set_bg_color(&ui_styles.switch_knob_checked,
+                          lv_color_hex(UI_COLOR_TEXT_PRIMARY));
+
+    lv_style_init(&ui_styles.roller);
+    lv_style_set_bg_color(&ui_styles.roller,
+                          lv_color_hex(UI_COLOR_SURFACE));
+    lv_style_set_bg_opa(&ui_styles.roller, LV_OPA_COVER);
+    lv_style_set_border_width(&ui_styles.roller, 1);
+    lv_style_set_border_color(&ui_styles.roller,
+                              lv_color_hex(UI_COLOR_DIVIDER));
+    lv_style_set_radius(&ui_styles.roller, UI_RADIUS_MEDIUM);
+    lv_style_set_text_color(&ui_styles.roller,
+                            lv_color_hex(UI_COLOR_TEXT_SECONDARY));
+    lv_style_set_text_font(&ui_styles.roller, &lv_font_montserrat_16);
+    lv_style_set_text_line_space(&ui_styles.roller, 12);
+
+    lv_style_init(&ui_styles.roller_selected);
+    lv_style_set_bg_color(&ui_styles.roller_selected,
+                          lv_color_hex(UI_COLOR_SURFACE_RAISED));
+    lv_style_set_text_color(&ui_styles.roller_selected,
+                            lv_color_hex(UI_COLOR_TEXT_PRIMARY));
+    lv_style_set_text_font(&ui_styles.roller_selected,
+                           &lv_font_montserrat_20);
+    lv_style_set_border_width(&ui_styles.roller_selected, 1);
+    lv_style_set_border_color(&ui_styles.roller_selected,
+                              lv_color_hex(UI_COLOR_VALUE));
+
+    lv_style_init(&ui_styles.status_badge);
+    lv_style_set_bg_color(&ui_styles.status_badge,
+                          lv_color_hex(UI_COLOR_SURFACE_RAISED));
+    lv_style_set_bg_opa(&ui_styles.status_badge, LV_OPA_COVER);
+    lv_style_set_border_width(&ui_styles.status_badge, 1);
+    lv_style_set_border_color(&ui_styles.status_badge,
+                              lv_color_hex(UI_COLOR_DIVIDER));
+    lv_style_set_radius(&ui_styles.status_badge, UI_RADIUS_SMALL);
+    lv_style_set_pad_hor(&ui_styles.status_badge, 12);
+    lv_style_set_pad_ver(&ui_styles.status_badge, 8);
+    lv_style_set_text_font(&ui_styles.status_badge, &lv_font_montserrat_16);
+
+    ui_styles.initialized = true;
+}
 
 static bool countdown_get_glyph_dsc(const lv_font_t *font,
                                     lv_font_glyph_dsc_t *glyph,
@@ -288,11 +436,10 @@ static void manual_roller_options(uint8_t index, char *buffer, size_t size)
     size_t used = 0U;
     for (int16_t value = manual_roller_minimum(index);
          value <= manual_roller_maximum(index); value++) {
-        int written = snprintf(buffer + used, size - used,
-                               value == manual_roller_maximum(index)
-                                   ? "%d"
-                                   : "%d\n",
-                               value);
+        const char *format = index == 0U
+            ? (value == manual_roller_maximum(index) ? "%d" : "%d\n")
+            : (value == manual_roller_maximum(index) ? "%02d" : "%02d\n");
+        int written = snprintf(buffer + used, size - used, format, value);
         if (written < 0 || (size_t) written >= size - used) {
             break;
         }
@@ -370,19 +517,19 @@ static mode_presentation_t mode_presentation(pomodoro_mode_t mode)
         return (mode_presentation_t) {
             .name = "Short break",
             .action_name = "short break",
-            .accent = 0x4DD17A,
+            .accent = UI_COLOR_SHORT_BREAK,
         };
     case POMODORO_MODE_LONG_BREAK:
         return (mode_presentation_t) {
             .name = "Long break",
             .action_name = "long break",
-            .accent = 0x5B8CFF,
+            .accent = UI_COLOR_LONG_BREAK,
         };
     default:
         return (mode_presentation_t) {
             .name = "Focus",
             .action_name = "focus",
-            .accent = 0xFF5C5C,
+            .accent = UI_COLOR_FOCUS,
         };
     }
 }
@@ -570,12 +717,54 @@ static void tick(lv_timer_t *timer)
     dispatch(POMODORO_APPLICATION_ACTION_TICK);
 }
 
+static void style_button(lv_obj_t *button)
+{
+    lv_obj_add_style(button, &ui_styles.button, LV_PART_MAIN);
+    lv_obj_add_style(button, &ui_styles.button_pressed,
+                     LV_PART_MAIN | LV_STATE_PRESSED);
+    lv_obj_add_style(button, &ui_styles.disabled,
+                     LV_PART_MAIN | LV_STATE_DISABLED);
+}
+
+static void style_setting_row(lv_obj_t *row)
+{
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(row, LV_PCT(100), UI_ROW_HEIGHT);
+    lv_obj_add_style(row, &ui_styles.setting_row, LV_PART_MAIN);
+    lv_obj_add_style(row, &ui_styles.setting_row_pressed,
+                     LV_PART_MAIN | LV_STATE_PRESSED);
+}
+
+static void style_switch(lv_obj_t *toggle)
+{
+    lv_obj_set_size(toggle, 52, 30);
+    lv_obj_set_ext_click_area(toggle, 9);
+    lv_obj_add_style(toggle, &ui_styles.switch_main, LV_PART_MAIN);
+    lv_obj_add_style(toggle, &ui_styles.switch_checked,
+                     LV_PART_INDICATOR | LV_STATE_CHECKED);
+    lv_obj_add_style(toggle, &ui_styles.switch_knob, LV_PART_KNOB);
+    lv_obj_add_style(toggle, &ui_styles.switch_knob_checked,
+                     LV_PART_KNOB | LV_STATE_CHECKED);
+}
+
+static void style_roller(lv_obj_t *roller)
+{
+    lv_obj_add_style(roller, &ui_styles.roller, LV_PART_MAIN);
+    lv_obj_add_style(roller, &ui_styles.roller_selected, LV_PART_SELECTED);
+}
+
+static void style_status_badge(lv_obj_t *label, uint32_t color)
+{
+    lv_obj_add_style(label, &ui_styles.status_badge, LV_PART_MAIN);
+    lv_obj_set_style_text_color(label, lv_color_hex(color), 0);
+}
+
 static lv_obj_t *make_text_button(lv_obj_t *parent, lv_event_cb_t callback,
                                   const char *text)
 {
     lv_obj_t *button = lv_button_create(parent);
-    lv_obj_set_size(button, 150, 48);
-    lv_obj_set_style_radius(button, 24, 0);
+    lv_obj_set_size(button, 160, UI_BUTTON_HEIGHT);
+    style_button(button);
     lv_obj_add_event_cb(button, callback, LV_EVENT_CLICKED, NULL);
     lv_obj_t *label = lv_label_create(button);
     lv_label_set_text(label, text);
@@ -588,8 +777,8 @@ static lv_obj_t *make_action_button(lv_obj_t *parent,
                                     const char *text)
 {
     lv_obj_t *button = lv_button_create(parent);
-    lv_obj_set_size(button, 150, 48);
-    lv_obj_set_style_radius(button, 24, 0);
+    lv_obj_set_size(button, 160, UI_BUTTON_HEIGHT);
+    style_button(button);
     lv_obj_add_event_cb(button, action_clicked, LV_EVENT_CLICKED,
                         (void *) (uintptr_t) action);
     lv_obj_t *label = lv_label_create(button);
@@ -603,20 +792,18 @@ static lv_obj_t *make_setting_switch_row(
     pomodoro_application_action_t action, lv_obj_t **toggle)
 {
     lv_obj_t *row = lv_obj_create(parent);
-    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_size(row, LV_PCT(100), 58);
-    lv_obj_set_style_bg_color(row, lv_color_hex(0x1A1F27), 0);
-    lv_obj_set_style_border_width(row, 0, 0);
-    lv_obj_set_style_radius(row, 12, 0);
+    style_setting_row(row);
     lv_obj_add_event_cb(row, action_clicked, LV_EVENT_CLICKED,
                         (void *) (uintptr_t) action);
     lv_obj_t *label = lv_label_create(row);
     lv_label_set_text(label, text);
     lv_obj_set_style_text_color(
         label, lv_color_hex(SETTINGS_ITEM_TEXT_COLOR), 0);
-    lv_obj_align(label, LV_ALIGN_LEFT_MID, 4, 0);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
+    lv_obj_align(label, LV_ALIGN_LEFT_MID, 0, 0);
     *toggle = lv_switch_create(row);
-    lv_obj_align(*toggle, LV_ALIGN_RIGHT_MID, -4, 0);
+    style_switch(*toggle);
+    lv_obj_align(*toggle, LV_ALIGN_RIGHT_MID, 0, 0);
     lv_obj_add_event_cb(*toggle, action_clicked, LV_EVENT_CLICKED,
                         (void *) (uintptr_t) action);
     return row;
@@ -627,21 +814,24 @@ static lv_obj_t *make_setting_action_row(
     pomodoro_application_action_t action, lv_obj_t **value_label)
 {
     lv_obj_t *row = lv_obj_create(parent);
-    lv_obj_set_size(row, LV_PCT(100), 56);
-    lv_obj_set_style_bg_color(row, lv_color_hex(0x1A1F27), 0);
-    lv_obj_set_style_border_width(row, 0, 0);
-    lv_obj_set_style_radius(row, 12, 0);
+    style_setting_row(row);
     lv_obj_add_event_cb(row, action_clicked, LV_EVENT_CLICKED,
                         (void *) (uintptr_t) action);
     lv_obj_t *label = lv_label_create(row);
     lv_label_set_text(label, text);
     lv_obj_set_style_text_color(
         label, lv_color_hex(SETTINGS_ITEM_TEXT_COLOR), 0);
-    lv_obj_align(label, LV_ALIGN_LEFT_MID, 4, 0);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
+    lv_obj_align(label, LV_ALIGN_LEFT_MID, 0, 0);
     *value_label = lv_label_create(row);
     lv_obj_set_style_text_color(
         *value_label, lv_color_hex(SETTINGS_VALUE_TEXT_COLOR), 0);
-    lv_obj_align(*value_label, LV_ALIGN_RIGHT_MID, -4, 0);
+    lv_obj_set_style_text_font(*value_label, &lv_font_montserrat_16, 0);
+    lv_obj_align(*value_label, LV_ALIGN_RIGHT_MID, 0, 0);
+    if (action == POMODORO_APPLICATION_ACTION_POWER_OFF) {
+        lv_obj_set_style_text_color(label, lv_color_hex(UI_COLOR_DANGER), 0);
+        lv_obj_set_style_border_color(row, lv_color_hex(UI_COLOR_DANGER), 0);
+    }
     return row;
 }
 
@@ -653,8 +843,11 @@ static lv_obj_t *make_settings_section_label(lv_obj_t *parent,
     lv_label_set_text(label, text);
     lv_obj_set_style_text_color(
         label, lv_color_hex(SETTINGS_SECTION_TEXT_COLOR), 0);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_margin_left(label, 4, 0);
+    lv_obj_set_style_margin_bottom(label, 2, 0);
     if (separated) {
-        lv_obj_set_style_margin_top(label, 14, 0);
+        lv_obj_set_style_margin_top(label, 16, 0);
     }
     return label;
 }
@@ -665,16 +858,17 @@ static void create_completion_visuals(lv_obj_t *parent)
     lv_obj_remove_style_all(view_context.tomato);
     lv_obj_set_size(view_context.tomato, 74, 64);
     lv_obj_set_style_bg_opa(view_context.tomato, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(view_context.tomato, lv_color_hex(0xFF5C5C), 0);
+    lv_obj_set_style_bg_color(view_context.tomato,
+                              lv_color_hex(UI_COLOR_FOCUS), 0);
     lv_obj_set_style_radius(view_context.tomato, 32, 0);
     lv_obj_align(view_context.tomato, LV_ALIGN_TOP_MID, 0, 2);
     lv_obj_t *leaf = lv_obj_create(view_context.tomato);
     lv_obj_remove_style_all(leaf);
     lv_obj_set_size(leaf, 30, 12);
     lv_obj_set_style_bg_opa(leaf, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(leaf, lv_color_hex(0x4DD17A), 0);
+    lv_obj_set_style_bg_color(leaf, lv_color_hex(UI_COLOR_SHORT_BREAK), 0);
     lv_obj_set_style_radius(leaf, 6, 0);
-    lv_obj_align(leaf, LV_ALIGN_TOP_MID, 0, -2);
+    lv_obj_align(leaf, LV_ALIGN_TOP_MID, 0, 0);
     for (uint8_t index = 0; index < 2U; index++) {
         lv_obj_t *eye = lv_obj_create(view_context.tomato);
         lv_obj_remove_style_all(eye);
@@ -713,27 +907,29 @@ static void create_completion_visuals(lv_obj_t *parent)
     lv_obj_remove_style_all(view_context.cup);
     lv_obj_set_size(view_context.cup, 78, 58);
     lv_obj_set_style_bg_opa(view_context.cup, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(view_context.cup, lv_color_hex(0x5B8CFF), 0);
+    lv_obj_set_style_bg_color(view_context.cup,
+                              lv_color_hex(UI_COLOR_LONG_BREAK), 0);
     lv_obj_set_style_radius(view_context.cup, 10, 0);
-    lv_obj_align(view_context.cup, LV_ALIGN_TOP_MID, -6, 8);
+    lv_obj_align(view_context.cup, LV_ALIGN_TOP_MID, -6, 20);
     view_context.cup_handle = lv_obj_create(parent);
     lv_obj_remove_style_all(view_context.cup_handle);
     lv_obj_set_size(view_context.cup_handle, 24, 30);
     lv_obj_set_style_border_width(view_context.cup_handle, 7, 0);
     lv_obj_set_style_border_color(view_context.cup_handle,
-                                  lv_color_hex(0x5B8CFF), 0);
+                                  lv_color_hex(UI_COLOR_LONG_BREAK), 0);
     lv_obj_set_style_bg_opa(view_context.cup_handle, LV_OPA_TRANSP, 0);
     lv_obj_set_style_radius(view_context.cup_handle, 12, 0);
-    lv_obj_align(view_context.cup_handle, LV_ALIGN_TOP_MID, 43, 22);
+    lv_obj_align(view_context.cup_handle, LV_ALIGN_TOP_MID, 43, 34);
     for (uint8_t index = 0; index < 2U; index++) {
         lv_obj_t *steam = lv_obj_create(parent);
         view_context.cup_steam[index] = steam;
         lv_obj_remove_style_all(steam);
         lv_obj_set_size(steam, 5, 18);
         lv_obj_set_style_bg_opa(steam, LV_OPA_60, 0);
-        lv_obj_set_style_bg_color(steam, lv_color_hex(0xAAB1BE), 0);
+        lv_obj_set_style_bg_color(steam,
+                                  lv_color_hex(UI_COLOR_TEXT_SECONDARY), 0);
         lv_obj_set_style_radius(steam, 3, 0);
-        lv_obj_align(steam, LV_ALIGN_TOP_MID, index == 0U ? -18 : 12, -12);
+        lv_obj_align(steam, LV_ALIGN_TOP_MID, index == 0U ? -18 : 12, 0);
     }
 }
 
@@ -748,11 +944,13 @@ esp_err_t pomodoro_device_view_create(
             : ESP_ERR_TIMEOUT;
     }
     memset(&view_context, 0, sizeof(view_context));
+    initialize_ui_styles();
     view_context.action_handler = action_handler;
     view_context.touch_handler = touch_handler;
     lv_obj_t *screen = lv_screen_active();
-    lv_obj_set_style_bg_color(screen, lv_color_hex(0x07090D), 0);
-    lv_obj_set_style_text_color(screen, lv_color_hex(0xF5F7FA), 0);
+    lv_obj_set_style_bg_color(screen, lv_color_hex(UI_COLOR_BACKGROUND), 0);
+    lv_obj_set_style_text_color(screen, lv_color_hex(UI_COLOR_TEXT_PRIMARY), 0);
+    lv_obj_set_style_text_font(screen, &lv_font_montserrat_16, 0);
     lv_obj_remove_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(screen, gesture, LV_EVENT_GESTURE, NULL);
     lv_obj_add_event_cb(screen, gesture, LV_EVENT_PRESSED, NULL);
@@ -764,8 +962,12 @@ esp_err_t pomodoro_device_view_create(
     lv_obj_align(view_context.title, LV_ALIGN_TOP_MID, 0, 24);
     view_context.menu_button = make_action_button(
         screen, POMODORO_APPLICATION_ACTION_OPEN_MENU, LV_SYMBOL_LIST);
-    lv_obj_set_size(view_context.menu_button, 52, 38);
-    lv_obj_align(view_context.menu_button, LV_ALIGN_TOP_LEFT, 18, 18);
+    lv_obj_set_size(view_context.menu_button, UI_TOUCH_TARGET,
+                    UI_TOUCH_TARGET);
+    lv_obj_set_style_text_font(lv_obj_get_child(view_context.menu_button, 0),
+                               &lv_font_montserrat_24, 0);
+    lv_obj_align(view_context.menu_button, LV_ALIGN_TOP_LEFT, UI_PAGE_INSET,
+                 UI_PAGE_INSET);
     view_context.sound_button = make_action_button(
         screen, POMODORO_APPLICATION_ACTION_TOGGLE_SOUND,
         LV_SYMBOL_VOLUME_MID);
@@ -774,15 +976,21 @@ esp_err_t pomodoro_device_view_create(
     lv_obj_set_style_border_width(view_context.sound_button, 0, 0);
     lv_obj_set_style_shadow_width(view_context.sound_button, 0, 0);
     lv_obj_set_style_text_color(view_context.sound_button,
-                                lv_color_hex(0xF5F7FA), 0);
+                                lv_color_hex(UI_COLOR_TEXT_PRIMARY), 0);
     lv_obj_set_style_text_font(lv_obj_get_child(view_context.sound_button, 0),
                                &lv_font_montserrat_28, 0);
-    lv_obj_align(view_context.sound_button, LV_ALIGN_BOTTOM_RIGHT, -26, -26);
+    lv_obj_align(view_context.sound_button, LV_ALIGN_BOTTOM_RIGHT,
+                 -UI_PAGE_INSET, -UI_PAGE_INSET);
     view_context.top_power_status = lv_label_create(screen);
     lv_obj_set_width(view_context.top_power_status, 120);
     lv_obj_set_style_text_align(view_context.top_power_status,
                                 LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_align(view_context.top_power_status, LV_ALIGN_TOP_RIGHT, -18, 28);
+    lv_obj_set_style_text_color(view_context.top_power_status,
+                                lv_color_hex(UI_COLOR_TEXT_PRIMARY), 0);
+    lv_obj_set_style_text_font(view_context.top_power_status,
+                               &lv_font_montserrat_16, 0);
+    lv_obj_align(view_context.top_power_status, LV_ALIGN_TOP_RIGHT,
+                 -UI_PAGE_INSET, 30);
 
     view_context.ring = lv_arc_create(screen);
     lv_obj_set_size(view_context.ring, 288, 288);
@@ -793,12 +1001,15 @@ esp_err_t pomodoro_device_view_create(
     lv_obj_remove_style(view_context.ring, NULL, LV_PART_KNOB);
     lv_obj_remove_flag(view_context.ring, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_style_arc_width(view_context.ring, 13, LV_PART_MAIN);
-    lv_obj_set_style_arc_color(view_context.ring, lv_color_hex(0x252A33),
+    lv_obj_set_style_arc_color(view_context.ring, lv_color_hex(UI_COLOR_DIVIDER),
                                LV_PART_MAIN);
     lv_obj_set_style_arc_width(view_context.ring, 13, LV_PART_INDICATOR);
 
     view_context.status = lv_label_create(screen);
-    lv_obj_set_style_text_color(view_context.status, lv_color_hex(0xAAB1BE), 0);
+    lv_obj_set_width(view_context.status, 360);
+    lv_obj_set_style_text_color(view_context.status,
+                                lv_color_hex(UI_COLOR_TEXT_SECONDARY), 0);
+    lv_obj_set_style_text_align(view_context.status, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(view_context.status, LV_ALIGN_CENTER, 0, -78);
     lv_obj_add_flag(view_context.status, LV_OBJ_FLAG_HIDDEN);
     view_context.time = lv_label_create(screen);
@@ -812,8 +1023,11 @@ esp_err_t pomodoro_device_view_create(
                                                    "Start");
     view_context.primary_label = lv_obj_get_child(view_context.primary_button, 0);
     lv_obj_set_style_text_font(view_context.primary_label,
-                               &lv_font_montserrat_24, 0);
-    lv_obj_set_size(view_context.primary_button, 220, 56);
+                               &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(view_context.primary_label,
+                                lv_color_hex(UI_COLOR_ON_ACCENT), 0);
+    lv_obj_set_size(view_context.primary_button, 176, UI_BUTTON_HEIGHT);
+    lv_obj_set_style_border_width(view_context.primary_button, 0, 0);
     lv_obj_align(view_context.primary_button, LV_ALIGN_CENTER, 0,
                  TIMER_PRIMARY_CENTER_Y);
     view_context.secondary_button = make_text_button(screen, secondary_clicked,
@@ -821,7 +1035,10 @@ esp_err_t pomodoro_device_view_create(
     view_context.secondary_label = lv_obj_get_child(view_context.secondary_button, 0);
     lv_obj_set_style_bg_opa(view_context.secondary_button, LV_OPA_TRANSP, 0);
     lv_obj_set_style_text_color(view_context.secondary_button,
-                                lv_color_hex(0xAAB1BE), 0);
+                                lv_color_hex(UI_COLOR_TEXT_SECONDARY), 0);
+    lv_obj_set_style_text_color(view_context.secondary_label,
+                                lv_color_hex(UI_COLOR_TEXT_SECONDARY), 0);
+    lv_obj_set_size(view_context.secondary_button, 140, UI_TOUCH_TARGET);
     lv_obj_align(view_context.secondary_button, LV_ALIGN_CENTER, 0, 101);
 
     view_context.completion_group = lv_obj_create(screen);
@@ -839,12 +1056,19 @@ esp_err_t pomodoro_device_view_create(
     lv_obj_set_style_text_font(view_context.completion_body,
                                &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(view_context.completion_body,
-                                lv_color_hex(0xAAB1BE), 0);
+                                lv_color_hex(UI_COLOR_TEXT_SECONDARY), 0);
     lv_obj_set_style_text_align(view_context.completion_body,
                                 LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(view_context.completion_body, LV_ALIGN_TOP_MID, 0, 118);
     view_context.completion_countdown = lv_label_create(
         view_context.completion_group);
+    lv_obj_set_width(view_context.completion_countdown, LV_PCT(100));
+    lv_obj_set_style_text_align(view_context.completion_countdown,
+                                LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(view_context.completion_countdown,
+                               &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(view_context.completion_countdown,
+                                lv_color_hex(UI_COLOR_VALUE), 0);
     lv_obj_align(view_context.completion_countdown, LV_ALIGN_TOP_MID, 0, 150);
     lv_obj_add_flag(view_context.completion_group, LV_OBJ_FLAG_HIDDEN);
 
@@ -871,8 +1095,8 @@ esp_err_t pomodoro_device_view_create(
     }
     view_context.boundary_feedback = lv_label_create(screen);
     lv_label_set_text(view_context.boundary_feedback, "End of modes");
-    lv_obj_set_style_text_color(view_context.boundary_feedback,
-                                lv_color_hex(0xAAB1BE), 0);
+    style_status_badge(view_context.boundary_feedback,
+                       UI_COLOR_TEXT_SECONDARY);
     lv_obj_align(view_context.boundary_feedback, LV_ALIGN_BOTTOM_MID, 0, -76);
     lv_obj_add_flag(view_context.boundary_feedback, LV_OBJ_FLAG_HIDDEN);
 
@@ -881,32 +1105,35 @@ esp_err_t pomodoro_device_view_create(
     lv_obj_set_size(view_context.agent_status_circle, 28, 28);
     lv_obj_set_style_bg_opa(view_context.agent_status_circle, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(view_context.agent_status_circle,
-                              lv_color_hex(0x454B56), 0);
+                              lv_color_hex(UI_COLOR_MUTED), 0);
     lv_obj_set_style_radius(view_context.agent_status_circle, LV_RADIUS_CIRCLE, 0);
     lv_obj_remove_flag(view_context.agent_status_circle, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_align(view_context.agent_status_circle, LV_ALIGN_BOTTOM_LEFT, 26, -36);
+    lv_obj_align(view_context.agent_status_circle, LV_ALIGN_BOTTOM_LEFT, 36,
+                 -36);
     lv_obj_add_flag(view_context.agent_status_circle, LV_OBJ_FLAG_HIDDEN);
     view_context.agent_status_touch = lv_obj_create(screen);
     lv_obj_remove_style_all(view_context.agent_status_touch);
-    lv_obj_set_size(view_context.agent_status_touch, 44, 44);
+    lv_obj_set_size(view_context.agent_status_touch, UI_TOUCH_TARGET,
+                    UI_TOUCH_TARGET);
     lv_obj_set_style_bg_opa(view_context.agent_status_touch, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(view_context.agent_status_touch, 0, 0);
     lv_obj_set_style_radius(view_context.agent_status_touch, LV_RADIUS_CIRCLE, 0);
     lv_obj_remove_flag(view_context.agent_status_touch, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(view_context.agent_status_touch, agent_status_clicked,
                         LV_EVENT_CLICKED, NULL);
-    lv_obj_align(view_context.agent_status_touch, LV_ALIGN_BOTTOM_LEFT, 18, -28);
+    lv_obj_align(view_context.agent_status_touch, LV_ALIGN_BOTTOM_LEFT,
+                 UI_PAGE_INSET, -UI_PAGE_INSET);
     lv_obj_add_flag(view_context.agent_status_touch, LV_OBJ_FLAG_HIDDEN);
 
     view_context.page_panel = lv_obj_create(screen);
     lv_obj_set_size(view_context.page_panel, 480, 480);
     lv_obj_align(view_context.page_panel, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_style_bg_color(view_context.page_panel,
-                              lv_color_hex(0x07090D), 0);
+                              lv_color_hex(UI_COLOR_BACKGROUND), 0);
     lv_obj_set_style_bg_opa(view_context.page_panel, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(view_context.page_panel, 0, 0);
     lv_obj_set_style_radius(view_context.page_panel, 0, 0);
-    lv_obj_set_style_pad_all(view_context.page_panel, 18, 0);
+    lv_obj_set_style_pad_all(view_context.page_panel, UI_PAGE_INSET, 0);
     lv_obj_set_flex_flow(view_context.page_panel, LV_FLEX_FLOW_COLUMN);
     lv_obj_remove_flag(view_context.page_panel, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(view_context.page_panel, gesture, LV_EVENT_GESTURE,
@@ -915,19 +1142,25 @@ esp_err_t pomodoro_device_view_create(
                         NULL);
     view_context.page_title = lv_label_create(view_context.page_panel);
     lv_obj_set_width(view_context.page_title, LV_PCT(100));
+    lv_obj_set_height(view_context.page_title, UI_TOUCH_TARGET);
+    lv_obj_set_style_pad_top(view_context.page_title, 8, 0);
     lv_obj_set_style_text_font(view_context.page_title,
                                &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_align(view_context.page_title,
                                 LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_color(view_context.page_title,
-                                lv_color_hex(0xF5F7FA), 0);
+                                lv_color_hex(UI_COLOR_TEXT_PRIMARY), 0);
     view_context.page_back_button = make_action_button(
         view_context.page_panel, POMODORO_APPLICATION_ACTION_BACK,
         LV_SYMBOL_LEFT);
-    lv_obj_set_size(view_context.page_back_button, 52, 38);
+    lv_obj_set_size(view_context.page_back_button, UI_TOUCH_TARGET,
+                    UI_TOUCH_TARGET);
+    lv_obj_set_style_text_font(
+        lv_obj_get_child(view_context.page_back_button, 0),
+        &lv_font_montserrat_24, 0);
     lv_obj_add_flag(view_context.page_back_button, LV_OBJ_FLAG_FLOATING);
     lv_obj_add_flag(view_context.page_back_button, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_align(view_context.page_back_button, LV_ALIGN_TOP_LEFT, 0, -8);
+    lv_obj_align(view_context.page_back_button, LV_ALIGN_TOP_LEFT, 0, 0);
     lv_obj_add_flag(view_context.page_back_button, LV_OBJ_FLAG_HIDDEN);
     view_context.page_content = lv_obj_create(view_context.page_panel);
     lv_obj_set_width(view_context.page_content, LV_PCT(100));
@@ -936,16 +1169,20 @@ esp_err_t pomodoro_device_view_create(
     lv_obj_set_style_bg_opa(view_context.page_content, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(view_context.page_content, 0, 0);
     lv_obj_set_style_pad_all(view_context.page_content, 0, 0);
-    lv_obj_set_style_pad_row(view_context.page_content, 10, 0);
+    lv_obj_set_style_pad_row(view_context.page_content, 12, 0);
     lv_obj_set_flex_flow(view_context.page_content, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(view_context.page_content, LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_add_flag(view_context.page_content, LV_OBJ_FLAG_EVENT_BUBBLE);
     view_context.page_body = lv_label_create(view_context.page_content);
     lv_obj_set_width(view_context.page_body, LV_PCT(100));
     lv_label_set_long_mode(view_context.page_body, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_color(view_context.page_body,
-                                lv_color_hex(0xAAB1BE), 0);
+                                lv_color_hex(UI_COLOR_TEXT_SECONDARY), 0);
+    lv_obj_set_style_text_font(view_context.page_body,
+                               &lv_font_montserrat_16, 0);
     view_context.statistics_metrics = lv_obj_create(view_context.page_content);
-    lv_obj_set_size(view_context.statistics_metrics, LV_PCT(100), 86);
+    lv_obj_set_size(view_context.statistics_metrics, LV_PCT(100), 96);
     lv_obj_set_style_bg_opa(view_context.statistics_metrics, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(view_context.statistics_metrics, 0, 0);
     lv_obj_set_style_pad_all(view_context.statistics_metrics, 0, 0);
@@ -960,26 +1197,36 @@ esp_err_t pomodoro_device_view_create(
     lv_obj_set_flex_grow(view_context.statistics_focus_card, 1);
     lv_obj_set_flex_grow(view_context.statistics_goal_card, 1);
     lv_obj_set_style_bg_color(view_context.statistics_focus_card,
-                              lv_color_hex(0x1A1F27), 0);
+                              lv_color_hex(UI_COLOR_SURFACE), 0);
     lv_obj_set_style_bg_color(view_context.statistics_goal_card,
-                              lv_color_hex(0x1A1F27), 0);
+                              lv_color_hex(UI_COLOR_SURFACE), 0);
     lv_obj_set_style_bg_opa(view_context.statistics_focus_card,
                             LV_OPA_COVER, 0);
     lv_obj_set_style_bg_opa(view_context.statistics_goal_card,
                             LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(view_context.statistics_focus_card, 0, 0);
-    lv_obj_set_style_border_width(view_context.statistics_goal_card, 0, 0);
-    lv_obj_set_style_pad_all(view_context.statistics_focus_card, 12, 0);
-    lv_obj_set_style_pad_all(view_context.statistics_goal_card, 12, 0);
-    lv_obj_set_style_radius(view_context.statistics_focus_card, 12, 0);
-    lv_obj_set_style_radius(view_context.statistics_goal_card, 12, 0);
+    lv_obj_set_style_border_width(view_context.statistics_focus_card, 1, 0);
+    lv_obj_set_style_border_width(view_context.statistics_goal_card, 1, 0);
+    lv_obj_set_style_border_color(view_context.statistics_focus_card,
+                                  lv_color_hex(UI_COLOR_DIVIDER), 0);
+    lv_obj_set_style_border_color(view_context.statistics_goal_card,
+                                  lv_color_hex(UI_COLOR_DIVIDER), 0);
+    lv_obj_set_style_pad_all(view_context.statistics_focus_card, 14, 0);
+    lv_obj_set_style_pad_all(view_context.statistics_goal_card, 14, 0);
+    lv_obj_set_style_radius(view_context.statistics_focus_card,
+                            UI_RADIUS_MEDIUM, 0);
+    lv_obj_set_style_radius(view_context.statistics_goal_card,
+                            UI_RADIUS_MEDIUM, 0);
     view_context.statistics_focus_value = lv_label_create(
         view_context.statistics_focus_card);
     lv_label_set_recolor(view_context.statistics_focus_value, true);
+    lv_obj_set_style_text_font(view_context.statistics_focus_value,
+                               &lv_font_montserrat_16, 0);
     lv_obj_align(view_context.statistics_focus_value, LV_ALIGN_TOP_LEFT, 0, 0);
     view_context.statistics_goal_value = lv_label_create(
         view_context.statistics_goal_card);
     lv_label_set_recolor(view_context.statistics_goal_value, true);
+    lv_obj_set_style_text_font(view_context.statistics_goal_value,
+                               &lv_font_montserrat_16, 0);
     lv_obj_align(view_context.statistics_goal_value, LV_ALIGN_TOP_LEFT, 0, 0);
     view_context.statistics_goal_bar = lv_bar_create(
         view_context.statistics_goal_card);
@@ -987,10 +1234,14 @@ esp_err_t pomodoro_device_view_create(
     lv_obj_align(view_context.statistics_goal_bar, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_bar_set_range(view_context.statistics_goal_bar, 0, 100);
     lv_obj_set_style_bg_color(view_context.statistics_goal_bar,
-                              lv_color_hex(0x303846), LV_PART_MAIN);
+                              lv_color_hex(UI_COLOR_DIVIDER), LV_PART_MAIN);
     lv_obj_set_style_bg_color(view_context.statistics_goal_bar,
                               lv_color_hex(SETTINGS_VALUE_TEXT_COLOR),
                               LV_PART_INDICATOR);
+    lv_obj_set_style_radius(view_context.statistics_goal_bar,
+                            LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    lv_obj_set_style_radius(view_context.statistics_goal_bar,
+                            LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
     lv_obj_add_flag(view_context.statistics_metrics, LV_OBJ_FLAG_HIDDEN);
     view_context.settings_switches = lv_obj_create(view_context.page_content);
     lv_obj_set_size(view_context.settings_switches, LV_PCT(100),
@@ -998,19 +1249,19 @@ esp_err_t pomodoro_device_view_create(
     lv_obj_set_style_bg_opa(view_context.settings_switches, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(view_context.settings_switches, 0, 0);
     lv_obj_set_style_pad_all(view_context.settings_switches, 0, 0);
-    lv_obj_set_style_pad_row(view_context.settings_switches, 8, 0);
+    lv_obj_set_style_pad_row(view_context.settings_switches, 6, 0);
     lv_obj_set_flex_flow(view_context.settings_switches,
                          LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_text_color(view_context.settings_switches,
-                                lv_color_hex(0xF5F7FA), 0);
+                                lv_color_hex(UI_COLOR_TEXT_PRIMARY), 0);
     (void) make_settings_section_label(view_context.settings_switches,
-                                       "STATISTICS", false);
+                                       "Statistics", false);
     (void) make_setting_action_row(
         view_context.settings_switches, "Today's statistics",
         POMODORO_APPLICATION_ACTION_OPEN_STATISTICS,
         &view_context.settings_today_value);
     (void) make_settings_section_label(view_context.settings_switches,
-                                       "TIMER", true);
+                                       "Timer", true);
     (void) make_setting_action_row(
         view_context.settings_switches, "Focus duration",
         POMODORO_APPLICATION_ACTION_OPEN_FOCUS_MINUTES,
@@ -1032,7 +1283,7 @@ esp_err_t pomodoro_device_view_create(
         POMODORO_APPLICATION_ACTION_OPEN_POMODORO_COMPLETION_TRANSITION,
         &view_context.settings_timer_values[4]);
     (void) make_settings_section_label(view_context.settings_switches,
-                                       "AUTOMATION", true);
+                                       "Automation", true);
     (void) make_setting_switch_row(
         view_context.settings_switches, "Auto-start breaks",
         POMODORO_APPLICATION_ACTION_TOGGLE_AUTO_BREAK,
@@ -1042,24 +1293,37 @@ esp_err_t pomodoro_device_view_create(
         POMODORO_APPLICATION_ACTION_TOGGLE_AUTO_FOCUS,
         &view_context.auto_focus_switch);
     (void) make_settings_section_label(view_context.settings_switches,
-                                       "SOUND", true);
-    (void) make_setting_switch_row(
-        view_context.settings_switches, "Sound",
-        POMODORO_APPLICATION_ACTION_TOGGLE_SOUND,
-        &view_context.sound_switch);
-    (void) make_settings_section_label(view_context.settings_switches,
                                        "Agent", true);
     (void) make_setting_switch_row(
         view_context.settings_switches, "Agent status",
         POMODORO_APPLICATION_ACTION_TOGGLE_AGENT_STATUS,
         &view_context.agent_status_switch);
+    (void) make_settings_section_label(view_context.settings_switches,
+                                       "Sound", true);
+    (void) make_setting_switch_row(
+        view_context.settings_switches, "Sound",
+        POMODORO_APPLICATION_ACTION_TOGGLE_SOUND,
+        &view_context.sound_switch);
     view_context.settings_volume_value = lv_label_create(
         view_context.settings_switches);
-    lv_obj_set_style_text_color(
-        view_context.settings_volume_value,
-        lv_color_hex(SETTINGS_VALUE_TEXT_COLOR), 0);
+    lv_obj_set_width(view_context.settings_volume_value, LV_PCT(100));
+    lv_label_set_long_mode(view_context.settings_volume_value,
+                           LV_LABEL_LONG_WRAP);
+    lv_label_set_recolor(view_context.settings_volume_value, true);
+    lv_obj_set_style_text_font(view_context.settings_volume_value,
+                               &lv_font_montserrat_16, 0);
+    lv_obj_set_style_bg_color(view_context.settings_volume_value,
+                              lv_color_hex(UI_COLOR_SURFACE), 0);
+    lv_obj_set_style_bg_opa(view_context.settings_volume_value, LV_OPA_COVER,
+                            0);
+    lv_obj_set_style_border_width(view_context.settings_volume_value, 1, 0);
+    lv_obj_set_style_border_color(view_context.settings_volume_value,
+                                  lv_color_hex(UI_COLOR_DIVIDER), 0);
+    lv_obj_set_style_radius(view_context.settings_volume_value,
+                            UI_RADIUS_MEDIUM, 0);
+    lv_obj_set_style_pad_all(view_context.settings_volume_value, 16, 0);
     (void) make_settings_section_label(view_context.settings_switches,
-                                       "DISPLAY", true);
+                                       "Display", true);
     (void) make_setting_action_row(
         view_context.settings_switches, "Brightness",
         POMODORO_APPLICATION_ACTION_OPEN_BRIGHTNESS,
@@ -1083,11 +1347,22 @@ esp_err_t pomodoro_device_view_create(
                      LV_ALIGN_BOTTOM_LEFT, x, -28);
         lv_bar_set_orientation(view_context.statistics_bars[index],
                                LV_BAR_ORIENTATION_VERTICAL);
+        lv_obj_set_style_bg_color(view_context.statistics_bars[index],
+                                  lv_color_hex(UI_COLOR_DIVIDER),
+                                  LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(view_context.statistics_bars[index],
+                                LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_radius(view_context.statistics_bars[index], 8,
+                                LV_PART_MAIN);
+        lv_obj_set_style_radius(view_context.statistics_bars[index], 8,
+                                LV_PART_INDICATOR);
         view_context.statistics_dates[index] = lv_label_create(
             view_context.statistics_chart);
         lv_obj_set_style_text_color(
             view_context.statistics_dates[index],
             lv_color_hex(SETTINGS_SECTION_TEXT_COLOR), 0);
+        lv_obj_set_style_text_font(view_context.statistics_dates[index],
+                                   &lv_font_montserrat_16, 0);
         lv_obj_align(view_context.statistics_dates[index],
                      LV_ALIGN_BOTTOM_LEFT, x - 2, -2);
         view_context.statistics_counts[index] = lv_label_create(
@@ -1095,12 +1370,15 @@ esp_err_t pomodoro_device_view_create(
         lv_obj_set_style_text_color(
             view_context.statistics_counts[index],
             lv_color_hex(SETTINGS_VALUE_TEXT_COLOR), 0);
+        lv_obj_set_style_text_font(view_context.statistics_counts[index],
+                                   &lv_font_montserrat_16, 0);
         lv_obj_align(view_context.statistics_counts[index],
                      LV_ALIGN_TOP_LEFT, x + 8, 0);
     }
     lv_obj_add_flag(view_context.statistics_chart, LV_OBJ_FLAG_HIDDEN);
     view_context.numeric_roller = lv_roller_create(view_context.page_content);
-    lv_obj_set_size(view_context.numeric_roller, LV_PCT(70), 168);
+    lv_obj_set_size(view_context.numeric_roller, 240, 168);
+    style_roller(view_context.numeric_roller);
     lv_roller_set_visible_row_count(view_context.numeric_roller, 3);
     lv_obj_add_event_cb(view_context.numeric_roller, numeric_roller_changed,
                         LV_EVENT_VALUE_CHANGED, NULL);
@@ -1124,8 +1402,10 @@ esp_err_t pomodoro_device_view_create(
         lv_roller_set_options(view_context.manual_rollers[index],
                               view_context.manual_roller_options,
                               LV_ROLLER_MODE_NORMAL);
-        lv_obj_set_width(view_context.manual_rollers[index], 70);
+        lv_obj_set_width(view_context.manual_rollers[index],
+                         index == 0U ? 84 : 72);
         lv_obj_set_height(view_context.manual_rollers[index], 120);
+        style_roller(view_context.manual_rollers[index]);
         lv_roller_set_visible_row_count(view_context.manual_rollers[index], 3);
         lv_obj_add_event_cb(view_context.manual_rollers[index],
                             manual_roller_changed, LV_EVENT_VALUE_CHANGED,
@@ -1135,13 +1415,13 @@ esp_err_t pomodoro_device_view_create(
     }
     lv_obj_add_flag(manual_roller_container, LV_OBJ_FLAG_HIDDEN);
     (void) make_settings_section_label(view_context.settings_switches,
-                                       "DATE & TIME", true);
+                                       "Date & time", true);
     (void) make_setting_action_row(
         view_context.settings_switches, "Date & time",
         POMODORO_APPLICATION_ACTION_OPEN_DATE_TIME,
         &view_context.settings_datetime_value);
     (void) make_settings_section_label(view_context.settings_switches,
-                                       "POWER", true);
+                                       "Power", true);
     (void) make_setting_action_row(
         view_context.settings_switches, "Power off",
         POMODORO_APPLICATION_ACTION_POWER_OFF,
@@ -1160,6 +1440,9 @@ esp_err_t pomodoro_device_view_create(
     lv_obj_set_style_pad_column(view_context.auxiliary_buttons_container, 8, 0);
     lv_obj_set_flex_flow(view_context.auxiliary_buttons_container,
                          LV_FLEX_FLOW_ROW_WRAP);
+    lv_obj_set_flex_align(view_context.auxiliary_buttons_container,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
     for (uint8_t index = 0; index < AUXILIARY_BUTTON_COUNT; index++) {
         auxiliary_button_t *entry = &view_context.auxiliary_buttons[index];
         entry->action = auxiliary_button_definitions[index].action;
@@ -1172,16 +1455,50 @@ esp_err_t pomodoro_device_view_create(
             entry->action == POMODORO_APPLICATION_ACTION_OPEN_SETTINGS ||
             entry->action ==
                 POMODORO_APPLICATION_ACTION_REQUEST_CLEAR_SET_PROGRESS;
-        lv_obj_set_size(entry->button, menu_destination ? 420 : 136,
-                        menu_destination ? 56 : 42);
+        bool compact_adjustment =
+            entry->action == POMODORO_APPLICATION_ACTION_NUMERIC_DECREMENT ||
+            entry->action == POMODORO_APPLICATION_ACTION_NUMERIC_INCREMENT;
+        bool primary_confirmation =
+            entry->action == POMODORO_APPLICATION_ACTION_NUMERIC_CONFIRM ||
+            entry->action ==
+                POMODORO_APPLICATION_ACTION_MANUAL_TIME_CONFIRM ||
+            entry->action == POMODORO_APPLICATION_ACTION_OPEN_DATE_TIME;
+        lv_obj_set_size(entry->button,
+                        menu_destination ? LV_PCT(100) :
+                        compact_adjustment ? 72 :
+                        primary_confirmation ? 220 : 136,
+                        menu_destination ? 56 : UI_BUTTON_HEIGHT);
+        if (primary_confirmation) {
+            lv_obj_set_style_bg_color(
+                entry->button, lv_color_hex(UI_COLOR_INTERACTIVE), 0);
+            lv_obj_set_style_bg_color(
+                entry->button,
+                lv_color_darken(lv_color_hex(UI_COLOR_INTERACTIVE), LV_OPA_20),
+                LV_STATE_PRESSED);
+            lv_obj_set_style_border_width(entry->button, 0, 0);
+            lv_obj_set_style_text_color(
+                entry->label, lv_color_hex(UI_COLOR_ON_ACCENT), 0);
+        }
+        if (compact_adjustment) {
+            lv_obj_set_style_text_font(entry->label,
+                                       &lv_font_montserrat_24, 0);
+        }
         if (menu_destination) {
+            lv_obj_set_style_bg_color(entry->button,
+                                      lv_color_hex(UI_COLOR_SURFACE), 0);
+            lv_obj_align(entry->label, LV_ALIGN_LEFT_MID, 0, 0);
             lv_obj_set_style_text_color(entry->label,
                 lv_color_hex(
                     entry->action ==
                             POMODORO_APPLICATION_ACTION_REQUEST_CLEAR_SET_PROGRESS
-                        ? 0xFF6B6B
-                        : 0xF5F7FA),
+                        ? UI_COLOR_DANGER
+                        : UI_COLOR_TEXT_PRIMARY),
                 0);
+            if (entry->action ==
+                POMODORO_APPLICATION_ACTION_REQUEST_CLEAR_SET_PROGRESS) {
+                lv_obj_set_style_border_color(
+                    entry->button, lv_color_hex(UI_COLOR_DANGER), 0);
+            }
         }
     }
     lv_obj_add_flag(view_context.page_panel, LV_OBJ_FLAG_HIDDEN);
@@ -1191,7 +1508,7 @@ esp_err_t pomodoro_device_view_create(
     lv_obj_align(view_context.confirmation_mask, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_style_bg_color(view_context.confirmation_mask,
                               lv_color_hex(0x000000), 0);
-    lv_obj_set_style_bg_opa(view_context.confirmation_mask, LV_OPA_60, 0);
+    lv_obj_set_style_bg_opa(view_context.confirmation_mask, LV_OPA_70, 0);
     lv_obj_set_style_border_width(view_context.confirmation_mask, 0, 0);
     lv_obj_set_style_radius(view_context.confirmation_mask, 0, 0);
     lv_obj_remove_flag(view_context.confirmation_mask, LV_OBJ_FLAG_SCROLLABLE);
@@ -1204,45 +1521,103 @@ esp_err_t pomodoro_device_view_create(
     lv_obj_add_flag(view_context.confirmation_mask, LV_OBJ_FLAG_HIDDEN);
 
     view_context.confirmation_overlay = lv_obj_create(screen);
-    lv_obj_set_size(view_context.confirmation_overlay, 432, 250);
+    lv_obj_set_size(view_context.confirmation_overlay, 428, LV_SIZE_CONTENT);
+    lv_obj_set_style_max_height(view_context.confirmation_overlay,
+                                CONFIRMATION_DIALOG_MAX_HEIGHT, 0);
     lv_obj_align(view_context.confirmation_overlay, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_style_bg_color(view_context.confirmation_overlay,
-                              lv_color_hex(0x171B22), 0);
-    lv_obj_set_style_radius(view_context.confirmation_overlay, 24, 0);
+                              lv_color_hex(UI_COLOR_SURFACE_RAISED), 0);
+    lv_obj_set_style_border_width(view_context.confirmation_overlay, 1, 0);
+    lv_obj_set_style_border_color(view_context.confirmation_overlay,
+                                  lv_color_hex(UI_COLOR_DIVIDER), 0);
+    lv_obj_set_style_radius(view_context.confirmation_overlay,
+                            UI_RADIUS_LARGE, 0);
+    lv_obj_set_style_pad_hor(view_context.confirmation_overlay, 24, 0);
+    lv_obj_set_style_pad_ver(view_context.confirmation_overlay, 20, 0);
+    lv_obj_set_style_pad_row(view_context.confirmation_overlay, 0, 0);
+    lv_obj_set_flex_flow(view_context.confirmation_overlay,
+                         LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(view_context.confirmation_overlay,
+                          LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_remove_flag(view_context.confirmation_overlay,
+                       LV_OBJ_FLAG_SCROLLABLE);
     view_context.confirmation_title = lv_label_create(
         view_context.confirmation_overlay);
+    lv_obj_set_width(view_context.confirmation_title, 360);
     lv_obj_set_style_text_font(view_context.confirmation_title,
                                &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(view_context.confirmation_title,
                                 lv_color_hex(SETTINGS_ITEM_TEXT_COLOR), 0);
-    lv_obj_align(view_context.confirmation_title, LV_ALIGN_TOP_MID, 0, 22);
-    view_context.confirmation_body = lv_label_create(
+    lv_obj_set_style_text_align(view_context.confirmation_title,
+                                LV_TEXT_ALIGN_CENTER, 0);
+    view_context.confirmation_body_viewport = lv_obj_create(
         view_context.confirmation_overlay);
+    lv_obj_remove_style_all(view_context.confirmation_body_viewport);
+    lv_obj_set_size(view_context.confirmation_body_viewport, 360,
+                    LV_SIZE_CONTENT);
+    lv_obj_set_style_max_height(view_context.confirmation_body_viewport,
+                                CONFIRMATION_DIALOG_BODY_MAX_HEIGHT, 0);
+    lv_obj_set_style_margin_top(view_context.confirmation_body_viewport, 10,
+                                0);
+    lv_obj_set_scroll_dir(view_context.confirmation_body_viewport, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(view_context.confirmation_body_viewport,
+                              LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_style_width(view_context.confirmation_body_viewport, 4,
+                           LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_color(view_context.confirmation_body_viewport,
+                              lv_color_hex(UI_COLOR_DIVIDER),
+                              LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_opa(view_context.confirmation_body_viewport,
+                            LV_OPA_COVER, LV_PART_SCROLLBAR);
+    lv_obj_set_style_radius(view_context.confirmation_body_viewport, 2,
+                            LV_PART_SCROLLBAR);
+    view_context.confirmation_body = lv_label_create(
+        view_context.confirmation_body_viewport);
     lv_label_set_text(view_context.confirmation_body,
                       "Current progress will be discarded.");
     lv_obj_set_style_text_color(view_context.confirmation_body,
-                                lv_color_hex(0xAAB1BE), 0);
-    lv_obj_set_width(view_context.confirmation_body, 380);
+                                lv_color_hex(UI_COLOR_TEXT_SECONDARY), 0);
+    lv_obj_set_style_text_font(view_context.confirmation_body,
+                               &lv_font_montserrat_16, 0);
+    lv_obj_set_width(view_context.confirmation_body, LV_PCT(100));
     lv_obj_set_style_text_align(view_context.confirmation_body,
                                 LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(view_context.confirmation_body, LV_ALIGN_TOP_MID, 0, 66);
-    lv_obj_t *cancel = make_text_button(view_context.confirmation_overlay,
+    lv_obj_t *confirmation_actions = lv_obj_create(
+        view_context.confirmation_overlay);
+    lv_obj_remove_style_all(confirmation_actions);
+    lv_obj_set_size(confirmation_actions, LV_PCT(100), UI_BUTTON_HEIGHT);
+    lv_obj_set_style_margin_top(confirmation_actions, 20, 0);
+    lv_obj_set_style_pad_column(confirmation_actions,
+                                CONFIRMATION_DIALOG_ACTION_GAP, 0);
+    lv_obj_set_flex_flow(confirmation_actions, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(confirmation_actions, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_remove_flag(confirmation_actions, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(confirmation_actions, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t *cancel = make_text_button(confirmation_actions,
                                         confirmation_cancelled, "Cancel");
-    lv_obj_set_size(cancel, 150, 50);
-    lv_obj_align(cancel, LV_ALIGN_BOTTOM_LEFT, 30, -25);
-    lv_obj_t *confirm = make_text_button(view_context.confirmation_overlay,
+    lv_obj_set_size(cancel, CONFIRMATION_DIALOG_ACTION_WIDTH,
+                    UI_BUTTON_HEIGHT);
+    lv_obj_t *confirm = make_text_button(confirmation_actions,
                                          confirmation_accepted, "Confirm");
     view_context.confirmation_button_label = lv_obj_get_child(confirm, 0);
-    lv_obj_set_size(confirm, 180, 50);
-    lv_obj_set_style_bg_color(confirm, lv_color_hex(0xD94B4B), 0);
-    lv_obj_align(confirm, LV_ALIGN_BOTTOM_RIGHT, -30, -25);
+    lv_obj_set_size(confirm, CONFIRMATION_DIALOG_ACTION_WIDTH,
+                    UI_BUTTON_HEIGHT);
+    lv_obj_set_style_bg_color(confirm, lv_color_hex(UI_COLOR_DANGER), 0);
+    lv_obj_set_style_bg_color(
+        confirm, lv_color_darken(lv_color_hex(UI_COLOR_DANGER), LV_OPA_20),
+        LV_STATE_PRESSED);
+    lv_obj_set_style_border_width(confirm, 0, 0);
+    lv_obj_set_style_text_color(view_context.confirmation_button_label,
+                                lv_color_hex(UI_COLOR_ON_ACCENT), 0);
     lv_obj_add_flag(view_context.confirmation_overlay, LV_OBJ_FLAG_HIDDEN);
 
     view_context.mode_transition_overlay = lv_obj_create(screen);
     lv_obj_set_size(view_context.mode_transition_overlay, 480, 480);
     lv_obj_align(view_context.mode_transition_overlay, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_style_bg_color(view_context.mode_transition_overlay,
-                              lv_color_hex(0x07090D), 0);
+                              lv_color_hex(UI_COLOR_BACKGROUND), 0);
     lv_obj_set_style_bg_opa(view_context.mode_transition_overlay,
                             LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(view_context.mode_transition_overlay, 0, 0);
@@ -1253,9 +1628,11 @@ esp_err_t pomodoro_device_view_create(
 
     view_context.status_overlay = lv_obj_create(screen);
     lv_obj_remove_style_all(view_context.status_overlay);
-    lv_obj_set_size(view_context.status_overlay, 220, LV_SIZE_CONTENT);
-    lv_obj_align(view_context.status_overlay, LV_ALIGN_TOP_MID, 0, 62);
+    lv_obj_set_size(view_context.status_overlay, 244, LV_SIZE_CONTENT);
+    lv_obj_align(view_context.status_overlay, LV_ALIGN_TOP_MID, 0, 72);
     lv_obj_set_flex_flow(view_context.status_overlay, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(view_context.status_overlay, LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_row(view_context.status_overlay, 8, 0);
     lv_obj_remove_flag(view_context.status_overlay, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(view_context.status_overlay, LV_OBJ_FLAG_SCROLLABLE);
@@ -1263,12 +1640,22 @@ esp_err_t pomodoro_device_view_create(
     view_context.battery_warning = lv_label_create(view_context.status_overlay);
     view_context.orientation_warning =
         lv_label_create(view_context.status_overlay);
+    style_status_badge(view_context.rtc_warning, UI_COLOR_WARNING);
+    style_status_badge(view_context.battery_warning, UI_COLOR_WARNING);
+    style_status_badge(view_context.orientation_warning,
+                       UI_COLOR_TEXT_SECONDARY);
     view_context.volume_feedback = lv_obj_create(view_context.status_overlay);
-    lv_obj_set_size(view_context.volume_feedback, LV_PCT(100), 42);
+    lv_obj_remove_flag(view_context.volume_feedback, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(view_context.volume_feedback, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(view_context.volume_feedback, LV_PCT(100),
+                    UI_TOUCH_TARGET);
     lv_obj_set_style_bg_color(view_context.volume_feedback,
-                              lv_color_hex(0x1A1F27), 0);
-    lv_obj_set_style_border_width(view_context.volume_feedback, 0, 0);
-    lv_obj_set_style_radius(view_context.volume_feedback, 12, 0);
+                              lv_color_hex(UI_COLOR_SURFACE_RAISED), 0);
+    lv_obj_set_style_border_width(view_context.volume_feedback, 1, 0);
+    lv_obj_set_style_border_color(view_context.volume_feedback,
+                                  lv_color_hex(UI_COLOR_DIVIDER), 0);
+    lv_obj_set_style_radius(view_context.volume_feedback,
+                            UI_RADIUS_SMALL, 0);
     lv_obj_set_style_pad_all(view_context.volume_feedback, 8, 0);
     lv_obj_set_flex_flow(view_context.volume_feedback, LV_FLEX_FLOW_ROW);
     lv_obj_set_style_pad_column(view_context.volume_feedback, 8, 0);
@@ -1282,6 +1669,10 @@ esp_err_t pomodoro_device_view_create(
         view_context.volume_segments[index] = lv_obj_create(
             view_context.volume_feedback);
         lv_obj_remove_style_all(view_context.volume_segments[index]);
+        lv_obj_remove_flag(view_context.volume_segments[index],
+                           LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_remove_flag(view_context.volume_segments[index],
+                           LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_size(view_context.volume_segments[index], 14, 8);
         lv_obj_set_style_radius(view_context.volume_segments[index], 3, 0);
     }
@@ -1302,7 +1693,7 @@ esp_err_t pomodoro_device_view_create(
 static void render_progress(const pomodoro_application_view_t *view,
                             lv_color_t accent)
 {
-    lv_color_t focus_accent = lv_color_hex(0xFF5C5C);
+    lv_color_t focus_accent = lv_color_hex(UI_COLOR_FOCUS);
     lv_label_set_text_fmt(view_context.set_label, "Set %u/4",
                           view->set_progress);
     for (uint8_t index = 0; index < 4U; index++) {
@@ -1318,7 +1709,8 @@ static void render_progress(const pomodoro_application_view_t *view,
         lv_obj_set_style_bg_opa(view_context.mode_dots[index], LV_OPA_COVER, 0);
         lv_obj_set_style_bg_color(
             view_context.mode_dots[index],
-            index == (uint8_t) view->mode ? accent : lv_color_hex(0x454B56), 0);
+            index == (uint8_t) view->mode ? accent :
+                                           lv_color_hex(UI_COLOR_MUTED), 0);
     }
 }
 
@@ -1395,7 +1787,7 @@ static void render_completion(const pomodoro_application_view_t *view)
                  view->auto_start_pending ? COMPLETION_AUTO_PRIMARY_Y :
                                             COMPLETION_MANUAL_PRIMARY_Y);
     if (view->auto_start_pending) {
-        lv_obj_set_size(view_context.secondary_button, 170, 44);
+        lv_obj_set_size(view_context.secondary_button, 220, UI_TOUCH_TARGET);
         lv_obj_align(view_context.secondary_button, LV_ALIGN_CENTER, 0,
                      COMPLETION_AUTO_SECONDARY_Y);
     }
@@ -1442,9 +1834,9 @@ static const char *numeric_setting_name(
 {
     switch (setting) {
     case POMODORO_APPLICATION_SETTING_SHORT_BREAK_MINUTES:
-        return "Short break";
+        return "Short break duration";
     case POMODORO_APPLICATION_SETTING_LONG_BREAK_MINUTES:
-        return "Long break";
+        return "Long break duration";
     case POMODORO_APPLICATION_SETTING_DAILY_GOAL:
         return "Daily goal";
     case POMODORO_APPLICATION_SETTING_POMODORO_COMPLETION_TRANSITION_SECONDS:
@@ -1454,7 +1846,7 @@ static const char *numeric_setting_name(
     case POMODORO_APPLICATION_SETTING_IDLE_BRIGHTNESS_PERCENT:
         return "Idle brightness";
     default:
-        return "Focus";
+        return "Focus duration";
     }
 }
 
@@ -1473,24 +1865,35 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
     lv_obj_add_flag(view_context.settings_switches, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(view_context.numeric_roller, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(view_context.manual_roller_container, LV_OBJ_FLAG_HIDDEN);
+    lv_label_set_recolor(view_context.page_body, false);
+    lv_obj_set_style_text_font(view_context.page_body,
+                               &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(view_context.page_body,
+                                lv_color_hex(UI_COLOR_TEXT_SECONDARY), 0);
+    lv_obj_set_style_text_align(view_context.page_body, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_set_style_margin_top(view_context.page_body, 0, 0);
     if (view->phase == POMODORO_APPLICATION_PHASE_TIME_SETUP &&
         !view->time_setup_can_cancel) {
         lv_obj_add_flag(view_context.page_back_button, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_remove_flag(view_context.page_back_button, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(view_context.page_back_button);
     }
 
     if (view->phase == POMODORO_APPLICATION_PHASE_TIME_SETUP) {
         char text[256];
         snprintf(
             text, sizeof(text),
-            "%04u-%02u-%02u  %02u:%02u\n\n"
-            "Set the local date and time.",
+            "#9FC2FF %04u-%02u-%02u  %02u:%02u#\n"
+            "#A7B0BE Year / month / day  |  Hour / minute#",
             view->manual_time_draft.local_date.year,
             view->manual_time_draft.local_date.month,
             view->manual_time_draft.local_date.day,
             view->manual_time_draft.hour, view->manual_time_draft.minute);
         lv_label_set_text(view_context.page_title, "Set date & time");
+        lv_label_set_recolor(view_context.page_body, true);
+        lv_obj_set_style_text_align(view_context.page_body,
+                                    LV_TEXT_ALIGN_CENTER, 0);
         lv_label_set_text(view_context.page_body, text);
         lv_obj_remove_flag(view_context.manual_roller_container,
                            LV_OBJ_FLAG_HIDDEN);
@@ -1513,22 +1916,30 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
     if (view->page == POMODORO_APPLICATION_PAGE_STATISTICS) {
         char text[768];
         lv_label_set_recolor(view_context.page_body, true);
+        lv_obj_set_style_text_font(view_context.page_body,
+                                   &lv_font_montserrat_24, 0);
         snprintf(text, sizeof(text),
-                 "#AAB1BE TODAY#  #9FC2FF x%u#",
+                 "#A7B0BE Today#    #9FC2FF x%u#",
                  view->today_completed_pomodoros);
         if (!view->statistics_available) {
             snprintf(text, sizeof(text),
                      "Statistics need a valid date and time.\n\n"
                      "Open date/time setup to restore the chart.");
+            lv_label_set_recolor(view_context.page_body, false);
+            lv_obj_set_style_text_font(view_context.page_body,
+                                       &lv_font_montserrat_16, 0);
+            lv_obj_set_style_text_align(view_context.page_body,
+                                        LV_TEXT_ALIGN_CENTER, 0);
+            lv_obj_set_style_margin_top(view_context.page_body, 48, 0);
             set_auxiliary_button_visible(
                 POMODORO_APPLICATION_ACTION_OPEN_DATE_TIME, true);
         } else {
             lv_label_set_text_fmt(view_context.statistics_focus_value,
-                                  "#AAB1BE FOCUS TIME#\n#9FC2FF %" PRIu32
+                                  "#A7B0BE Focus time#\n#9FC2FF %" PRIu32
                                   " min#",
                                   view->today_completed_focus_seconds / 60U);
             lv_label_set_text_fmt(view_context.statistics_goal_value,
-                                  "#AAB1BE GOAL#\n#9FC2FF %u%%#",
+                                  "#A7B0BE Goal#\n#9FC2FF %u%%#",
                                   view->today_goal_percent);
             lv_bar_set_value(view_context.statistics_goal_bar,
                              view->today_goal_fill_percent, LV_ANIM_OFF);
@@ -1546,11 +1957,16 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
                 lv_obj_set_style_bg_color(
                     view_context.statistics_bars[index],
                     lv_color_hex(bar->is_today
-                        ? SETTINGS_VALUE_TEXT_COLOR : 0x5B7396),
+                        ? SETTINGS_VALUE_TEXT_COLOR : UI_COLOR_CHART),
                     LV_PART_INDICATOR);
                 lv_label_set_text_fmt(view_context.statistics_dates[index],
                                       "%u/%u", bar->date.month,
                                       bar->date.day);
+                lv_obj_set_style_text_color(
+                    view_context.statistics_dates[index],
+                    lv_color_hex(bar->is_today ? UI_COLOR_VALUE :
+                                                    UI_COLOR_TEXT_SECONDARY),
+                    0);
                 lv_label_set_text_fmt(view_context.statistics_counts[index],
                                       "%u", bar->completed_pomodoros);
                 int32_t count_y = -32 -
@@ -1565,7 +1981,6 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
         lv_label_set_text(view_context.page_body, text);
         return;
     }
-    lv_label_set_recolor(view_context.page_body, false);
     if (view->page == POMODORO_APPLICATION_PAGE_NUMERIC_STEPPER) {
         char text[80];
         bool is_percent =
@@ -1573,46 +1988,56 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
                 POMODORO_APPLICATION_SETTING_BRIGHTNESS_PERCENT ||
             view->numeric_setting ==
                 POMODORO_APPLICATION_SETTING_IDLE_BRIGHTNESS_PERCENT;
+        bool is_seconds = view->numeric_setting ==
+            POMODORO_APPLICATION_SETTING_POMODORO_COMPLETION_TRANSITION_SECONDS;
+        bool is_minutes = view->numeric_setting ==
+                POMODORO_APPLICATION_SETTING_FOCUS_MINUTES ||
+            view->numeric_setting ==
+                POMODORO_APPLICATION_SETTING_SHORT_BREAK_MINUTES ||
+            view->numeric_setting ==
+                POMODORO_APPLICATION_SETTING_LONG_BREAK_MINUTES;
         snprintf(text, sizeof(text),
-                 is_percent ? "%u%%" : "Range %u-%u - step %u",
-                 is_percent ? view->numeric_draft_value :
-                              view->numeric_minimum,
-                 view->numeric_maximum, view->numeric_step);
+                 is_percent ? "%u%% to %u%%  |  Step %u%%" :
+                 is_minutes ? "%u to %u min  |  Step %u min" :
+                 is_seconds ? "%u to %u sec  |  Step %u sec" :
+                              "%u to %u Pomodoros  |  Step %u",
+                 view->numeric_minimum, view->numeric_maximum,
+                 view->numeric_step);
         lv_label_set_text(view_context.page_title,
                           numeric_setting_name(view->numeric_setting));
+        lv_obj_set_style_text_align(view_context.page_body,
+                                    LV_TEXT_ALIGN_CENTER, 0);
         lv_label_set_text(view_context.page_body, text);
         set_auxiliary_button_text(
             POMODORO_APPLICATION_ACTION_NUMERIC_DECREMENT,
-            is_percent ? "-" : LV_SYMBOL_DOWN);
+            LV_SYMBOL_DOWN);
         set_auxiliary_button_text(
             POMODORO_APPLICATION_ACTION_NUMERIC_INCREMENT,
-            is_percent ? "+" : LV_SYMBOL_UP);
+            LV_SYMBOL_UP);
         char options[256] = "";
         size_t used = 0U;
         for (uint16_t value = view->numeric_minimum;
              value <= view->numeric_maximum; value += view->numeric_step) {
+            const char *format = is_percent
+                ? (value == view->numeric_maximum ? "%u%%" : "%u%%\n")
+                : (value == view->numeric_maximum ? "%u" : "%u\n");
             int written = snprintf(options + used, sizeof(options) - used,
-                                   value == view->numeric_maximum ? "%u" :
-                                                                    "%u\n",
-                                   value);
+                                   format, value);
             if (written < 0 || (size_t) written >= sizeof(options) - used) {
                 break;
             }
             used += (size_t) written;
         }
-        if (!is_percent) {
-            view_context.numeric_roller_rendering = true;
-            lv_roller_set_options(view_context.numeric_roller, options,
-                                  LV_ROLLER_MODE_NORMAL);
-            lv_roller_set_selected(
-                view_context.numeric_roller,
-                (view->numeric_draft_value - view->numeric_minimum) /
-                    view->numeric_step,
-                LV_ANIM_OFF);
-            view_context.numeric_roller_rendering = false;
-            lv_obj_remove_flag(view_context.numeric_roller,
-                               LV_OBJ_FLAG_HIDDEN);
-        }
+        view_context.numeric_roller_rendering = true;
+        lv_roller_set_options(view_context.numeric_roller, options,
+                              LV_ROLLER_MODE_NORMAL);
+        lv_roller_set_selected(
+            view_context.numeric_roller,
+            (view->numeric_draft_value - view->numeric_minimum) /
+                view->numeric_step,
+            LV_ANIM_OFF);
+        view_context.numeric_roller_rendering = false;
+        lv_obj_remove_flag(view_context.numeric_roller, LV_OBJ_FLAG_HIDDEN);
         set_auxiliary_button_visible(
             POMODORO_APPLICATION_ACTION_NUMERIC_DECREMENT, true);
         set_auxiliary_button_visible(
@@ -1638,23 +2063,40 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
                           view->settings.pomodoro_completion_transition_seconds);
     lv_label_set_text_fmt(
         view_context.settings_volume_value,
-        "Volume %u/5 - Use the side buttons to adjust volume",
+        "#9FC2FF Volume %u/5#\n"
+        "#A7B0BE Use the side buttons to adjust volume#",
         view->settings.volume);
     lv_label_set_text_fmt(view_context.settings_brightness_value, "%u%%",
                           view->settings.brightness_percent);
     lv_label_set_text_fmt(view_context.settings_idle_brightness_value, "%u%%",
                           view->settings.idle_brightness_percent);
-    lv_label_set_text_fmt(
-        view_context.settings_datetime_value,
-        "%04u-%02u-%02u %02u:%02u",
-        view->current_local_date.year, view->current_local_date.month,
-        view->current_local_date.day, view->current_local_hour,
-        view->current_local_minute);
-    lv_label_set_text_fmt(
-        view_context.settings_power_value, "%s%s%u%%",
-        view->device_status.usb_power ? "USB power  " : "",
-        view->device_status.charging ? "Charging  " : "",
-        view->device_status.battery_percent);
+    if (view->rtc_is_valid) {
+        lv_label_set_text_fmt(
+            view_context.settings_datetime_value,
+            "%04u-%02u-%02u %02u:%02u",
+            view->current_local_date.year, view->current_local_date.month,
+            view->current_local_date.day, view->current_local_hour,
+            view->current_local_minute);
+    } else {
+        lv_label_set_text(view_context.settings_datetime_value, "Set required");
+    }
+    if (view->device_status.usb_power && view->device_status.charging) {
+        lv_label_set_text_fmt(view_context.settings_power_value,
+                              "USB + charging  %u%%",
+                              view->device_status.battery_percent);
+    } else if (view->device_status.usb_power) {
+        lv_label_set_text_fmt(view_context.settings_power_value,
+                              "USB power  %u%%",
+                              view->device_status.battery_percent);
+    } else if (view->device_status.charging) {
+        lv_label_set_text_fmt(view_context.settings_power_value,
+                              "Charging  %u%%",
+                              view->device_status.battery_percent);
+    } else {
+        lv_label_set_text_fmt(view_context.settings_power_value,
+                              "Battery  %u%%",
+                              view->device_status.battery_percent);
+    }
     lv_label_set_text(view_context.page_title, "Settings");
     lv_obj_remove_flag(view_context.settings_switches, LV_OBJ_FLAG_HIDDEN);
     if (view->settings.auto_start_breaks) {
@@ -1682,6 +2124,7 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
 
 static void render_status_overlay(const pomodoro_application_view_t *view)
 {
+    lv_obj_remove_flag(view_context.status_overlay, LV_OBJ_FLAG_HIDDEN);
     if (view->rtc_is_valid ||
         view->phase == POMODORO_APPLICATION_PHASE_TIME_SETUP) {
         lv_obj_add_flag(view_context.rtc_warning, LV_OBJ_FLAG_HIDDEN);
@@ -1701,12 +2144,13 @@ static void render_status_overlay(const pomodoro_application_view_t *view)
                     : LV_SYMBOL_BATTERY_FULL;
     lv_label_set_text_fmt(
         view_context.top_power_status, "%s%s%s %u%%",
-        view->device_status.usb_power ? LV_SYMBOL_USB : "",
-        view->device_status.charging ? LV_SYMBOL_CHARGE : "",
+        view->device_status.usb_power ? LV_SYMBOL_USB " " : "",
+        view->device_status.charging ? LV_SYMBOL_CHARGE " " : "",
         battery_icon, view->device_status.battery_percent);
     lv_obj_set_style_text_color(
         view_context.top_power_status,
-        lv_color_hex(view->device_status.low_battery ? 0xFFB74D : 0xF5F7FA),
+        lv_color_hex(view->device_status.low_battery ? UI_COLOR_WARNING :
+                                                       UI_COLOR_TEXT_PRIMARY),
         0);
     if (view->low_battery_warning_visible) {
         lv_label_set_text(view_context.battery_warning, "Battery low");
@@ -1722,8 +2166,7 @@ static void render_status_overlay(const pomodoro_application_view_t *view)
             lv_obj_set_style_bg_color(
                 view_context.volume_segments[index],
                 lv_color_hex(index < view->settings.volume
-                    ? SETTINGS_VALUE_TEXT_COLOR :
-                                                            0x555D6A),
+                    ? SETTINGS_VALUE_TEXT_COLOR : UI_COLOR_MUTED),
                 0);
             lv_obj_set_style_bg_opa(view_context.volume_segments[index],
                                     LV_OPA_COVER, 0);
@@ -1785,8 +2228,13 @@ static void render_confirmation(const pomodoro_application_view_t *view)
     if (view->confirmation == POMODORO_APPLICATION_CONFIRM_NONE) {
         lv_obj_add_flag(view_context.confirmation_mask, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(view_context.confirmation_overlay, LV_OBJ_FLAG_HIDDEN);
+        view_context.rendered_confirmation =
+            POMODORO_APPLICATION_CONFIRM_NONE;
         return;
     }
+
+    bool confirmation_changed =
+        view_context.rendered_confirmation != view->confirmation;
 
     const char *title = "End this timer?";
     const char *body = "Current progress will be discarded.";
@@ -1806,6 +2254,13 @@ static void render_confirmation(const pomodoro_application_view_t *view)
     lv_label_set_text(view_context.confirmation_button_label, button);
     lv_obj_remove_flag(view_context.confirmation_mask, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(view_context.confirmation_overlay, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_update_layout(view_context.confirmation_overlay);
+    if (confirmation_changed) {
+        lv_obj_scroll_to_y(view_context.confirmation_body_viewport, 0,
+                           LV_ANIM_OFF);
+    }
+    view_context.rendered_confirmation = view->confirmation;
+    lv_obj_align(view_context.confirmation_overlay, LV_ALIGN_CENTER, 0, 0);
     lv_obj_move_foreground(view_context.confirmation_mask);
     lv_obj_move_foreground(view_context.confirmation_overlay);
 }
@@ -1820,14 +2275,31 @@ bool pomodoro_device_view_render(const pomodoro_application_view_t *view)
     apply_pixel_shift(view);
     if (view->phase == POMODORO_APPLICATION_PHASE_PLATFORM_ERROR) {
         lv_obj_add_flag(view_context.page_panel, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(view_context.menu_button, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(view_context.sound_button, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(view_context.completion_group, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(view_context.confirmation_mask, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(view_context.confirmation_overlay, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(view_context.status_overlay, LV_OBJ_FLAG_HIDDEN);
         hide_agent_status_indicator();
+        lv_obj_add_flag(view_context.top_power_status, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(view_context.set_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(view_context.boundary_feedback, LV_OBJ_FLAG_HIDDEN);
+        for (uint8_t index = 0; index < 4U; index++) {
+            lv_obj_add_flag(view_context.set_markers[index],
+                            LV_OBJ_FLAG_HIDDEN);
+        }
+        for (uint8_t index = 0; index < 3U; index++) {
+            lv_obj_add_flag(view_context.mode_dots[index], LV_OBJ_FLAG_HIDDEN);
+        }
+        lv_label_set_text(view_context.title, "Device error");
         lv_obj_remove_flag(view_context.status, LV_OBJ_FLAG_HIDDEN);
         lv_label_set_text(view_context.status, application_error_text(view->error));
+        lv_obj_align(view_context.status, LV_ALIGN_CENTER, 0, 0);
         lv_obj_add_flag(view_context.primary_button, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(view_context.secondary_button, LV_OBJ_FLAG_HIDDEN);
-        lv_arc_set_value(view_context.ring, 0);
-        lv_label_set_text(view_context.time, "--:--");
+        lv_obj_add_flag(view_context.ring, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(view_context.time, LV_OBJ_FLAG_HIDDEN);
         ESP_LOGE(TAG, "Application platform error: %d", view->error);
         return true;
     }
@@ -1856,6 +2328,11 @@ bool pomodoro_device_view_render(const pomodoro_application_view_t *view)
     lv_label_set_text(view_context.title, presentation.name);
     lv_obj_set_style_arc_color(view_context.ring, accent, LV_PART_INDICATOR);
     lv_obj_set_style_bg_color(view_context.primary_button, accent, 0);
+    lv_obj_set_style_bg_color(
+        view_context.primary_button, lv_color_darken(accent, LV_OPA_20),
+        LV_STATE_PRESSED);
+    lv_obj_set_style_text_color(view_context.primary_label,
+                                lv_color_hex(UI_COLOR_ON_ACCENT), 0);
     render_progress(view, accent);
     if (view->mode_boundary_feedback) {
         lv_obj_remove_flag(view_context.boundary_feedback, LV_OBJ_FLAG_HIDDEN);
@@ -1867,8 +2344,11 @@ bool pomodoro_device_view_render(const pomodoro_application_view_t *view)
     lv_obj_remove_flag(view_context.ring, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(view_context.time, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(view_context.status, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_text_font(view_context.secondary_label,
+                               &lv_font_montserrat_16, 0);
     lv_obj_add_flag(view_context.secondary_button, LV_OBJ_FLAG_HIDDEN);
     if (view->timer_state == POMODORO_TIMER_COMPLETION) {
+        lv_obj_add_flag(view_context.menu_button, LV_OBJ_FLAG_HIDDEN);
         render_completion(view);
     } else {
         uint32_t minutes = view->remaining_seconds / 60U;
@@ -1885,17 +2365,22 @@ bool pomodoro_device_view_render(const pomodoro_application_view_t *view)
         lv_obj_remove_flag(view_context.primary_button, LV_OBJ_FLAG_HIDDEN);
         if (view->timer_state == POMODORO_TIMER_PAUSED) {
             lv_obj_add_flag(view_context.time, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_set_size(view_context.primary_button, 160, 48);
+            lv_obj_set_size(view_context.primary_button, 176,
+                            UI_BUTTON_HEIGHT);
             lv_obj_align(view_context.primary_button, LV_ALIGN_CENTER, 0,
-                         TIMER_RING_CENTER_Y - 29);
+                         PAUSED_PRIMARY_CENTER_Y);
             lv_label_set_text(view_context.secondary_label, "Reset");
-            lv_obj_set_size(view_context.secondary_button, 120, 40);
+            lv_obj_set_style_text_font(view_context.secondary_label,
+                                       &lv_font_montserrat_20, 0);
+            lv_obj_set_size(view_context.secondary_button, 176,
+                            UI_BUTTON_HEIGHT);
             lv_obj_align(view_context.secondary_button, LV_ALIGN_CENTER, 0,
-                         TIMER_RING_CENTER_Y + 33);
+                         PAUSED_SECONDARY_CENTER_Y);
             lv_obj_remove_flag(view_context.secondary_button,
                                LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_obj_set_size(view_context.primary_button, 160, 48);
+            lv_obj_set_size(view_context.primary_button, 176,
+                            UI_BUTTON_HEIGHT);
             lv_obj_align(view_context.primary_button, LV_ALIGN_CENTER, 0,
                          TIMER_PRIMARY_CENTER_Y);
         }
@@ -1940,12 +2425,32 @@ void pomodoro_device_view_show_startup_error(const char *message,
 {
     ESP_LOGE(TAG, "%s: %s", message, esp_err_to_name(error));
     if (view_context.status != NULL && lvgl_port_lock(1000)) {
+        lv_label_set_text(view_context.title, "Startup error");
         lv_obj_remove_flag(view_context.status, LV_OBJ_FLAG_HIDDEN);
         lv_label_set_text(view_context.status, message);
-        lv_label_set_text(view_context.time, "--:--");
+        lv_obj_align(view_context.status, LV_ALIGN_CENTER, 0, 0);
+        lv_obj_add_flag(view_context.time, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(view_context.ring, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(view_context.menu_button, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(view_context.primary_button, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(view_context.secondary_button, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(view_context.sound_button, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(view_context.page_panel, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(view_context.completion_group, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(view_context.confirmation_mask, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(view_context.confirmation_overlay, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(view_context.status_overlay, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(view_context.top_power_status, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(view_context.set_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(view_context.boundary_feedback, LV_OBJ_FLAG_HIDDEN);
+        hide_agent_status_indicator();
+        for (uint8_t index = 0; index < 4U; index++) {
+            lv_obj_add_flag(view_context.set_markers[index],
+                            LV_OBJ_FLAG_HIDDEN);
+        }
+        for (uint8_t index = 0; index < 3U; index++) {
+            lv_obj_add_flag(view_context.mode_dots[index], LV_OBJ_FLAG_HIDDEN);
+        }
         lv_arc_set_value(view_context.ring, 0);
         lvgl_port_unlock();
     }
