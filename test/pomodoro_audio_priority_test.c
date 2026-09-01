@@ -3,18 +3,6 @@
 #include <assert.h>
 #include <stdio.h>
 
-static void test_fixed_tone_parameters_match_product_feedback(void)
-{
-    assert(POMODORO_WAITING_TONE_FREQUENCY_HZ == 740U);
-    assert(POMODORO_WAITING_TONE_DURATION_MS == 120U);
-    assert(POMODORO_BREAK_TONE_FREQUENCY_HZ == 523U);
-    assert(POMODORO_BREAK_TONE_DURATION_MS == 180U);
-    assert(POMODORO_FOCUS_TONE_FIRST_FREQUENCY_HZ == 660U);
-    assert(POMODORO_FOCUS_TONE_SECOND_FREQUENCY_HZ == 880U);
-    assert(POMODORO_FOCUS_TONE_DURATION_MS == 120U);
-    assert(POMODORO_FOCUS_TONE_GAP_MS == 60U);
-}
-
 static void test_zero_volume_succeeds_without_occupying_audio(void)
 {
     pomodoro_audio_priority_t priority;
@@ -71,7 +59,6 @@ static void test_busy_completion_rejects_every_other_cue(void)
 
 int main(void)
 {
-    test_fixed_tone_parameters_match_product_feedback();
     test_zero_volume_succeeds_without_occupying_audio();
     test_completion_queues_behind_waiting_but_waiting_never_queues();
     test_busy_completion_rejects_every_other_cue();

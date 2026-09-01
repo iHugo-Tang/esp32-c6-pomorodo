@@ -61,11 +61,11 @@ Settings 的 `Agent` 分区在 `Agent status` 后增加默认开启并持久化�
 - Error ACK 后 resolved 状态从 Error 变为 Waiting 时触发，即使没有新的 host revision。
 - 同色新 revision、重复选择导致的黄色 epoch 更新以及持续黄色期间的成员变化不触发。
 - 设置或音量的变化只影响未来触发，不检查或补播当前 Waiting。
-- 使用一个约 740 Hz、120 ms 的单音，与 523 Hz、180 ms Break 完成音及 660/880 Hz Focus 上升完成音区分。
+- Waiting 使用用户提供的约 0.50 秒 `warning` 音效；Focus 与 Break 完成使用约 1.85 秒的 `rest` 音效。两个 MP3 在构建前转换为设备原生的 16 kHz 单声道 PCM 并内置，播放时扩为双声道，不引入运行时 MP3 解码依赖。
 - 使用播放时的当前音量；`volume == 0` 时静默成功。
 - Waiting Sound 是 best-effort：音频忙或播放失败时丢弃，不排队、不重试，也不把 application 置为 Audio Error。
 - 音频仲裁保证 Focus 与 Break 完成音优先且不会因 Waiting Sound 丢失；Waiting Sound 不得占用或覆盖待播放的完成反馈。
-- 不新增声音资源、外部依赖、浮层、文字、动画或新的 Main 控件。
+- 除内置 `warning` 与 `rest` 声音资源外，不新增外部依赖、浮层、文字、动画或新的 Main 控件。
 - 不修改 Agent Status 优先级、颜色、确认、Completed 到期、心跳超时、显示唤醒或 Selected Agent Source 行为。
 - 不修改 Codex plugin、broker、成员聚合、revision 生成或 `OC1` 协议。现有协议只能支持聚合级提示。
 - Settings 与顶层 persisted-state 格式升级；沿用开发期的旧格式视为空策略，不实现迁移。升级后 Settings、Timer snapshot、Set Progress 与 Statistics 全部恢复默认空状态，新 `Waiting sound` 默认为开启。
@@ -85,12 +85,12 @@ Settings 的 `Agent` 分区在 `Agent status` 后增加默认开启并持久化�
   - Running Focus 与 Break 期间播放且 Timer、Set Progress 和 Statistics 不变；
   - Waiting Sound 开关、Agent Status 开关、全局静音及当前音量的组合；
   - 已 Waiting 时开启开关、解除静音或调高音量不补播；
-  - 音频忙或 Waiting tone 失败被丢弃且 application 不进入 Audio Error；
+  - 音频忙或 Waiting sound 失败被丢弃且 application 不进入 Audio Error；
   - 与 Focus/Break 完成同时发生时完成音保留且 Waiting Sound 可丢弃；
   - 开关默认开启、切换后保存并在当前格式重启后恢复；
   - 上一 Settings/顶层 state 格式被视为空，并重置 Settings、Timer、Set Progress 与 Statistics。
 - 测试外部可观察行为，不断言私有 helper、内部调用顺序、LVGL object 结构或具体音频任务实现。
-- Platform/board host seam 覆盖 Waiting tone 参数、零音量、busy 处理及完成音优先仲裁。
+- Platform/board seam 覆盖声音资源映射、零音量、busy 处理及完成音优先仲裁。
 - 运行完整 native host test suite 与 ESP-IDF firmware build。
 - 目标设备验证开关文案和默认值、音色与音量、各页面、计时期间、重连、静音、声音冲突、重启持久化以及四种 UI Orientation。
 

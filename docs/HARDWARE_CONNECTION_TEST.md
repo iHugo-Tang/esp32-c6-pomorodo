@@ -113,12 +113,12 @@ Settings、运行中计时、Set Progress 与 Statistics 也会恢复默认空�
   366 个日期后确认只保留最近 365 日。
 - 在 Main 与 Settings 分别按 KEY/+、BOOT/-，确认音量 0–5 同步；静音、重启、恢复声音，
   确认恢复最后一个非零音量。上电时按住 BOOT，确认下载模式行为未改变。
-- 连接扬声器，确认 Focus 完成播放两段短促上升音，Break 完成仅播放一段柔和音；静音时
-  仍显示完成反馈且不发声。
+- 连接扬声器，确认 Focus 与 Break 完成都播放内置 `rest` 音效；静音时仍显示完成反馈且
+  不发声。
 - 在 Settings 的 Agent 分区确认 `Waiting sound` 位于 `Agent status` 后、默认开启、可独立
   切换并在重启后保持；`Agent status` 关闭时该行仍可编辑但不发声。分别验证首次同步、
-  Working→Waiting、重启启用、十秒超时重连与确认 Error 后显露 Waiting 各播放一次约
-  740 Hz/120 ms 短音；重复心跳、持续黄色、新 revision 仍为黄色、已 Waiting 时开启声音或
+  Working→Waiting、重启启用、十秒超时重连与确认 Error 后显露 Waiting 各播放一次内置
+  `warning` 短音效；重复心跳、持续黄色、新 revision 仍为黄色、已 Waiting 时开启声音或
   解除静音均不补播。在 Main、Settings、Statistics、Numeric Stepper 与 Dialog 中验证提示，
   并确认不改变页面、计时、Set Progress 或 Statistics。制造与 Focus/Break 完成音的竞争，
   确认 Waiting 音可丢弃而完成音不丢失，且应用不进入 Audio Error。

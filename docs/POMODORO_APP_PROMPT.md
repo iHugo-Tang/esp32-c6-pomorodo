@@ -306,11 +306,11 @@ StatusOverlay (single overlay parent, vertical flex)
 
 Sound occurs on timer completion and Agent Waiting:
 
-- Focus complete: two short rising tones.
-- Break complete: one gentle tone.
-- Agent Waiting: one approximately 740 Hz, 120 ms tone when the effective aggregate Agent Status enters Waiting or regains Waiting after first sync, re-enable, or reconnection.
+- Focus complete: the embedded `rest` sound effect.
+- Break complete: the embedded `rest` sound effect.
+- Agent Waiting: the embedded short `warning` sound effect when the effective aggregate Agent Status enters Waiting or regains Waiting after first sync, re-enable, or reconnection.
 - Waiting sound is global across pages and timer modes, obeys the Sound switch and current volume, and never replays merely because it was enabled or unmuted while already Waiting.
-- Repeated heartbeats and same-color revisions do not replay Waiting sound. If audio is busy, Waiting sound may be dropped; Focus and Break completion tones always take priority.
+- Repeated heartbeats and same-color revisions do not replay Waiting sound. If audio is busy, Waiting sound may be dropped; Focus and Break completion audio always takes priority.
 - No click, navigation, reset, or other warning sounds.
 - Sound off leaves visual feedback intact.
 

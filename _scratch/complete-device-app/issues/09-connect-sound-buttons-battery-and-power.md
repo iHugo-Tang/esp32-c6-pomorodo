@@ -8,7 +8,7 @@
 
 - [x] `+/KEY` and `BOOT/-` adjust volume from 0–5 during runtime while preserving bootloader behavior during startup.
 - [x] Sound off stores and restores the last non-zero volume, and side-button changes synchronize Settings and Main.
-- [x] Focus completion plays two short rising tones and break completion plays one gentle tone; no other action produces sound.
+- [x] Focus and Break completion play the embedded `rest` sound effect; Agent Waiting may play the independently controlled embedded `warning` sound effect; no other action produces sound.
 - [x] Battery percentage, charging, USB power, and low-battery state are shown without cancelling an active timer.
 - [x] RTC warning, one-shot Battery low warning, and volume feedback share one non-intercepting `StatusOverlay` with the specified fixed child order.
 - [x] PWR short press sleeps or wakes the display and long press follows the board's power-off behavior.

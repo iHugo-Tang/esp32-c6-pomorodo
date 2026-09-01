@@ -83,6 +83,12 @@ typedef struct {
 } board_context_t;
 
 static const char *TAG = "pomodoro_board";
+extern const uint8_t warning_pcm_start[]
+    asm("_binary_warning_pcm_start");
+extern const uint8_t warning_pcm_end[]
+    asm("_binary_warning_pcm_end");
+extern const uint8_t rest_pcm_start[] asm("_binary_rest_pcm_start");
+extern const uint8_t rest_pcm_end[] asm("_binary_rest_pcm_end");
 static board_context_t board;
 static uint64_t last_valid_wall_time_seconds;
 static int64_t last_valid_monotonic_microseconds;
@@ -545,42 +551,45 @@ esp_err_t pomodoro_board_initialize_audio(void)
     return audio_request_mutex != NULL ? ESP_OK : ESP_ERR_NO_MEM;
 }
 
-static bool write_tone(uint16_t frequency_hz, uint16_t milliseconds,
-                       uint8_t volume)
+static bool write_audio_clip(const uint8_t *start, const uint8_t *end,
+                             uint8_t volume)
 {
-    static const int16_t waveform[] = {
-        0, 6393, 11819, 15446, 16720, 15446, 11819, 6393,
-        0, -6393, -11819, -15446, -16720, -15446, -11819, -6393,
-    };
     int16_t frames[128U * 2U];
-    uint32_t phase = 0U;
-    uint32_t phase_step = ((uint32_t) frequency_hz << 16U) /
-        AUDIO_SAMPLE_RATE;
-    uint32_t frames_remaining =
-        AUDIO_SAMPLE_RATE * milliseconds / 1000U;
+    if (start == NULL || end == NULL || end < start) {
+        return false;
+    }
+    size_t byte_count = (size_t) (end - start);
+    size_t sample_offset = 0U;
+    size_t sample_count = byte_count / sizeof(int16_t);
+    if ((byte_count % sizeof(int16_t)) != 0U) {
+        return false;
+    }
     if (esp_codec_dev_set_out_vol(audio_device, volume * 20U) !=
         ESP_CODEC_DEV_OK) {
         return false;
     }
-    while (frames_remaining > 0U) {
-        uint32_t count = frames_remaining > 128U ? 128U : frames_remaining;
-        for (uint32_t index = 0; index < count; index++) {
-            int16_t sample = waveform[(phase >> 12U) & 0x0FU];
+    while (sample_offset < sample_count) {
+        size_t remaining = sample_count - sample_offset;
+        size_t count = remaining > 128U ? 128U : remaining;
+        for (size_t index = 0; index < count; index++) {
+            size_t byte_offset = (sample_offset + index) * sizeof(int16_t);
+            uint16_t encoded = (uint16_t) start[byte_offset] |
+                ((uint16_t) start[byte_offset + 1U] << 8U);
+            int16_t sample = (int16_t) encoded;
             frames[index * 2U] = sample;
             frames[index * 2U + 1U] = sample;
-            phase += phase_step;
         }
         if (esp_codec_dev_write(audio_device, frames,
                                 count * 2U * sizeof(int16_t)) !=
             ESP_CODEC_DEV_OK) {
             return false;
         }
-        frames_remaining -= count;
+        sample_offset += count;
     }
     return true;
 }
 
-static void play_tone_task(void *context)
+static void play_audio_task(void *context)
 {
     (void) context;
     bool play_next = true;
@@ -591,18 +600,12 @@ static void play_tone_task(void *context)
         uint8_t volume = active_audio_volume;
         portEXIT_CRITICAL(&audio_lock);
 
-        if (cue == POMODORO_AUDIO_CUE_FOCUS_COMPLETE) {
-            (void) write_tone(POMODORO_FOCUS_TONE_FIRST_FREQUENCY_HZ,
-                              POMODORO_FOCUS_TONE_DURATION_MS, volume);
-            vTaskDelay(pdMS_TO_TICKS(POMODORO_FOCUS_TONE_GAP_MS));
-            (void) write_tone(POMODORO_FOCUS_TONE_SECOND_FREQUENCY_HZ,
-                              POMODORO_FOCUS_TONE_DURATION_MS, volume);
-        } else if (cue == POMODORO_AUDIO_CUE_BREAK_COMPLETE) {
-            (void) write_tone(POMODORO_BREAK_TONE_FREQUENCY_HZ,
-                              POMODORO_BREAK_TONE_DURATION_MS, volume);
-        } else if (cue == POMODORO_AUDIO_CUE_WAITING) {
-            (void) write_tone(POMODORO_WAITING_TONE_FREQUENCY_HZ,
-                              POMODORO_WAITING_TONE_DURATION_MS, volume);
+        if (cue == POMODORO_AUDIO_CUE_WAITING) {
+            (void) write_audio_clip(warning_pcm_start, warning_pcm_end,
+                                    volume);
+        } else if (cue == POMODORO_AUDIO_CUE_FOCUS_COMPLETE ||
+                   cue == POMODORO_AUDIO_CUE_BREAK_COMPLETE) {
+            (void) write_audio_clip(rest_pcm_start, rest_pcm_end, volume);
         }
 
         portENTER_CRITICAL(&audio_lock);
@@ -647,7 +650,7 @@ static bool request_audio_cue(pomodoro_audio_cue_t cue, uint8_t volume)
         xSemaphoreGive(audio_request_mutex);
         return request == POMODORO_AUDIO_REQUEST_QUEUED;
     }
-    if (xTaskCreate(play_tone_task, "pomodoro_tone", 3072, NULL, 2, NULL) !=
+    if (xTaskCreate(play_audio_task, "pomodoro_audio", 3072, NULL, 2, NULL) !=
         pdPASS) {
         portENTER_CRITICAL(&audio_lock);
         pomodoro_audio_priority_init(&audio_priority);
@@ -661,17 +664,17 @@ static bool request_audio_cue(pomodoro_audio_cue_t cue, uint8_t volume)
     return true;
 }
 
-bool pomodoro_board_play_focus_completion_tone(uint8_t volume)
+bool pomodoro_board_play_focus_completion_sound(uint8_t volume)
 {
     return request_audio_cue(POMODORO_AUDIO_CUE_FOCUS_COMPLETE, volume);
 }
 
-bool pomodoro_board_play_break_completion_tone(uint8_t volume)
+bool pomodoro_board_play_break_completion_sound(uint8_t volume)
 {
     return request_audio_cue(POMODORO_AUDIO_CUE_BREAK_COMPLETE, volume);
 }
 
-bool pomodoro_board_play_waiting_tone(uint8_t volume)
+bool pomodoro_board_play_waiting_sound(uint8_t volume)
 {
     return request_audio_cue(POMODORO_AUDIO_CUE_WAITING, volume);
 }
