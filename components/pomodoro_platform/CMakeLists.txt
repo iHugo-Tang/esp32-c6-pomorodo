@@ -1,7 +1,7 @@
 idf_component_register(
     SRCS
         "pomodoro_board.c"
-        "pomodoro_audio_cue.c"
+        "pomodoro_audio_priority.c"
         "pomodoro_device_platform.c"
         "pomodoro_device_view.c"
         "pomodoro_orientation.c"

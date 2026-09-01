@@ -1,5 +1,5 @@
 #include "pomodoro_board.h"
-#include "pomodoro_audio_cue.h"
+#include "pomodoro_audio_priority.h"
 
 #include <stddef.h>
 #include <string.h>
@@ -88,9 +88,10 @@ static int64_t last_valid_monotonic_microseconds;
 static bool has_last_valid_time;
 static i2s_chan_handle_t audio_tx_channel;
 static esp_codec_dev_handle_t audio_device;
-static pomodoro_audio_queue_t audio_queue;
+static pomodoro_audio_priority_t audio_priority;
 static uint8_t active_audio_volume;
 static uint8_t pending_completion_volume;
+static bool audio_worker_ready;
 static portMUX_TYPE audio_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool screenshot_active;
 static int64_t screenshot_last_progress_us;
@@ -462,9 +463,10 @@ bool pomodoro_board_read_power_events(bool *short_press, bool *long_press)
 
 esp_err_t pomodoro_board_initialize_audio(void)
 {
-    pomodoro_audio_queue_init(&audio_queue);
+    pomodoro_audio_priority_init(&audio_priority);
     active_audio_volume = 0U;
     pending_completion_volume = 0U;
+    audio_worker_ready = false;
     i2s_chan_config_t channel_config = I2S_CHANNEL_DEFAULT_CONFIG(
         I2S_NUM_AUTO, I2S_ROLE_MASTER);
     channel_config.auto_clear = true;
@@ -578,31 +580,38 @@ static bool write_tone(uint16_t frequency_hz, uint16_t milliseconds,
 static void play_tone_task(void *context)
 {
     (void) context;
+    portENTER_CRITICAL(&audio_lock);
+    audio_worker_ready = true;
+    portEXIT_CRITICAL(&audio_lock);
     bool play_next = true;
     while (play_next) {
         portENTER_CRITICAL(&audio_lock);
-        pomodoro_audio_cue_t cue = pomodoro_audio_queue_active(&audio_queue);
+        pomodoro_audio_cue_t cue =
+            pomodoro_audio_priority_active(&audio_priority);
         uint8_t volume = active_audio_volume;
         portEXIT_CRITICAL(&audio_lock);
 
-        pomodoro_audio_pattern_t pattern;
-        if (pomodoro_audio_cue_pattern(cue, &pattern)) {
-            for (uint8_t index = 0U; index < pattern.segment_count; index++) {
-                if (index > 0U && pattern.gap_ms > 0U) {
-                    vTaskDelay(pdMS_TO_TICKS(pattern.gap_ms));
-                }
-                (void) write_tone(pattern.segments[index].frequency_hz,
-                                  pattern.segments[index].duration_ms,
-                                  volume);
-            }
+        if (cue == POMODORO_AUDIO_CUE_FOCUS_COMPLETE) {
+            (void) write_tone(POMODORO_FOCUS_TONE_FIRST_FREQUENCY_HZ,
+                              POMODORO_FOCUS_TONE_DURATION_MS, volume);
+            vTaskDelay(pdMS_TO_TICKS(POMODORO_FOCUS_TONE_GAP_MS));
+            (void) write_tone(POMODORO_FOCUS_TONE_SECOND_FREQUENCY_HZ,
+                              POMODORO_FOCUS_TONE_DURATION_MS, volume);
+        } else if (cue == POMODORO_AUDIO_CUE_BREAK_COMPLETE) {
+            (void) write_tone(POMODORO_BREAK_TONE_FREQUENCY_HZ,
+                              POMODORO_BREAK_TONE_DURATION_MS, volume);
+        } else if (cue == POMODORO_AUDIO_CUE_WAITING) {
+            (void) write_tone(POMODORO_WAITING_TONE_FREQUENCY_HZ,
+                              POMODORO_WAITING_TONE_DURATION_MS, volume);
         }
 
         portENTER_CRITICAL(&audio_lock);
-        if (pomodoro_audio_queue_finish(&audio_queue)) {
+        if (pomodoro_audio_priority_finish(&audio_priority)) {
             active_audio_volume = pending_completion_volume;
             pending_completion_volume = 0U;
         } else {
             active_audio_volume = 0U;
+            audio_worker_ready = false;
             play_next = false;
         }
         portEXIT_CRITICAL(&audio_lock);
@@ -612,16 +621,21 @@ static void play_tone_task(void *context)
 
 static bool request_audio_cue(pomodoro_audio_cue_t cue, uint8_t volume)
 {
-    if (volume == 0U) {
-        return true;
-    }
-    if (audio_device == NULL || cue == POMODORO_AUDIO_CUE_NONE) {
+    if (cue == POMODORO_AUDIO_CUE_NONE ||
+        (volume > 0U && audio_device == NULL)) {
         return false;
     }
 
     portENTER_CRITICAL(&audio_lock);
-    pomodoro_audio_request_result_t request =
-        pomodoro_audio_queue_request(&audio_queue, cue);
+    bool completion_during_start =
+        !audio_worker_ready &&
+        pomodoro_audio_priority_active(&audio_priority) ==
+            POMODORO_AUDIO_CUE_WAITING &&
+        (cue == POMODORO_AUDIO_CUE_FOCUS_COMPLETE ||
+         cue == POMODORO_AUDIO_CUE_BREAK_COMPLETE);
+    pomodoro_audio_request_result_t request = completion_during_start
+        ? POMODORO_AUDIO_REQUEST_REJECTED
+        : pomodoro_audio_priority_request(&audio_priority, cue, volume);
     if (request == POMODORO_AUDIO_REQUEST_START) {
         active_audio_volume = volume;
     } else if (request == POMODORO_AUDIO_REQUEST_QUEUED) {
@@ -629,27 +643,33 @@ static bool request_audio_cue(pomodoro_audio_cue_t cue, uint8_t volume)
     }
     portEXIT_CRITICAL(&audio_lock);
 
+    if (request == POMODORO_AUDIO_REQUEST_SILENT) {
+        return true;
+    }
     if (request != POMODORO_AUDIO_REQUEST_START) {
         return request == POMODORO_AUDIO_REQUEST_QUEUED;
     }
     if (xTaskCreate(play_tone_task, "pomodoro_tone", 3072, NULL, 2, NULL) !=
         pdPASS) {
         portENTER_CRITICAL(&audio_lock);
-        pomodoro_audio_queue_init(&audio_queue);
+        pomodoro_audio_priority_init(&audio_priority);
         active_audio_volume = 0U;
         pending_completion_volume = 0U;
+        audio_worker_ready = false;
         portEXIT_CRITICAL(&audio_lock);
         return false;
     }
     return true;
 }
 
-bool pomodoro_board_play_completion_tone(bool focus, uint8_t volume)
+bool pomodoro_board_play_focus_completion_tone(uint8_t volume)
 {
-    return request_audio_cue(
-        focus ? POMODORO_AUDIO_CUE_FOCUS_COMPLETE
-              : POMODORO_AUDIO_CUE_BREAK_COMPLETE,
-        volume);
+    return request_audio_cue(POMODORO_AUDIO_CUE_FOCUS_COMPLETE, volume);
+}
+
+bool pomodoro_board_play_break_completion_tone(uint8_t volume)
+{
+    return request_audio_cue(POMODORO_AUDIO_CUE_BREAK_COMPLETE, volume);
 }
 
 bool pomodoro_board_play_waiting_tone(uint8_t volume)

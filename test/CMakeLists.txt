@@ -58,19 +58,19 @@ target_compile_options(pomodoro_orientation_test PRIVATE -Wall -Wextra -Werror -
 add_test(NAME pomodoro_orientation_test COMMAND pomodoro_orientation_test)
 
 add_executable(
-    pomodoro_audio_cue_test
-    pomodoro_audio_cue_test.c
-    ../components/pomodoro_platform/pomodoro_audio_cue.c
+    pomodoro_audio_priority_test
+    pomodoro_audio_priority_test.c
+    ../components/pomodoro_platform/pomodoro_audio_priority.c
 )
 target_include_directories(
-    pomodoro_audio_cue_test PRIVATE
+    pomodoro_audio_priority_test PRIVATE
     ../components/pomodoro_platform/include
 )
-target_compile_features(pomodoro_audio_cue_test PRIVATE c_std_11)
+target_compile_features(pomodoro_audio_priority_test PRIVATE c_std_11)
 target_compile_options(
-    pomodoro_audio_cue_test PRIVATE -Wall -Wextra -Werror -pedantic)
+    pomodoro_audio_priority_test PRIVATE -Wall -Wextra -Werror -pedantic)
 
-add_test(NAME pomodoro_audio_cue_test COMMAND pomodoro_audio_cue_test)
+add_test(NAME pomodoro_audio_priority_test COMMAND pomodoro_audio_priority_test)
 
 add_executable(
     pomodoro_agent_status_test

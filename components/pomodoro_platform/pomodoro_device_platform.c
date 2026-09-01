@@ -126,13 +126,13 @@ static bool render_view(void *context, const pomodoro_application_view_t *view)
 static bool play_completion(void *context, uint8_t volume)
 {
     return context != NULL &&
-           pomodoro_board_play_completion_tone(true, volume);
+           pomodoro_board_play_focus_completion_tone(volume);
 }
 
 static bool play_break_completion(void *context, uint8_t volume)
 {
     return context != NULL &&
-           pomodoro_board_play_completion_tone(false, volume);
+           pomodoro_board_play_break_completion_tone(volume);
 }
 
 static bool play_waiting_sound(void *context, uint8_t volume)

@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** complete
+**Status:** ready-for-human
 
 - [x] Settings shows an independently persisted, default-on `Waiting sound` switch in the `Agent` section immediately after `Agent status`; it remains visible and editable while Agent Status is off.
 - [x] A transition from any effective non-Waiting state to Waiting requests exactly one approximately 740 Hz, 120 ms tone at the current non-zero volume.
@@ -22,4 +22,4 @@
 
 ## Comments
 
-- 2026-08-31: Verification — native host tests pass 6/6; ESP-IDF 5.5.5 firmware build passes with `pomodoro.bin` size `0xc20e0` and 75% of the smallest app partition free. Target-device audio and interaction acceptance remains in issue 02.
+- 2026-08-31: Verification — native host tests pass 6/6; ESP-IDF 5.5.5 firmware build passes with `pomodoro.bin` size `0xc20c0` and 75% of the smallest app partition free. Code-review findings were resolved by narrowing the board layer to a fixed audio-priority policy, covering zero volume, and protecting the worker-start boundary. Target-device audio and interaction acceptance remains in issue 02.
