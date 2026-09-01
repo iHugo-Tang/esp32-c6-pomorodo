@@ -12,20 +12,20 @@
 
 下面的图片由当前固件在实机上绘制，再通过 USB 截图命令导出。Statistics 中的数字是截图用示例，不是用户数据。
 
-| Focus Ready | Focus Running | Focus Paused |
-| --- | --- | --- |
+| Focus Ready                             | Focus Running                               | Focus Paused                              |
+| --------------------------------------- | ------------------------------------------- | ----------------------------------------- |
 | ![Focus Ready](docs/ui/focus-ready.png) | ![Focus Running](docs/ui/focus-running.png) | ![Focus Paused](docs/ui/focus-paused.png) |
 
-| Short break | Long break | Focus complete |
-| --- | --- | --- |
+| Short break                             | Long break                            | Focus complete                                |
+| --------------------------------------- | ------------------------------------- | --------------------------------------------- |
 | ![Short break](docs/ui/short-break.png) | ![Long break](docs/ui/long-break.png) | ![Focus complete](docs/ui/focus-complete.png) |
 
-| Menu | Statistics | Settings |
-| --- | --- | --- |
+| Menu                      | Statistics                            | Settings                          |
+| ------------------------- | ------------------------------------- | --------------------------------- |
 | ![Menu](docs/ui/menu.png) | ![Statistics](docs/ui/statistics.png) | ![Settings](docs/ui/settings.png) |
 
-| Numeric Stepper | Date & time | Reset Dialog |
-| --- | --- | --- |
+| Numeric Stepper                                 | Date & time                             | Reset Dialog                              |
+| ----------------------------------------------- | --------------------------------------- | ----------------------------------------- |
 | ![Numeric Stepper](docs/ui/numeric-stepper.png) | ![Date and time](docs/ui/date-time.png) | ![Reset Dialog](docs/ui/reset-dialog.png) |
 
 ## 功能
@@ -40,22 +40,20 @@
 - 支持电池状态、低电量提示、自动调暗和熄屏。
 - 可通过 USB 显示当前 Codex Workspace 的 Agent Status。
 
-完整产品规则见 [docs/POMODORO_APP_PROMPT.md](docs/POMODORO_APP_PROMPT.md)。
-
 ## 硬件
 
-| 项目 | 设备 |
-| --- | --- |
-| 开发板 | Waveshare ESP32-C6-Touch-AMOLED-2.16 |
-| 屏幕 | 480×480 SH8601 QSPI AMOLED |
-| 触摸 | CST9217 |
-| 实时时钟 | PCF85063，带后备电源 |
-| 姿态传感器 | QMI8658 |
-| 电源管理 | AXP2101 |
-| 音频 | ES8311 |
-| Flash | 16 MB |
-| 内存 | 512 KB HP SRAM，无 PSRAM |
-| 连接 | USB Serial/JTAG；固件不依赖 Wi-Fi |
+| 项目       | 设备                                 |
+| ---------- | ------------------------------------ |
+| 开发板     | Waveshare ESP32-C6-Touch-AMOLED-2.16 |
+| 屏幕       | 480×480 SH8601 QSPI AMOLED           |
+| 触摸       | CST9217                              |
+| 实时时钟   | PCF85063，带后备电源                 |
+| 姿态传感器 | QMI8658                              |
+| 电源管理   | AXP2101                              |
+| 音频       | ES8311                               |
+| Flash      | 16 MB                                |
+| 内存       | 512 KB HP SRAM，无 PSRAM             |
+| 连接       | USB Serial/JTAG；固件不依赖 Wi-Fi    |
 
 因为设备没有 PSRAM，界面只使用小型局部绘制缓冲，不使用完整帧缓冲。
 
@@ -166,15 +164,15 @@ rm -rf -- "${XDG_STATE_HOME:-$HOME/.local/state}/opencode/pomodoro-status"
 
 ## 目录
 
-| 路径 | 内容 |
-| --- | --- |
-| `components/pomodoro_core` | 计时、Pomodoro Set、统计和持久化格式 |
-| `components/pomodoro_app` | 应用状态和页面行为 |
-| `components/pomodoro_platform` | 屏幕、触摸、RTC、音频、电源和 NVS |
-| `main` | ESP-IDF 程序入口和依赖 |
-| `test` | 主机端自动化测试 |
-| `tools` | 烧录、截图和 Agent Status 工具 |
-| `plugins/pomodoro-agent-status` | Codex Agent Status 插件源码 |
-| `docs` | 产品说明、硬件记录和 ADR |
+| 路径                            | 内容                                 |
+| ------------------------------- | ------------------------------------ |
+| `components/pomodoro_core`      | 计时、Pomodoro Set、统计和持久化格式 |
+| `components/pomodoro_app`       | 应用状态和页面行为                   |
+| `components/pomodoro_platform`  | 屏幕、触摸、RTC、音频、电源和 NVS    |
+| `main`                          | ESP-IDF 程序入口和依赖               |
+| `test`                          | 主机端自动化测试                     |
+| `tools`                         | 烧录、截图和 Agent Status 工具       |
+| `plugins/pomodoro-agent-status` | Codex Agent Status 插件源码          |
+| `docs`                          | 产品说明、硬件记录和 ADR             |
 
 领域术语见 [CONTEXT.md](CONTEXT.md)，架构决定见 [docs/adr](docs/adr)。
