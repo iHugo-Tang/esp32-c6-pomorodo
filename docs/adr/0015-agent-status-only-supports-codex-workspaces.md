@@ -1,3 +1,7 @@
+---
+status: accepted
+---
+
 # Agent Status 仅支持 Codex Workspace
 
 Agent Status 只接受 Codex Workspace 作为 Agent Source，不再支持 OpenCode Process。broker IPC 以 `groupId` 单独标识 Workspace，删除恒定的 `client` 字段；状态目录改为 `$XDG_STATE_HOME/pomodoro/agent-status`，不迁移旧的 `opencode/pomodoro-status` 数据。这样领域名称、设备功能与唯一实际来源保持一致，同时删除不再使用的多 client 灵活性。

@@ -1,8 +1,12 @@
+---
+status: accepted
+---
+
 # 使用独立 Agent Status broker 独占串口
 
-> **Agent Source 类型与 IPC identity 已被 [ADR-0015](./0015-agent-status-only-supports-codex-workspaces.md) 取代**：Agent Status 现在只支持 Codex Workspace，broker 不再接受 OpenCode client，也不再以 `{client, groupId}` 标识来源。独立 broker、串口独占与 `OC1` 协议决定保持不变。
+> Agent Source 类型和 IPC identity 已被 [ADR-0015](./0015-agent-status-only-supports-codex-workspaces.md) 取代；独立 broker、串口独占和 `OC1` 协议仍然有效。
 
-Agent Status 的来源选择、成员租约、聚合、全局 revision、`OC1` 心跳与 USB 串口所有权集中到一个零 npm 依赖的前台 Node CLI broker；OpenCode 与 Codex 只通过本地 Unix socket 上报和显式选源。这样所有来源共享一个串口边界与一致状态，而不再让各宿主进程竞选设备。
+Agent Status 的来源选择、成员租约、聚合、全局 revision、`OC1` 心跳和 USB 串口所有权集中到一个零 npm 依赖的 Node broker。适配器只通过本地 Unix socket 上报，不再让各宿主进程竞选设备。
 
 ## Consequences
 

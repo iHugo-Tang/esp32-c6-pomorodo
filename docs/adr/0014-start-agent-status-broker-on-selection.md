@@ -1,3 +1,7 @@
+---
+status: accepted
+---
+
 # 选择 Agent Source 时按需启动 broker
 
 Codex 的 `$pomodoro-select` 在 Agent Status broker socket 没有监听者时，以 detached Node 子进程启动插件内的 broker；已有实例时直接复用。broker 的唯一实现随插件安装，仓库 `tools/pomodoro-agent-status-broker.mjs` 只保留为薄前台入口。

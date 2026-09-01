@@ -1,46 +1,46 @@
 flowchart LR
-    BOOT["⚙ First-run time setup"]
-    MANUAL["🕒 Set time manually"]
-    MAIN["⏱ Main timer"]
-    FOCUS_DONE["🍅 Focus complete state"]
-    BREAK_DONE["☕ Break complete state"]
+    TIME["🕒 Required date & time"]
+    MAIN["⏱ Main"]
+    MENU["☰ Menu"]
     STATS["▥ Statistics"]
     SETTINGS["⚙ Settings"]
-    STEPPER["↕ Numeric stepper"]
-    ABORT{"! End timer?"}
-    RESET{"! Reset timer?"}
+    STEPPER["↕ Numeric editor"]
+    COMPLETE["✓ Completion Transition"]
+    ABORT{"End active Timer?"}
+    RESET{"Reset Timer?"}
+    CLEAR{"Clear Set Progress?"}
 
-    BOOT -->|"Set date & time"| MANUAL
-    MANUAL -->|"Confirm at first run"| MAIN
-    MANUAL -->|"Confirm from Settings"| SETTINGS
+    TIME -->|"Confirm first setup"| MAIN
+    MAIN -->|"Timer reaches 00:00"| COMPLETE
+    COMPLETE -->|"Start now, auto-start, or cancel"| MAIN
 
-    MAIN -->|"Focus reaches 00:00"| FOCUS_DONE
-    MAIN -->|"Break reaches 00:00"| BREAK_DONE
-    FOCUS_DONE -->|"Start now, auto-start, or Not now"| MAIN
-    BREAK_DONE -->|"Start now, auto-start, or Not now"| MAIN
+    MAIN -->|"Menu"| MENU
+    MENU -->|"Back"| MAIN
+    MENU --> STATS
+    STATS -->|"Back"| MENU
+    MENU --> SETTINGS
+    SETTINGS -->|"Back"| MENU
 
-    MAIN -->|"Top-bar chart icon"| STATS
-    MAIN -->|"Top-bar gear icon"| SETTINGS
-    SETTINGS -->|"Today's statistics"| STATS
-    STATS -->|"Back to entry source"| MAIN
-    STATS -->|"Back to entry source"| SETTINGS
-
-    SETTINGS -->|"Duration or Daily goal"| STEPPER
+    SETTINGS -->|"Duration or Daily Goal"| STEPPER
     STEPPER -->|"Confirm or Back"| SETTINGS
-    SETTINGS -->|"Date & time"| MANUAL
-    MANUAL -->|"Back"| SETTINGS
+    SETTINGS -->|"Date & time"| TIME
+    TIME -->|"Confirm or Back from Settings"| SETTINGS
 
-    MAIN -->|"Swipe mode while active"| ABORT
+    MENU -->|"Clear Set Progress"| CLEAR
+    CLEAR -->|"Confirm"| MAIN
+    CLEAR -->|"Cancel"| MENU
+
+    MAIN -->|"Change Mode while active"| ABORT
     ABORT -->|"Confirm or Cancel"| MAIN
-    MAIN -->|"Reset while paused"| RESET
+    MAIN -->|"Reset unfinished Timer"| RESET
     RESET -->|"Confirm or Cancel"| MAIN
 
-    classDef primary fill:#D8EAFE,stroke:#245A8D,stroke-width:2px,color:#102A43
+    classDef page fill:#D8EAFE,stroke:#245A8D,stroke-width:2px,color:#102A43
     classDef setup fill:#E6E0F8,stroke:#6347A0,stroke-width:2px,color:#2D1F4E
     classDef state fill:#DDF4E4,stroke:#287A43,stroke-width:2px,color:#123B21
     classDef decision fill:#FFE2E2,stroke:#A83A3A,stroke-width:2px,color:#4A1111
 
-    class MAIN,STATS,SETTINGS,STEPPER primary
-    class BOOT,MANUAL setup
-    class FOCUS_DONE,BREAK_DONE state
-    class ABORT,RESET decision
+    class MAIN,MENU,STATS,SETTINGS,STEPPER page
+    class TIME setup
+    class COMPLETE state
+    class ABORT,RESET,CLEAR decision

@@ -1,14 +1,16 @@
+---
+status: superseded by ADR-0012 and ADR-0015
+---
+
 # 通过 USB 双向同步 OpenCode Status
 
-> **部分被 [ADR-0011](./0011-user-level-opencode-status-plugin.md) 取代**：插件现为用户级全局插件并在所有 OpenCode 进程中加载，设备状态来源由 Selected OpenCode Process 提供（显式选择 + 自动回退），烧录保留文件位于用户级共享状态目录。`OC1` 线路协议、设备解析与显示规则不变。
-
-设备与当前项目的 OpenCode 插件通过现有 USB Serial/JTAG 连接交换版本化协议，不为状态指示器或设备诊断启用 Wi-Fi、BLE 或常驻网络服务。`OC1` 短行协议只同步 OpenCode Status；独立的 `POMO1` 诊断协议只导出当前显示缓冲。USB 已由目标硬件与本地工作流验证，能在不引入配网、凭据和新依赖的情况下同时承载状态、只读诊断、固件刷写与调试；插件占用串口时，串口监视器或刷写工具需暂时取得独占访问，插件静默断开并在端口释放后重连。
+最初决定让 OpenCode 插件通过现有 USB Serial/JTAG 发送状态，不启用 Wi‑Fi、BLE 或常驻网络服务。状态使用有界 `OC1` 文本行；只读截图使用独立 `POMO1` 二进制响应。两个通道都不能控制 Pomodoro、修改设置或统计，也不能用于 OTA。
 
 ## Consequences
 
-- 固件将 USB Serial/JTAG 作为可输入的主控制台，并严格校验带版本、长度受限的协议行；普通日志不是协议输入。
-- 烧录固件时由 `tools/flash.sh` 先创建用户级保留文件 `~/.local/state/opencode/pomodoro-status/flash-reservation`（写入自身 PID，或 `$XDG_STATE_HOME` 指向的等效路径）再等待端口释放；插件轮询该文件，存在且 PID 存活时主动关闭读进程与串口写句柄、不重连，文件移除或 PID 失效后自动重连。`flash.sh` 对成功、构建/烧录失败、超时与中断统一清理保留文件，并只等待有界时间，绝不向 OpenCode 进程发送停止或终止信号。
-- 设备周期发送 `ENABLED` 或 `DISABLED` 控制状态。关闭 `OpenCode status` 时插件停止心跳，设备丢弃而不解析 `OC1` 状态行；重新开启后插件立即同步。该设置不关闭独立的 `POMO1` 诊断命令。
-- 插件每三秒发送当前项目的聚合状态心跳；设备十秒未收到有效心跳就隐藏指示器。
-- 截图请求严格为 `POMO1 SCREENSHOT\n`。响应由 `POMO1`、小端 `uint16` 宽高，若干 `PX` 加小端 `uint16` 的 x/y/宽/高及 RGB565 像素，最后 `DONE` 组成；最大负载固定为 480×480×2 字节。截图期间状态控制行返回发送失败并由周期同步重试，避免文本插入二进制帧。
-- 该通道只同步临时显示状态和读取当前显示缓冲，不远程控制 Pomodoro、不修改设置或统计数据，也不扩展为 OTA 通道。
+- 设备严格校验协议版本、长度和数值范围，普通日志不是协议输入。
+- 状态每三秒发送一次，十秒没有有效心跳就隐藏。
+- 截图最大为 480×480 RGB565；截图期间不允许文本混入二进制帧。
+- 烧录工具通过存活 PID 保留协调串口，只等待有限时间，并且不向宿主进程发送停止或终止信号。
+
+OpenCode 来源模型后来被 [ADR-0012](./0012-use-independent-agent-status-broker.md) 和 [ADR-0015](./0015-agent-status-only-supports-codex-workspaces.md) 取代；`OC1` 与 `POMO1` 的设备边界保留。

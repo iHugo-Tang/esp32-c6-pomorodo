@@ -1,6 +1,10 @@
+---
+status: superseded by ADR-0009
+---
+
 # 仅手动设置日期时间并固定 UTC offset
 
-> **Superseded by [ADR-0009](./0009-store-local-wall-time-in-rtc.md).**
+> 已被 [ADR-0009](./0009-store-local-wall-time-in-rtc.md) 取代。
 
 带后备电源的 PCF85063 RTC 是日常运行与离线统计的权威时钟。设备只提供手动日期时间设置与固定 UTC offset；不再提供手机同步、临时 SoftAP、二维码或自动时区规则。
 
