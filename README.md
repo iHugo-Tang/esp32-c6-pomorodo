@@ -101,6 +101,12 @@ revision under `$XDG_STATE_HOME/pomodoro/agent-status` (default
 `~/.local/state/pomodoro/agent-status`). The foreground entry remains
 running until interrupted; neither mode installs a LaunchAgent or PID file.
 
+On the device, the default-on `Waiting sound` setting plays one short tone
+when the effective aggregate Agent Status enters Waiting or regains it after
+sync or reconnection. It obeys the global Sound volume, does not replay
+heartbeats or an already-yellow state, and never takes priority over timer
+completion audio.
+
 Before first using this Codex-only version, stop any broker from an older
 development build and manually remove its obsolete state directory. The new
 runtime deliberately does not inspect, migrate, or delete it:

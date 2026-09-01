@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 #define POMODORO_SNAPSHOT_VERSION 1U
-#define POMODORO_SETTINGS_VERSION 9U
+#define POMODORO_SETTINGS_VERSION 10U
 
 typedef enum {
     POMODORO_MODE_FOCUS = 0,
@@ -48,6 +48,7 @@ typedef struct {
     uint8_t brightness_percent;
     uint8_t idle_brightness_percent;
     bool agent_status_enabled;
+    bool waiting_sound_enabled;
     uint8_t pomodoro_completion_transition_seconds;
 } pomodoro_settings_t;
 

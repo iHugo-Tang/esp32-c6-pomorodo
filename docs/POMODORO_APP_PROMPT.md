@@ -173,6 +173,7 @@ Sections, in order:
 4. Agent
    - Agent status switch, on by default
    - Turning it off hides the indicator, stops applying Agent Status, and disables status-triggered display wakeups.
+   - Waiting sound switch, on by default and independently editable while Agent status is off
 5. Sound
    - Sound switch
    - The Sound switch and the Main Sound button control the same state.
@@ -303,11 +304,14 @@ StatusOverlay (single overlay parent, vertical flex)
     └── Numeric level
 ```
 
-Sound occurs only on timer completion:
+Sound occurs on timer completion and Agent Waiting:
 
 - Focus complete: two short rising tones.
 - Break complete: one gentle tone.
-- No click, navigation, reset, or warning sounds.
+- Agent Waiting: one approximately 740 Hz, 120 ms tone when the effective aggregate Agent Status enters Waiting or regains Waiting after first sync, re-enable, or reconnection.
+- Waiting sound is global across pages and timer modes, obeys the Sound switch and current volume, and never replays merely because it was enabled or unmuted while already Waiting.
+- Repeated heartbeats and same-color revisions do not replay Waiting sound. If audio is busy, Waiting sound may be dropped; Focus and Break completion tones always take priority.
+- No click, navigation, reset, or other warning sounds.
 - Sound off leaves visual feedback intact.
 
 Battery UI:
@@ -404,6 +408,7 @@ Firmware updates:
 - Keep application and persistent-data partitions separate.
 - Normal updates preserve Settings, active timer snapshot, and statistics.
 - Version every persistent schema and migrate supported prior versions.
+- The development-only Settings 9 → 10 / persisted-state 6 → 7 update is an explicit exception: it treats the previous record as empty and resets Settings, active timer, Set Progress, and Statistics; Waiting sound then defaults to on.
 - Only an explicit full-chip erase removes user data.
 
 ## Out of scope

@@ -71,6 +71,7 @@ typedef enum {
     POMODORO_APPLICATION_ACTION_MANUAL_MINUTE_UP,
     POMODORO_APPLICATION_ACTION_MANUAL_TIME_CONFIRM,
     POMODORO_APPLICATION_ACTION_TOGGLE_AGENT_STATUS,
+    POMODORO_APPLICATION_ACTION_TOGGLE_WAITING_SOUND,
     POMODORO_APPLICATION_ACTION_ACK_AGENT_STATUS,
 } pomodoro_application_action_t;
 
@@ -224,6 +225,7 @@ typedef struct {
     bool (*write_oc1_line)(void *context, const char *line);
     bool (*play_focus_complete)(void *context, uint8_t volume);
     bool (*play_break_complete)(void *context, uint8_t volume);
+    bool (*play_waiting_sound)(void *context, uint8_t volume);
 } pomodoro_application_platform_t;
 
 typedef struct pomodoro_application pomodoro_application_t;

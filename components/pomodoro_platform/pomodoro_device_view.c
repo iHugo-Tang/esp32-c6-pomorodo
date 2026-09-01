@@ -165,6 +165,7 @@ typedef struct {
     lv_obj_t *auto_focus_switch;
     lv_obj_t *sound_switch;
     lv_obj_t *agent_status_switch;
+    lv_obj_t *waiting_sound_switch;
     lv_obj_t *agent_status_circle;
     lv_obj_t *agent_status_touch;
     lv_obj_t *auxiliary_buttons_container;
@@ -1298,6 +1299,10 @@ esp_err_t pomodoro_device_view_create(
         view_context.settings_switches, "Agent status",
         POMODORO_APPLICATION_ACTION_TOGGLE_AGENT_STATUS,
         &view_context.agent_status_switch);
+    (void) make_setting_switch_row(
+        view_context.settings_switches, "Waiting sound",
+        POMODORO_APPLICATION_ACTION_TOGGLE_WAITING_SOUND,
+        &view_context.waiting_sound_switch);
     (void) make_settings_section_label(view_context.settings_switches,
                                        "Sound", true);
     (void) make_setting_switch_row(
@@ -2118,6 +2123,12 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
         lv_obj_add_state(view_context.agent_status_switch, LV_STATE_CHECKED);
     } else {
         lv_obj_remove_state(view_context.agent_status_switch, LV_STATE_CHECKED);
+    }
+    if (view->settings.waiting_sound_enabled) {
+        lv_obj_add_state(view_context.waiting_sound_switch, LV_STATE_CHECKED);
+    } else {
+        lv_obj_remove_state(view_context.waiting_sound_switch,
+                            LV_STATE_CHECKED);
     }
     lv_obj_add_flag(view_context.page_content, LV_OBJ_FLAG_SCROLLABLE);
 }

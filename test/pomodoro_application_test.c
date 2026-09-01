@@ -34,12 +34,15 @@ typedef struct {
     unsigned save_count;
     unsigned focus_audio_count;
     unsigned break_audio_count;
+    unsigned waiting_audio_count;
+    uint8_t waiting_audio_volume;
     unsigned focus_completion_event_count;
     unsigned break_completion_event_count;
     bool fail_read_time;
     bool fail_save;
     bool fail_render;
     bool fail_focus_audio;
+    bool fail_waiting_audio;
     char oc1_input_lines[8][POMODORO_OC1_MAX_LINE_LENGTH + 1U];
     unsigned oc1_input_count;
     unsigned oc1_input_index;
@@ -199,6 +202,14 @@ static bool fake_play_break_complete(void *context, uint8_t volume)
     return true;
 }
 
+static bool fake_play_waiting_sound(void *context, uint8_t volume)
+{
+    fake_platform_t *fake = context;
+    fake->waiting_audio_count++;
+    fake->waiting_audio_volume = volume;
+    return !fake->fail_waiting_audio;
+}
+
 static bool fake_read_oc1_line(void *context, char *line, size_t size,
                                     bool *available)
 {
@@ -265,6 +276,7 @@ static pomodoro_application_platform_t fake_platform_services(
         .render = fake_render,
         .play_focus_complete = fake_play_focus_complete,
         .play_break_complete = fake_play_break_complete,
+        .play_waiting_sound = fake_play_waiting_sound,
         .read_oc1_line = fake_read_oc1_line,
         .write_oc1_line = fake_write_oc1_line,
     };
@@ -2315,6 +2327,15 @@ static void test_legacy_state_is_treated_as_empty(void)
     pomodoro_statistics_init(&statistics);
     pomodoro_persisted_state_t old_format;
     assert(pomodoro_persistence_pack(&old_format, &model, &statistics));
+    old_format.timer.timer_state = POMODORO_TIMER_PAUSED;
+    old_format.timer.remaining_seconds = 123U;
+    old_format.timer.set_progress = 3U;
+    old_format.statistics.count = 1U;
+    old_format.statistics.days[0] = (pomodoro_daily_statistics_t) {
+        .date = {.year = 2026U, .month = 8U, .day = 15U},
+        .completed_pomodoros = 5U,
+        .completed_focus_seconds = 7500U,
+    };
     old_format.version = POMODORO_PERSISTED_STATE_VERSION - 1U;
     old_format.settings.version = POMODORO_SETTINGS_VERSION - 1U;
     pomodoro_journal_slot_t slot = {
@@ -2331,6 +2352,9 @@ static void test_legacy_state_is_treated_as_empty(void)
     assert(fake.rendered_view.error == POMODORO_APPLICATION_ERROR_NONE);
     assert(fake.rendered_view.settings.daily_goal == 8U);
     assert(fake.rendered_view.timer_state == POMODORO_TIMER_READY);
+    assert(fake.rendered_view.set_progress == 0U);
+    assert(fake.rendered_view.today_completed_pomodoros == 0U);
+    assert(fake.rendered_view.today_completed_focus_seconds == 0U);
     pomodoro_application_destroy(application);
 }
 
@@ -2826,6 +2850,321 @@ static void test_agent_status_renders_priority_and_wakes_display(void)
     pomodoro_application_destroy(application);
 }
 
+static void test_agent_waiting_sound_plays_once_on_entry(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_wall_time_seconds = 100U;
+    fake_enable_journal(&fake);
+    pomodoro_application_t *application = boot_application(&fake);
+
+    assert(fake.rendered_view.settings.waiting_sound_enabled);
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 1 4");
+    fake.now_wall_time_seconds = 101U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.waiting_audio_count == 0U);
+
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 2 2");
+    fake.now_wall_time_seconds = 102U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.waiting_audio_count == 1U);
+
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 4 0");
+    fake.now_wall_time_seconds = 105U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 5 2");
+    fake.now_wall_time_seconds = 106U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.waiting_audio_count == 2U);
+
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 6 8");
+    fake.now_wall_time_seconds = 107U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 7 2");
+    fake.now_wall_time_seconds = 108U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.waiting_audio_count == 3U);
+    assert(fake.waiting_audio_volume == 3U);
+
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 7 2");
+    fake.now_wall_time_seconds = 109U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 8 2");
+    fake.now_wall_time_seconds = 110U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.waiting_audio_count == 3U);
+
+    pomodoro_application_destroy(application);
+}
+
+static void test_waiting_sound_switch_persists_without_replaying_waiting(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_wall_time_seconds = 100U;
+    fake_enable_journal(&fake);
+    pomodoro_application_t *application = boot_application(&fake);
+
+    assert(pomodoro_application_dispatch(
+               application,
+               POMODORO_APPLICATION_ACTION_TOGGLE_WAITING_SOUND) ==
+           POMODORO_APPLICATION_OK);
+    assert(!fake.rendered_view.settings.waiting_sound_enabled);
+
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 1 2");
+    fake.now_wall_time_seconds = 101U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.waiting_audio_count == 0U);
+
+    assert(pomodoro_application_dispatch(
+               application,
+               POMODORO_APPLICATION_ACTION_TOGGLE_WAITING_SOUND) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.settings.waiting_sound_enabled);
+    assert(fake.waiting_audio_count == 0U);
+
+    pomodoro_application_destroy(application);
+    application = boot_application(&fake);
+    assert(fake.rendered_view.settings.waiting_sound_enabled);
+    pomodoro_application_destroy(application);
+}
+
+static void test_waiting_sound_plays_on_resync_and_error_ack(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_wall_time_seconds = 100U;
+    fake_enable_journal(&fake);
+    pomodoro_application_t *application = boot_application(&fake);
+
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 1 2");
+    fake.now_wall_time_seconds = 101U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.waiting_audio_count == 1U);
+
+    assert(pomodoro_application_dispatch(
+               application,
+               POMODORO_APPLICATION_ACTION_TOGGLE_AGENT_STATUS) ==
+           POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_dispatch(
+               application,
+               POMODORO_APPLICATION_ACTION_TOGGLE_AGENT_STATUS) ==
+           POMODORO_APPLICATION_OK);
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 1 2");
+    fake.now_wall_time_seconds = 102U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.waiting_audio_count == 2U);
+
+    fake.now_wall_time_seconds = 112U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(!fake.rendered_view.agent_status_visible);
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 1 2");
+    fake.now_wall_time_seconds = 113U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.waiting_audio_count == 3U);
+
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 2 3");
+    fake.now_wall_time_seconds = 114U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.agent_status == POMODORO_AGENT_STATUS_ERROR);
+    assert(fake.waiting_audio_count == 3U);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_ACK_AGENT_STATUS) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.agent_status == POMODORO_AGENT_STATUS_WAITING);
+    assert(fake.waiting_audio_count == 4U);
+
+    pomodoro_application_destroy(application);
+}
+
+static void test_waiting_sound_is_global_best_effort_and_respects_mute(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_wall_time_seconds = 100U;
+    fake_enable_journal(&fake);
+    pomodoro_application_t *application = boot_application(&fake);
+
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_OPEN_SETTINGS) ==
+           POMODORO_APPLICATION_OK);
+    fake.fail_waiting_audio = true;
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 1 2");
+    fake.now_wall_time_seconds = 101U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.rendered_view.page == POMODORO_APPLICATION_PAGE_SETTINGS);
+    assert(fake.rendered_view.phase == POMODORO_APPLICATION_PHASE_ACTIVE);
+    assert(fake.waiting_audio_count == 1U);
+
+    fake.fail_waiting_audio = false;
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 2 4");
+    fake.now_wall_time_seconds = 102U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TOGGLE_SOUND) ==
+           POMODORO_APPLICATION_OK);
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 3 2");
+    fake.now_wall_time_seconds = 103U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.waiting_audio_count == 1U);
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TOGGLE_SOUND) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.waiting_audio_count == 1U);
+
+    pomodoro_application_destroy(application);
+}
+
+static void test_timer_completion_audio_wins_over_waiting_sound(void)
+{
+    fake_platform_t fake;
+    memset(&fake, 0, sizeof(fake));
+    fake.now_wall_time_seconds = 100U;
+    fake_enable_journal(&fake);
+    pomodoro_application_t *application = boot_application(&fake);
+
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_START) ==
+           POMODORO_APPLICATION_OK);
+    fake_enqueue_oc1_line(&fake, "OC1 STATE 1 2");
+    fake.now_wall_time_seconds = 1600U;
+    assert(pomodoro_application_dispatch(
+               application, POMODORO_APPLICATION_ACTION_TICK) ==
+           POMODORO_APPLICATION_OK);
+    assert(fake.focus_audio_count == 1U);
+    assert(fake.waiting_audio_count == 0U);
+    assert(fake.rendered_view.agent_status == POMODORO_AGENT_STATUS_WAITING);
+
+    pomodoro_application_destroy(application);
+}
+
+static void test_waiting_sound_preserves_non_main_surfaces(void)
+{
+    for (unsigned surface = 0U; surface < 4U; surface++) {
+        fake_platform_t fake;
+        memset(&fake, 0, sizeof(fake));
+        fake.now_wall_time_seconds = 100U;
+        fake_enable_journal(&fake);
+        pomodoro_application_t *application = boot_application(&fake);
+
+        if (surface == 0U) {
+            assert(pomodoro_application_dispatch(
+                       application,
+                       POMODORO_APPLICATION_ACTION_OPEN_SETTINGS) ==
+                   POMODORO_APPLICATION_OK);
+        } else if (surface == 1U) {
+            assert(pomodoro_application_dispatch(
+                       application,
+                       POMODORO_APPLICATION_ACTION_OPEN_STATISTICS) ==
+                   POMODORO_APPLICATION_OK);
+        } else if (surface == 2U) {
+            assert(pomodoro_application_dispatch(
+                       application,
+                       POMODORO_APPLICATION_ACTION_OPEN_SETTINGS) ==
+                   POMODORO_APPLICATION_OK);
+            assert(pomodoro_application_dispatch(
+                       application,
+                       POMODORO_APPLICATION_ACTION_OPEN_FOCUS_MINUTES) ==
+                   POMODORO_APPLICATION_OK);
+        } else {
+            assert(pomodoro_application_dispatch(
+                       application, POMODORO_APPLICATION_ACTION_START) ==
+                   POMODORO_APPLICATION_OK);
+            assert(pomodoro_application_dispatch(
+                       application, POMODORO_APPLICATION_ACTION_PAUSE) ==
+                   POMODORO_APPLICATION_OK);
+            assert(pomodoro_application_dispatch(
+                       application,
+                       POMODORO_APPLICATION_ACTION_REQUEST_RESET) ==
+                   POMODORO_APPLICATION_OK);
+        }
+        pomodoro_application_page_t page = fake.rendered_view.page;
+        pomodoro_application_confirmation_t confirmation =
+            fake.rendered_view.confirmation;
+
+        fake_enqueue_oc1_line(&fake, "OC1 STATE 1 2");
+        fake.now_wall_time_seconds = 101U;
+        assert(pomodoro_application_dispatch(
+                   application, POMODORO_APPLICATION_ACTION_TICK) ==
+               POMODORO_APPLICATION_OK);
+        assert(fake.waiting_audio_count == 1U);
+        assert(fake.rendered_view.page == page);
+        assert(fake.rendered_view.confirmation == confirmation);
+
+        pomodoro_application_destroy(application);
+    }
+}
+
+static void test_waiting_sound_preserves_running_focus_and_break(void)
+{
+    for (unsigned mode = 0U; mode < 2U; mode++) {
+        fake_platform_t fake;
+        memset(&fake, 0, sizeof(fake));
+        fake.now_wall_time_seconds = 100U;
+        fake_enable_journal(&fake);
+        pomodoro_application_t *application = boot_application(&fake);
+
+        if (mode == 1U) {
+            assert(pomodoro_application_dispatch(
+                       application,
+                       POMODORO_APPLICATION_ACTION_MODE_NEXT) ==
+                   POMODORO_APPLICATION_OK);
+        }
+        assert(pomodoro_application_dispatch(
+                   application, POMODORO_APPLICATION_ACTION_START) ==
+               POMODORO_APPLICATION_OK);
+        pomodoro_mode_t running_mode = fake.rendered_view.mode;
+        uint8_t set_progress = fake.rendered_view.set_progress;
+
+        fake_enqueue_oc1_line(&fake, "OC1 STATE 1 2");
+        fake.now_wall_time_seconds = 101U;
+        assert(pomodoro_application_dispatch(
+                   application, POMODORO_APPLICATION_ACTION_TICK) ==
+               POMODORO_APPLICATION_OK);
+        assert(fake.waiting_audio_count == 1U);
+        assert(fake.rendered_view.timer_state == POMODORO_TIMER_RUNNING);
+        assert(fake.rendered_view.mode == running_mode);
+        assert(fake.rendered_view.set_progress == set_progress);
+        assert(fake.rendered_view.today_completed_pomodoros == 0U);
+
+        pomodoro_application_destroy(application);
+    }
+}
+
 static void test_agent_status_wakes_auto_sleep_without_changing_pomodoro(void)
 {
     fake_platform_t fake;
@@ -3031,6 +3370,11 @@ static void test_legacy_settings_version_is_treated_as_empty(void)
                .pomodoro_completion_transition_seconds == 10U);
     assert(fake.rendered_view.settings.daily_goal == 8U);
     assert(fake.rendered_view.settings.focus_minutes == 25U);
+    assert(fake.rendered_view.settings.waiting_sound_enabled);
+    assert(fake.rendered_view.timer_state == POMODORO_TIMER_READY);
+    assert(fake.rendered_view.set_progress == 0U);
+    assert(fake.rendered_view.today_completed_pomodoros == 0U);
+    assert(fake.rendered_view.today_completed_focus_seconds == 0U);
     assert(fake.memory_journal.slots[0].state.settings.value
                .pomodoro_completion_transition_seconds == 10U);
     assert(fake.memory_journal.slots[0].state.settings.version ==
@@ -3115,6 +3459,13 @@ int main(void)
     test_year_month_change_converges_day();
     test_local_midnight_decides_statistics_day();
     test_agent_status_renders_priority_and_wakes_display();
+    test_agent_waiting_sound_plays_once_on_entry();
+    test_waiting_sound_switch_persists_without_replaying_waiting();
+    test_waiting_sound_plays_on_resync_and_error_ack();
+    test_waiting_sound_is_global_best_effort_and_respects_mute();
+    test_timer_completion_audio_wins_over_waiting_sound();
+    test_waiting_sound_preserves_non_main_surfaces();
+    test_waiting_sound_preserves_running_focus_and_break();
     test_agent_status_wakes_auto_sleep_without_changing_pomodoro();
     test_agent_status_ack_reveals_next_priority();
     test_agent_status_switch_persists_and_disables();

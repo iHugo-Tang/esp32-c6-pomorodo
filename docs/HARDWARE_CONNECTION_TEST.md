@@ -96,6 +96,11 @@ ES8311 和保存状态加载完成，并进入 `Focus Ready`；持续观察 13 �
 或重启。目标板验证也发现并修复了大块持久化状态占用主任务/计时器任务栈的问题，
 当前日志验证的是将这些工作区移出任务栈后的固件。
 
+Agent Waiting Sound 将 Settings 格式从 9 升级到 10、顶层 persisted-state 从 6 升级到 7。
+这是开发期明确接受的一次整包重置：首次启动新格式时，即使普通 flash 没有擦除 NVS，旧
+Settings、运行中计时、Set Progress 与 Statistics 也会恢复默认空状态；`Waiting sound`
+默认开启。
+
 `idf.py size` 的最终静态内存结果为 DIRAM 235,346 字节（52.05%），剩余
 216,766 字节；其中 `.bss` 103,664 字节、`.data` 15,700 字节。LVGL 仍使用
 9,600 像素（19,200 字节）的单个局部绘制缓冲区且未启用 PSRAM。
@@ -110,6 +115,13 @@ ES8311 和保存状态加载完成，并进入 `Focus Ready`；持续观察 13 �
   确认恢复最后一个非零音量。上电时按住 BOOT，确认下载模式行为未改变。
 - 连接扬声器，确认 Focus 完成播放两段短促上升音，Break 完成仅播放一段柔和音；静音时
   仍显示完成反馈且不发声。
+- 在 Settings 的 Agent 分区确认 `Waiting sound` 位于 `Agent status` 后、默认开启、可独立
+  切换并在重启后保持；`Agent status` 关闭时该行仍可编辑但不发声。分别验证首次同步、
+  Working→Waiting、重启启用、十秒超时重连与确认 Error 后显露 Waiting 各播放一次约
+  740 Hz/120 ms 短音；重复心跳、持续黄色、新 revision 仍为黄色、已 Waiting 时开启声音或
+  解除静音均不补播。在 Main、Settings、Statistics、Numeric Stepper 与 Dialog 中验证提示，
+  并确认不改变页面、计时、Set Progress 或 Statistics。制造与 Focus/Break 完成音的竞争，
+  确认 Waiting 音可丢弃而完成音不丢失，且应用不进入 Audio Error。
 - 电池供电、USB 供电和充电三种状态下核对电量、充电与 USB 标记；低电量提示出现一次且
   不终止 Running timer。
 - PWR 短按休眠/唤醒显示，长按关机；Running 闲置 2 分钟降至所选亮度的 60%；将

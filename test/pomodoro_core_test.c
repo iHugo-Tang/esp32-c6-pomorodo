@@ -356,8 +356,8 @@ static void test_journal_survives_torn_write(void)
 
 static void test_legacy_persisted_version_is_treated_as_empty(void)
 {
-    assert(POMODORO_SETTINGS_VERSION == 9U);
-    assert(POMODORO_PERSISTED_STATE_VERSION == 6U);
+    assert(POMODORO_SETTINGS_VERSION == 10U);
+    assert(POMODORO_PERSISTED_STATE_VERSION == 7U);
     pomodoro_test_memory_journal_t memory;
     pomodoro_journal_t journal;
     pomodoro_model_t model = fresh_model();

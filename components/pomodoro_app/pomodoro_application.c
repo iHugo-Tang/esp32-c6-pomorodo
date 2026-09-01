@@ -37,6 +37,8 @@ struct pomodoro_application {
     bool time_setup_can_cancel;
     pomodoro_agent_status_t agent_status;
     uint64_t last_oc1_control_wall_time_seconds;
+    bool waiting_sound_status_valid;
+    pomodoro_agent_status_state_t waiting_sound_last_status;
 };
 
 static pomodoro_application_result_t confirm_settings(
@@ -102,6 +104,7 @@ static bool platform_is_valid(const pomodoro_application_platform_t *platform)
            platform->render != NULL &&
            platform->play_focus_complete != NULL &&
            platform->play_break_complete != NULL &&
+           platform->play_waiting_sound != NULL &&
            platform->read_oc1_line != NULL &&
            platform->write_oc1_line != NULL;
 }
@@ -257,9 +260,25 @@ static pomodoro_application_result_t render(
     pomodoro_event_t completion_event)
 {
     snapshot_view(application, time, completion_event);
+    bool waiting_sound_requested =
+        application->view.agent_status_visible &&
+        application->view.agent_status == POMODORO_AGENT_STATUS_WAITING &&
+        (!application->waiting_sound_status_valid ||
+         application->waiting_sound_last_status !=
+             POMODORO_AGENT_STATUS_WAITING);
+    application->waiting_sound_status_valid =
+        application->view.agent_status_visible;
+    application->waiting_sound_last_status = application->view.agent_status;
     if (!application->platform.render(application->platform.context,
                                       &application->view)) {
         return fail_platform(application, POMODORO_APPLICATION_ERROR_DISPLAY);
+    }
+    if (waiting_sound_requested && completion_event == POMODORO_EVENT_NONE &&
+        application->model.settings.waiting_sound_enabled &&
+        application->model.settings.volume > 0U) {
+        (void) application->platform.play_waiting_sound(
+            application->platform.context,
+            application->model.settings.volume);
     }
     return POMODORO_APPLICATION_OK;
 }
@@ -1168,6 +1187,11 @@ pomodoro_application_result_t pomodoro_application_dispatch(
     if (action == POMODORO_APPLICATION_ACTION_TOGGLE_AGENT_STATUS) {
         pomodoro_settings_t settings = application->model.settings;
         settings.agent_status_enabled = !settings.agent_status_enabled;
+        return confirm_settings(application, &settings);
+    }
+    if (action == POMODORO_APPLICATION_ACTION_TOGGLE_WAITING_SOUND) {
+        pomodoro_settings_t settings = application->model.settings;
+        settings.waiting_sound_enabled = !settings.waiting_sound_enabled;
         return confirm_settings(application, &settings);
     }
     if (action == POMODORO_APPLICATION_ACTION_ACK_AGENT_STATUS) {

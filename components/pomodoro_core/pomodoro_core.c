@@ -96,6 +96,7 @@ pomodoro_settings_t pomodoro_default_settings(void)
         .brightness_percent = 70,
         .idle_brightness_percent = 20,
         .agent_status_enabled = true,
+        .waiting_sound_enabled = true,
         .pomodoro_completion_transition_seconds = 10,
     };
 }

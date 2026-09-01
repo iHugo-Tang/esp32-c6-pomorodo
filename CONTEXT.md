@@ -68,6 +68,10 @@ _Avoid_：主进程、活动会话、自动回退来源
 Selected Agent Source 全部存活成员的汇总状态，按优先级取 Error、Waiting、Working、Completed 或 Idle；Completed 在确认或短暂展示后回到 Idle。
 _Avoid_：Pomodoro Mode、单个成员状态
 
+**Waiting Sound**：
+Agent Status 的有效汇总状态从非 Waiting 进入 Waiting，或在首次同步、重新启用与重连后以 Waiting 恢复有效时播放的一次性声音提示。它是独立于当前页面的全局通知，由默认开启的独立设置控制，并服从设备的全局 Sound 与当前音量；不会改变正在运行的计时、导航或统计。
+_Avoid_：完成提示音、每成员提示音、持续警报
+
 **Codex Workspace**：
 同一代码库内全部 Codex chat、fork、side chat 与 subagent 共享的 Agent Source；Git 仓库以规范化根目录为边界，非 Git 目录以规范化工作目录为边界。
 _Avoid_：Codex Process、单个 agent、单个 chat

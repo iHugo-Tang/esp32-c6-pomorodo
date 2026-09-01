@@ -58,6 +58,21 @@ target_compile_options(pomodoro_orientation_test PRIVATE -Wall -Wextra -Werror -
 add_test(NAME pomodoro_orientation_test COMMAND pomodoro_orientation_test)
 
 add_executable(
+    pomodoro_audio_cue_test
+    pomodoro_audio_cue_test.c
+    ../components/pomodoro_platform/pomodoro_audio_cue.c
+)
+target_include_directories(
+    pomodoro_audio_cue_test PRIVATE
+    ../components/pomodoro_platform/include
+)
+target_compile_features(pomodoro_audio_cue_test PRIVATE c_std_11)
+target_compile_options(
+    pomodoro_audio_cue_test PRIVATE -Wall -Wextra -Werror -pedantic)
+
+add_test(NAME pomodoro_audio_cue_test COMMAND pomodoro_audio_cue_test)
+
+add_executable(
     pomodoro_agent_status_test
     pomodoro_agent_status_test.c
     ../components/pomodoro_app/pomodoro_agent_status.c

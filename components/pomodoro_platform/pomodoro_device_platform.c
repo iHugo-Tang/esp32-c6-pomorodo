@@ -135,6 +135,11 @@ static bool play_break_completion(void *context, uint8_t volume)
            pomodoro_board_play_completion_tone(false, volume);
 }
 
+static bool play_waiting_sound(void *context, uint8_t volume)
+{
+    return context != NULL && pomodoro_board_play_waiting_tone(volume);
+}
+
 static void poll_usb_input(runtime_context_t *target)
 {
     if (target == NULL) {
@@ -455,6 +460,7 @@ esp_err_t pomodoro_platform_start(void)
         .render = render_view,
         .play_focus_complete = play_completion,
         .play_break_complete = play_break_completion,
+        .play_waiting_sound = play_waiting_sound,
         .read_oc1_line = read_oc1_line,
         .write_oc1_line = write_oc1_line,
     };
