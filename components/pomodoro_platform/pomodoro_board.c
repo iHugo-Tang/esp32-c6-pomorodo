@@ -19,6 +19,7 @@
 #include "esp_lvgl_port.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "lvgl.h"
 
@@ -91,7 +92,7 @@ static esp_codec_dev_handle_t audio_device;
 static pomodoro_audio_priority_t audio_priority;
 static uint8_t active_audio_volume;
 static uint8_t pending_completion_volume;
-static bool audio_worker_ready;
+static SemaphoreHandle_t audio_request_mutex;
 static portMUX_TYPE audio_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool screenshot_active;
 static int64_t screenshot_last_progress_us;
@@ -466,7 +467,7 @@ esp_err_t pomodoro_board_initialize_audio(void)
     pomodoro_audio_priority_init(&audio_priority);
     active_audio_volume = 0U;
     pending_completion_volume = 0U;
-    audio_worker_ready = false;
+    audio_request_mutex = NULL;
     i2s_chan_config_t channel_config = I2S_CHANNEL_DEFAULT_CONFIG(
         I2S_NUM_AUTO, I2S_ROLE_MASTER);
     channel_config.auto_clear = true;
@@ -537,9 +538,11 @@ esp_err_t pomodoro_board_initialize_audio(void)
         .channel = 2,
         .bits_per_sample = 16,
     };
-    return esp_codec_dev_open(audio_device, &sample) == ESP_CODEC_DEV_OK
-        ? ESP_OK
-        : ESP_FAIL;
+    if (esp_codec_dev_open(audio_device, &sample) != ESP_CODEC_DEV_OK) {
+        return ESP_FAIL;
+    }
+    audio_request_mutex = xSemaphoreCreateMutex();
+    return audio_request_mutex != NULL ? ESP_OK : ESP_ERR_NO_MEM;
 }
 
 static bool write_tone(uint16_t frequency_hz, uint16_t milliseconds,
@@ -580,9 +583,6 @@ static bool write_tone(uint16_t frequency_hz, uint16_t milliseconds,
 static void play_tone_task(void *context)
 {
     (void) context;
-    portENTER_CRITICAL(&audio_lock);
-    audio_worker_ready = true;
-    portEXIT_CRITICAL(&audio_lock);
     bool play_next = true;
     while (play_next) {
         portENTER_CRITICAL(&audio_lock);
@@ -611,7 +611,6 @@ static void play_tone_task(void *context)
             pending_completion_volume = 0U;
         } else {
             active_audio_volume = 0U;
-            audio_worker_ready = false;
             play_next = false;
         }
         portEXIT_CRITICAL(&audio_lock);
@@ -622,20 +621,17 @@ static void play_tone_task(void *context)
 static bool request_audio_cue(pomodoro_audio_cue_t cue, uint8_t volume)
 {
     if (cue == POMODORO_AUDIO_CUE_NONE ||
-        (volume > 0U && audio_device == NULL)) {
+        (volume > 0U && audio_device == NULL) ||
+        audio_request_mutex == NULL) {
         return false;
     }
 
+    if (xSemaphoreTake(audio_request_mutex, portMAX_DELAY) != pdTRUE) {
+        return false;
+    }
     portENTER_CRITICAL(&audio_lock);
-    bool completion_during_start =
-        !audio_worker_ready &&
-        pomodoro_audio_priority_active(&audio_priority) ==
-            POMODORO_AUDIO_CUE_WAITING &&
-        (cue == POMODORO_AUDIO_CUE_FOCUS_COMPLETE ||
-         cue == POMODORO_AUDIO_CUE_BREAK_COMPLETE);
-    pomodoro_audio_request_result_t request = completion_during_start
-        ? POMODORO_AUDIO_REQUEST_REJECTED
-        : pomodoro_audio_priority_request(&audio_priority, cue, volume);
+    pomodoro_audio_request_result_t request =
+        pomodoro_audio_priority_request(&audio_priority, cue, volume);
     if (request == POMODORO_AUDIO_REQUEST_START) {
         active_audio_volume = volume;
     } else if (request == POMODORO_AUDIO_REQUEST_QUEUED) {
@@ -644,9 +640,11 @@ static bool request_audio_cue(pomodoro_audio_cue_t cue, uint8_t volume)
     portEXIT_CRITICAL(&audio_lock);
 
     if (request == POMODORO_AUDIO_REQUEST_SILENT) {
+        xSemaphoreGive(audio_request_mutex);
         return true;
     }
     if (request != POMODORO_AUDIO_REQUEST_START) {
+        xSemaphoreGive(audio_request_mutex);
         return request == POMODORO_AUDIO_REQUEST_QUEUED;
     }
     if (xTaskCreate(play_tone_task, "pomodoro_tone", 3072, NULL, 2, NULL) !=
@@ -655,10 +653,11 @@ static bool request_audio_cue(pomodoro_audio_cue_t cue, uint8_t volume)
         pomodoro_audio_priority_init(&audio_priority);
         active_audio_volume = 0U;
         pending_completion_volume = 0U;
-        audio_worker_ready = false;
         portEXIT_CRITICAL(&audio_lock);
+        xSemaphoreGive(audio_request_mutex);
         return false;
     }
+    xSemaphoreGive(audio_request_mutex);
     return true;
 }
 

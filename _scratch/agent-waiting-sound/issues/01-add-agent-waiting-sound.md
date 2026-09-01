@@ -22,4 +22,4 @@
 
 ## Comments
 
-- 2026-08-31: Verification — native host tests pass 6/6; ESP-IDF 5.5.5 firmware build passes with `pomodoro.bin` size `0xc20c0` and 75% of the smallest app partition free. Code-review findings were resolved by narrowing the board layer to a fixed audio-priority policy, covering zero volume, and protecting the worker-start boundary. Target-device audio and interaction acceptance remains in issue 02.
+- 2026-08-31: Verification — native host tests pass 6/6; ESP-IDF 5.5.5 firmware build passes with `pomodoro.bin` size `0xc20e0` and 75% of the smallest app partition free. Code-review findings were resolved by narrowing the board layer to a fixed audio-priority policy, covering zero volume, and serializing the worker-start boundary so completion audio cannot be lost behind Waiting Sound. Target-device audio and interaction acceptance remains in issue 02.
