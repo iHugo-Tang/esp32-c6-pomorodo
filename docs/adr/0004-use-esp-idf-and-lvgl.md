@@ -9,3 +9,5 @@ status: accepted
 ## Consequences
 
 UI 组件、计时领域状态机和持久化逻辑需要保持分层，页面不得直接读写存储；显示与触摸驱动优先通过 Espressif BSP 或 `esp_lvgl_port` 适配。
+
+仓库中的 UI 工作默认按 C、LVGL 9 与 ESP-IDF 的约束检查和实现。SwiftUI 不属于本项目技术栈；除非仓库明确引入 SwiftUI 源码，否则代理不得加载或套用 SwiftUI 规范来确认 UI 结构。
