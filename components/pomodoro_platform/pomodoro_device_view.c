@@ -8,6 +8,9 @@
 #include "esp_lvgl_port.h"
 #include "lvgl.h"
 
+LV_IMAGE_DECLARE(completion_mug);
+LV_IMAGE_DECLARE(completion_tomato);
+
 typedef struct {
     int16_t x;
     int16_t y;
@@ -122,8 +125,6 @@ typedef struct {
     lv_obj_t *completion_group;
     lv_obj_t *tomato;
     lv_obj_t *cup;
-    lv_obj_t *cup_handle;
-    lv_obj_t *cup_steam[2];
     lv_obj_t *completion_title;
     lv_obj_t *completion_body;
     lv_obj_t *completion_countdown;
@@ -855,39 +856,9 @@ static lv_obj_t *make_settings_section_label(lv_obj_t *parent,
 
 static void create_completion_visuals(lv_obj_t *parent)
 {
-    view_context.tomato = lv_obj_create(parent);
-    lv_obj_remove_style_all(view_context.tomato);
-    lv_obj_set_size(view_context.tomato, 74, 64);
-    lv_obj_set_style_bg_opa(view_context.tomato, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(view_context.tomato,
-                              lv_color_hex(UI_COLOR_FOCUS), 0);
-    lv_obj_set_style_radius(view_context.tomato, 32, 0);
-    lv_obj_align(view_context.tomato, LV_ALIGN_TOP_MID, 0, 2);
-    lv_obj_t *leaf = lv_obj_create(view_context.tomato);
-    lv_obj_remove_style_all(leaf);
-    lv_obj_set_size(leaf, 30, 12);
-    lv_obj_set_style_bg_opa(leaf, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(leaf, lv_color_hex(UI_COLOR_SHORT_BREAK), 0);
-    lv_obj_set_style_radius(leaf, 6, 0);
-    lv_obj_align(leaf, LV_ALIGN_TOP_MID, 0, 0);
-    for (uint8_t index = 0; index < 2U; index++) {
-        lv_obj_t *eye = lv_obj_create(view_context.tomato);
-        lv_obj_remove_style_all(eye);
-        lv_obj_set_size(eye, 6, 6);
-        lv_obj_set_style_bg_opa(eye, LV_OPA_COVER, 0);
-        lv_obj_set_style_bg_color(eye, lv_color_hex(0x542020), 0);
-        lv_obj_set_style_radius(eye, LV_RADIUS_CIRCLE, 0);
-        lv_obj_align(eye, LV_ALIGN_CENTER, index == 0U ? -13 : 13, -3);
-    }
-    lv_obj_t *smile = lv_arc_create(view_context.tomato);
-    lv_obj_set_size(smile, 30, 18);
-    lv_arc_set_bg_angles(smile, 20, 160);
-    lv_obj_remove_style(smile, NULL, LV_PART_INDICATOR);
-    lv_obj_remove_style(smile, NULL, LV_PART_KNOB);
-    lv_obj_set_style_arc_width(smile, 3, LV_PART_MAIN);
-    lv_obj_set_style_arc_color(smile, lv_color_hex(0x542020), LV_PART_MAIN);
-    lv_obj_remove_flag(smile, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_align(smile, LV_ALIGN_CENTER, 6, 13);
+    view_context.tomato = lv_image_create(parent);
+    lv_image_set_src(view_context.tomato, &completion_tomato);
+    lv_obj_align(view_context.tomato, LV_ALIGN_TOP_MID, 0, 0);
 
     for (uint8_t index = 0; index < COMPLETION_CONFETTI_COUNT; index++) {
         lv_obj_t *piece = lv_obj_create(parent);
@@ -904,34 +875,9 @@ static void create_completion_visuals(lv_obj_t *parent)
         lv_obj_add_flag(piece, LV_OBJ_FLAG_HIDDEN);
     }
 
-    view_context.cup = lv_obj_create(parent);
-    lv_obj_remove_style_all(view_context.cup);
-    lv_obj_set_size(view_context.cup, 78, 58);
-    lv_obj_set_style_bg_opa(view_context.cup, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(view_context.cup,
-                              lv_color_hex(UI_COLOR_LONG_BREAK), 0);
-    lv_obj_set_style_radius(view_context.cup, 10, 0);
-    lv_obj_align(view_context.cup, LV_ALIGN_TOP_MID, -6, 20);
-    view_context.cup_handle = lv_obj_create(parent);
-    lv_obj_remove_style_all(view_context.cup_handle);
-    lv_obj_set_size(view_context.cup_handle, 24, 30);
-    lv_obj_set_style_border_width(view_context.cup_handle, 7, 0);
-    lv_obj_set_style_border_color(view_context.cup_handle,
-                                  lv_color_hex(UI_COLOR_LONG_BREAK), 0);
-    lv_obj_set_style_bg_opa(view_context.cup_handle, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_radius(view_context.cup_handle, 12, 0);
-    lv_obj_align(view_context.cup_handle, LV_ALIGN_TOP_MID, 43, 34);
-    for (uint8_t index = 0; index < 2U; index++) {
-        lv_obj_t *steam = lv_obj_create(parent);
-        view_context.cup_steam[index] = steam;
-        lv_obj_remove_style_all(steam);
-        lv_obj_set_size(steam, 5, 18);
-        lv_obj_set_style_bg_opa(steam, LV_OPA_60, 0);
-        lv_obj_set_style_bg_color(steam,
-                                  lv_color_hex(UI_COLOR_TEXT_SECONDARY), 0);
-        lv_obj_set_style_radius(steam, 3, 0);
-        lv_obj_align(steam, LV_ALIGN_TOP_MID, index == 0U ? -18 : 12, 0);
-    }
+    view_context.cup = lv_image_create(parent);
+    lv_image_set_src(view_context.cup, &completion_mug);
+    lv_obj_align(view_context.cup, LV_ALIGN_TOP_MID, 0, 0);
 }
 
 esp_err_t pomodoro_device_view_create(
@@ -1730,10 +1676,6 @@ static void render_completion(const pomodoro_application_view_t *view)
     if (focus) {
         lv_obj_remove_flag(view_context.tomato, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(view_context.cup, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(view_context.cup_handle, LV_OBJ_FLAG_HIDDEN);
-        for (uint8_t index = 0; index < 2U; index++) {
-            lv_obj_add_flag(view_context.cup_steam[index], LV_OBJ_FLAG_HIDDEN);
-        }
         lv_label_set_text(view_context.completion_title, "Focus complete");
         lv_label_set_text(view_context.completion_body,
                           view->daily_goal_reached
@@ -1742,11 +1684,6 @@ static void render_completion(const pomodoro_application_view_t *view)
     } else {
         lv_obj_add_flag(view_context.tomato, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(view_context.cup, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(view_context.cup_handle, LV_OBJ_FLAG_HIDDEN);
-        for (uint8_t index = 0; index < 2U; index++) {
-            lv_obj_remove_flag(view_context.cup_steam[index],
-                               LV_OBJ_FLAG_HIDDEN);
-        }
         lv_label_set_text(view_context.completion_title, "Break over");
         lv_label_set_text(view_context.completion_body,
                           "Ready for another focus?");

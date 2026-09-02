@@ -2,6 +2,8 @@ idf_component_register(
     SRCS
         "pomodoro_board.c"
         "pomodoro_audio_priority.c"
+        "completion_mug.c"
+        "completion_tomato.c"
         "pomodoro_device_platform.c"
         "pomodoro_device_view.c"
         "pomodoro_orientation.c"
