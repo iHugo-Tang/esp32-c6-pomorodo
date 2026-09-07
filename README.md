@@ -172,7 +172,7 @@ node plugins/pomodoro-agent-status/scripts/install-opencode.mjs uninstall
 
 `install` 是幂等的用户级安装：把权威源码复制到用户配置目录并在 `opencode.json`/`tui.json` 中注册 server 与 TUI 两个插件面。配置变更只在完全退出所有 OpenCode 进程并重启后生效。`verify` 会校验版本下限、文件一致性、两个注册项，并可用 `--project-dir DIR` 确认该项目没有重复的项目级插件副本。
 
-在 OpenCode TUI 中输入 `/pomodoro-select` 直接选择当前 OpenCode Workspace。该动作不提交 prompt、不创建 Session 消息、不产生模型请求，也不产生伪状态周期。反馈只有三种有界结果：选择成功（含 revision）、等待 broker 接管、失败（保留原选择）。首版只支持从 OpenCode TUI 选择；OpenCode Desktop、Web、非交互 CLI 与 npm 发布不在范围内。`/pomodoro-select` 依赖 1.18.29 的直接 slash 注册 API（已标记 deprecated）；该 API 不可用时安装校验与插件启动都会显式失败，不会退化为会触发模型的同名 Markdown 命令。
+在 OpenCode TUI 中输入 `/pomodoro-select` 直接选择当前 OpenCode Workspace。该动作不提交 prompt、不创建 Session 消息、不产生模型请求，也不产生伪状态周期。反馈只有三种有界结果：选择成功（含 revision）、等待 broker 接管、失败（保留原选择）。首版只支持从 OpenCode TUI 选择；OpenCode Desktop、Web、非交互 CLI 与 npm 发布不在范围内。`/pomodoro-select` 依赖 1.18.29 的直接 slash 注册 API（已标记 deprecated）。安装校验本身只校验版本下限与文件/注册项一致性；直接 slash API 由 TUI 插件在启动时校验——该 API 不可用时 TUI 插件启动显式失败，不会退化为会触发模型的同名 Markdown 命令。
 
 ### Broker 与旧数据
 

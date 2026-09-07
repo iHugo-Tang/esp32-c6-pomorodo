@@ -11,23 +11,24 @@ function createTuiPlugin(options = {}) {
   let active = null;
 
   const selectCurrentWorkspace = async (api) => {
-    const previous = active;
-    active = null;
-    previous?.stop();
+    let candidate = null;
     try {
       const path = api?.state?.path ?? {};
       const root = await workspaceRoot(path.worktree ?? path.directory ?? process.cwd());
-      const session = new ActivationSession({
+      candidate = new ActivationSession({
         root,
         env: options.env ?? process.env,
         socketPath: options.socketPath ?? brokerSocketPath(options.env ?? process.env),
       });
-      active = session;
-      const result = await session.activate();
+      const result = await candidate.activate();
+      const previous = active;
+      active = candidate;
+      // Retain the previous activation until the replacement has succeeded so a
+      // failed selection cannot starve the still-selected Workspace's keep-alive.
+      previous?.stop();
       api?.ui?.toast?.(selectionFeedback(result));
     } catch (error) {
-      active?.stop();
-      active = null;
+      candidate?.stop();
       api?.ui?.toast?.(failureFeedback(error));
     }
   };

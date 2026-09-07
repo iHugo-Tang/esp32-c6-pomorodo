@@ -6,12 +6,12 @@
 
 **Status:** ready-for-agent
 
-**Completion:** pending coordinator review
+**Completion:** pending human acceptance (real OpenCode TUI direct slash API validation)
 
 - [x] One idempotent user-level installation activates the server and TUI plugin surfaces for at least two different projects.
 - [x] The Pomodoro project does not load a duplicate project-level copy of either plugin surface.
 - [x] A complete OpenCode restart preserves the Selected Agent Source and allows the same Workspace to restore publication when members report again.
-- [x] Installation or upgrade validation confirms the direct TUI slash API is available on the supported OpenCode version.
+- [ ] Installation or upgrade validation confirms the direct TUI slash API is available on the supported OpenCode version.
 - [x] If direct slash registration is unavailable, validation fails explicitly and does not create a same-name Markdown command or any model-backed fallback.
 - [x] Missing broker, broker restart, malformed IPC, protected-state failure, missing device, occupied port, and plugin disposal do not interrupt OpenCode.
 - [x] Runtime failure feedback is bounded, contains no work content, and preserves the prior selection wherever activation did not complete.
@@ -59,3 +59,28 @@ Two self-review findings were fixed:
 2. **(Test hygiene) Tautological assertions.** `testInstallationAndRecovery()` contained a `failed = { ok: false }` constant assertion and a pass-either-way `activationFailure` check; both were removed and replaced with a strict assertion that the restarted broker still holds the same Selected Agent Source.
 
 Evidence: `node plugins/pomodoro-agent-status/scripts/check.mjs` → 17 checks passed; CTest host suite unchanged.
+
+### 2026-09-06 Coordinator review round 1 fixes (single coding executor)
+
+**Gaps fixed**
+
+1. **(Medium) Relative-entry verification.** `verify()` resolved configuration entries against `path.dirname(configDir)` — the parent of the directory that actually contains `opencode.json`/`tui.json`. The base directory is now `configDir` itself, matching the resolution used by `install`/`uninstall` (both resolve relative entries against the config file's directory). Genuine relative-entry coverage was added: the check rewrites both config files to `plugins/pomodoro-agent-status/opencode-*.mjs` relative entries, reruns `install` (asserting no duplicate is appended and the relative entry is kept), reruns `verify` (succeeds), then `uninstall` (both relative entries removed) (check 13).
+2. **(Acceptance truth) Criterion 4 is not fully automated.** Installer validation covers the version floor and file/registration integrity only; the direct TUI slash API is validated when the TUI plugin initializes in the real OpenCode process after a full restart. A fake-API rejection test proves the explicit-failure behavior of the plugin, not that the shipped 1.18.29 TUI exposes the API. Criterion 4 is therefore unchecked and pending human acceptance, and this ticket's Completion is `pending human acceptance` rather than coordinator review. Criterion 5 remains checked on the strength of the plugin-boundary evidence: the TUI module fails explicitly when `api.command.register`/`ui.toast` is absent and contains no Markdown prompt command or model-backed fallback anywhere.
+
+**Export contract verification (coordinator gap 9)**
+
+- The installed `~/.config/opencode/node_modules/@opencode-ai/plugin` (version 1.18.29) declares `dispose?: () => Promise<void>` in `Hooks`; the server plugin's `dispose` hook is valid and retained. The server module exports exactly one function (legacy plugin enumeration: every module export must be a function or `{server}`), and the TUI module default-exports `{ id: "pomodoro-agent-status", tui }` (v1 path requires the exported `id` for file plugins). Both match the installed contracts.
+
+**Check evidence**
+
+- `node plugins/pomodoro-agent-status/scripts/check.mjs` → `pomodoro-agent-status check: 19 checks passed`.
+- Isolated installer CLI round trip with real `opencode --version` (1.18.29): `install` → `verify` → `uninstall` on a temp config dir; `node --check` clean; CTest host suite unchanged; `git diff --check` clean.
+
+**Per-criterion results (this round)**
+
+1-3, 5-9. Passed, evidence unchanged or strengthened (criterion 1's install evidence now includes the relative-entry no-duplicate assertions; criterion 9's isolation evidence unchanged).
+4. Pending human acceptance — requires observing `/pomodoro-select` discoverable and dispatched in the real shipped TUI after a full quit/restart (see Ticket 06 instructions).
+
+**Remaining human checks**
+
+- Criterion 4 (and Ticket 02 criterion 1, Ticket 06 criteria 5-7): real TUI and physical-device acceptance as instructed in Ticket 06.

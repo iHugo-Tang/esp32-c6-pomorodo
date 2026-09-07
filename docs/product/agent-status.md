@@ -22,7 +22,7 @@ Settings 中的 `Agent status` 默认开启并持久化。关闭后隐藏并忽�
 
 `report`、`select`、`remove` 请求接受可选且严格校验的 `host` 字段，仅接受 `codex`（缺省）与 `opencode`；未知、缺失、多余、畸形、超限或非法字段仍只拒绝该请求。请求只清理自身来源的过期成员，所选来源的过期清理与对应的 revision 推进由后台定时 reap 完成。所选来源持久化为 `{selected, selectedHost, revision}`；旧的只含 `selected` 的状态文件按 Codex 选择加载并可恢复。响应保持既有形状：`selected` 始终是裸 groupId（未选择时为 null），仅当所选来源是 OpenCode 时额外包含 `selectedHost: "opencode"`。
 
-成员每三秒续租，十秒过期。普通工作映射为 Working，等待权限或用户输入映射为 Waiting，结构化工具失败锁存为 Error，成功结束映射为 Completed。压缩上下文不重置状态，新工作会清除 Error。OpenCode 的映射固定为：busy/retry 为 Working（busy 清除本成员已锁存的 Error，retry 不清除），权限或 Question 等待为 Waiting，应答后回到 Working，Session 错误与结构化工具失败锁存为 Error，成功 idle 为 Completed，新建或无活动成员为 Idle；Workspace 聚合按位并后由既有优先级解析。
+成员每三秒续租，十秒过期。普通工作映射为 Working，等待权限或用户输入映射为 Waiting，结构化工具失败锁存为 Error，成功结束映射为 Completed。压缩上下文不重置状态，新工作会清除 Error。OpenCode 的映射固定为：busy/retry 为 Working（busy 清除本成员已锁存的 Error，retry 不清除），权限等待为 Waiting（1.18.29 实际发布 `permission.updated`/`permission.replied`），Question 等待为 Waiting——1.18.29 的插件事件类型中没有 question 事件，Waiting 通过运行中的 `question` 工具 part 识别，question 工具结束（完成或出错，例如被拒绝）后回到 Working 而不锁存 Error，Session 错误与普通工具的 error part 锁存为 Error，成功 idle 为 Completed，新建或无活动成员为 Idle；Workspace 聚合按位并后由既有优先级解析。插件同时接受后续版本的 `permission.asked`/`question.*` 事件及 `permission.v2.*`/`question.v2.*` 命名别名；这些别名是前向兼容，不作为 1.18.29 行为的验收证据。
 
 只有选择操作会在需要时启动 detached broker。自动启动的 broker 在十秒没有有效 Agent report 后退出；手动以前台方式启动的 broker 一直运行到被中断。
 
@@ -36,7 +36,7 @@ node plugins/pomodoro-agent-status/scripts/install-opencode.mjs verify    # 含 
 node plugins/pomodoro-agent-status/scripts/install-opencode.mjs uninstall
 ```
 
-安装会把权威源码复制到用户配置目录并分别在 `opencode.json` 与 `tui.json` 注册；重复执行是幂等的。配置变更只在完全退出所有 OpenCode 进程并重启后生效。最低已验证版本为 OpenCode 1.18.29；安装与升级校验会解析版本并在低于该版本时显式失败。TUI 插件在启动时校验直接 slash 注册 API（`api.command.register`）可用；不可用时安装校验显式失败，绝不注册同名 Markdown prompt 命令或任何会触发模型的回退。`/pomodoro-select` 的反馈只有三种有界结果：选择成功（含 revision）、等待 broker 接管（按需启动 broker 时）、失败（保留原 Selected Agent Source）；反馈不包含 prompt、代码、回复或错误详情。
+安装会把权威源码复制到用户配置目录并分别在 `opencode.json` 与 `tui.json` 注册；重复执行是幂等的。配置变更只在完全退出所有 OpenCode 进程并重启后生效。最低已验证版本为 OpenCode 1.18.29；安装与升级校验解析版本并在低于该版本时显式失败。直接 slash 注册 API（`api.command.register`）由 TUI 插件在启动时校验：不可用时 TUI 插件启动显式失败，绝不注册同名 Markdown prompt 命令或任何会触发模型的回退；安装校验本身只负责版本下限与文件/注册项一致性。`/pomodoro-select` 的反馈只有三种有界结果：选择成功（含 revision）、等待 broker 接管（按需启动 broker 时）、失败（保留原 Selected Agent Source）；反馈不包含 prompt、代码、回复或错误详情。
 
 禁用而不卸载：在 `tui.json` 中将 `plugin_enabled["pomodoro-agent-status"]` 设为 `false` 并从 `opencode.json` 的 `plugin` 数组移除 server 条目，然后完全重启 OpenCode。卸载脚本会同时移除两个条目与安装目录，不影响 broker 已持久化的选择状态。
 

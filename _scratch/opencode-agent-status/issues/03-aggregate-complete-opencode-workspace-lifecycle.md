@@ -55,3 +55,20 @@
 Self-review finding: the server plugin ignored lifecycle events for sessions it had never seen a `session.created` for — notably a session resumed after a full OpenCode restart, which never replays `session.created`. Such a member could never exist, so a resumed session could not contribute to the Workspace aggregate or to recovery publication.
 
 Fix: `opencode-server.mjs` now lazily creates the member for any lifecycle event whose session is unknown, attributing it to the process's Workspace (`baseRoot`) until a `session.updated` corrects the group. Regression evidence: `testOpenCodeLifecycle()` now drives `session.status` for an unseen `s-resumed` session during the recovery phase and asserts it joins as a second member of the same Workspace; `node plugins/pomodoro-agent-status/scripts/check.mjs` → 17 checks passed; the CTest host suite passes unchanged.
+
+### 2026-09-06 Coordinator review round 1 fixes (single coding executor)
+
+**Gaps fixed**
+
+1. **(High) Message attribution (shared core).** `message.updated` events with real 1.18.29 shape (`info: { id, sessionID, role }`) previously keyed a phantom member by the message id. Attribution is now event-shape aware in `eventSessionId()` (`session.*` → `info.id`, `message.*` → `info.sessionID`, parts → `part.sessionID`, others → direct `sessionID`). The lifecycle check uses the actual shape and asserts no phantom member and no member keyed by the message id.
+2. **(High) Installed 1.18.29 event compatibility.** The installed root SDK publishes `permission.updated`/`permission.replied` (v1 shapes: `{ properties: Permission }` with `sessionID`; `{ sessionID, permissionID, response }`), and its plugin event union has **no** question event. The reducer now (a) accepts the installed legacy permission events, (b) keeps v2 `permission.asked`/`question.*` working, (c) accepts `permission.v2.*`/`question.v2.*` aliases for forward compatibility (documented as not 1.18.29 acceptance evidence), and (d) detects a pending/running `question` tool part (`part.tool === "question"`) as Waiting, with an ended question part (completed or errored, e.g. rejected) resuming Working without latching Error. Ordinary tool parts in the `completed` state resume/maintain Working. The lifecycle check now drives the installed shapes (`permission.updated`, legacy `permission.replied`, question tool parts); the alias coverage lives in the reducer check and is explicitly labeled forward-compatible.
+3. **(Medium) Session Workspace correction.** On `session.updated` to a different Workspace the code removed the old-source member but never updated the stored `groupId`, so later lifecycle reports kept addressing the stale Workspace. Membership moves are now atomic and serialized: the plugin chains event handling through an internal queue (concurrent events cannot interleave a group move with a stale-group report), and `session.updated` removes the old-source member and re-points the stored member before any further report. Real-plugin boundary coverage: a session created in a second Workspace directory, driven busy there, then `session.updated` into the main Workspace — asserts the old source empties, the moved session reports into the new Workspace on its next lifecycle change, and no further reports reach the stale source (check 11).
+
+**Check evidence**
+
+- `node plugins/pomodoro-agent-status/scripts/check.mjs` → `pomodoro-agent-status check: 19 checks passed`.
+- `node --check` on all plugin scripts → clean; CTest host suite unchanged (6/6).
+
+**Per-criterion results (this round)**
+
+1-9. All remain passed with the same or strengthened evidence: criteria 1-2 now rest on the installed event shapes (criterion 1's Waiting evidence includes `permission.updated` and Question-tool detection), criteria 5-6 member behavior is unchanged, and criterion 9's "drives the complete lifecycle through plugin boundaries" now uses real 1.18.29 shapes plus the new move/correction and phantom-member regressions.

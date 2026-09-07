@@ -11,7 +11,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
 import { BrokerCore, MEMBER_LEASE_MS, runBroker } from "./broker.mjs";
-import { ActivationSession } from "./opencode-core.mjs";
+import { ActivationSession, MemberState, eventSessionId, memberId, normalizeEventType, reduceMemberEvent } from "./opencode-core.mjs";
 import {
   MASK, StatusState, brokerSocketPath, discoverHostPid, ensureBroker, hashId, isSelectionPrompt, reporterSocketPath,
   request, startReporter, structuredFailure, validateHookInput, workspaceRoot,
@@ -78,6 +78,34 @@ async function testPureCore() {
   state.apply(hook("SubagentStop", { agent_id: "sub", agent_type: "worker" }));
   assert.equal(state.subagents.size, 0);
   pass("five-state mapping, error latch, compact, control turn, and subagents");
+
+  const member = new MemberState();
+  const opencodeEvent = (type, properties) => ({ type, properties });
+  reduceMemberEvent(member, opencodeEvent("permission.updated", { sessionID: "s", id: "p1" }));
+  assert.equal(member.mask, MASK.WAITING, "the installed 1.18.29 permission.updated event maps to Waiting");
+  reduceMemberEvent(member, opencodeEvent("permission.replied", { sessionID: "s", permissionID: "p1", response: "once" }));
+  assert.equal(member.mask, MASK.WORKING, "the installed permission.replied event resumes Working");
+  reduceMemberEvent(member, opencodeEvent("permission.v2.asked", { sessionID: "s" }));
+  assert.equal(member.mask, MASK.WAITING, "namespaced permission aliases map to Waiting");
+  reduceMemberEvent(member, opencodeEvent("question.v2.rejected", { sessionID: "s", requestID: "q1" }));
+  assert.equal(member.mask, MASK.WORKING, "namespaced question aliases resume Working");
+  reduceMemberEvent(member, opencodeEvent("message.part.updated", {
+    part: { type: "tool", tool: "question", sessionID: "s", callID: "c", state: { status: "running", input: {} } },
+  }));
+  assert.equal(member.mask, MASK.WAITING, "a running Question tool part maps to Waiting without a question event");
+  reduceMemberEvent(member, opencodeEvent("message.part.updated", {
+    part: { type: "tool", tool: "question", sessionID: "s", callID: "c", state: { status: "error", input: {}, error: "rejected", time: { start: 1, end: 2 } } },
+  }));
+  assert.equal(member.mask, MASK.WORKING, "an ended Question tool interaction resumes Working without latching Error");
+  reduceMemberEvent(member, opencodeEvent("message.part.updated", {
+    part: { type: "tool", tool: "bash", sessionID: "s", callID: "c2", state: { status: "completed", input: {}, output: "", title: "", metadata: {}, time: { start: 1, end: 2 } } },
+  }));
+  assert.equal(member.mask, MASK.WORKING, "a completed ordinary tool part keeps Working");
+  assert.equal(eventSessionId(opencodeEvent("message.updated", { info: { id: "msg-1", sessionID: "ses-9", role: "user" } })), "ses-9",
+    "message attribution uses info.sessionID, never the message id");
+  assert.equal(eventSessionId(opencodeEvent("session.updated", { info: { id: "ses-9", directory: "/x" } })), "ses-9");
+  assert.equal(eventSessionId(opencodeEvent("message.part.updated", { part: { sessionID: "ses-9" } })), "ses-9");
+  pass("OpenCode event compatibility aliases, Question tool detection, and shape-aware attribution");
 }
 
 function brokerRequest(socketPath, value) { return request(socketPath, value, 1_000); }
@@ -522,8 +550,8 @@ async function testOpenCodePluginSelection() {
       pid: process.pid, startedAt: Date.now(), mask: MASK.IDLE, host: "opencode",
     }, 1_000);
     const persistedRevision = JSON.parse(persistedBefore).revision;
-    assert.deepEqual(resumed, { ok: true, selected: hashId(await realpath(workspace)), revision: persistedRevision + 2, selectedHost: "opencode" },
-      "the on-demand broker restored the persisted selection; the returning member's recovery report and the select each advance exactly once");
+    assert.deepEqual(resumed, { ok: true, selected: hashId(await realpath(workspace)), revision: persistedRevision + 1, selectedHost: "opencode" },
+      "the on-demand broker restored the persisted selection with exactly one new revision");
     pass("real plugin entry points select the Workspace with one revision, publish Working/Completed, start the broker on demand, and fail without a broker");
   } finally {
     await tui.dispose().catch(() => {});
@@ -594,12 +622,18 @@ async function testOpenCodeLifecycle() {
 
     await hooks.event({ event: { type: "session.status", properties: { sessionID: "s1", status: { type: "busy" } } } });
     await hooks.event({ event: { type: "session.status", properties: { sessionID: "s3", status: { type: "retry", attempt: 1, message: "x", next: 1 } } } });
-    await hooks.event({ event: { type: "permission.asked", properties: { id: "p1", sessionID: "s2", permission: "bash", patterns: [], metadata: {}, always: [] } } });
+    await hooks.event({ event: {
+      type: "permission.updated",
+      properties: { id: "p1", type: "bash", sessionID: "s2", messageID: "m", title: "bash", metadata: {}, time: { created: 1 } },
+    } });
     await waitFor(() => broker.core.publication()?.mask === (MASK.WORKING | MASK.WAITING));
     assert.deepEqual(broker.core.publication(), { revision: revBefore + 2, mask: MASK.WORKING | MASK.WAITING },
-      "busy, retry, and permission members aggregate; each aggregate change advances exactly once");
+      "busy, retry, and the installed permission.updated event aggregate; each aggregate change advances exactly once");
 
-    await hooks.event({ event: { type: "question.asked", properties: { id: "q1", sessionID: "s2", questions: [] } } });
+    await hooks.event({ event: {
+      type: "message.part.updated",
+      properties: { part: { id: "qp", sessionID: "s2", messageID: "m", type: "tool", callID: "cq", tool: "question", state: { status: "running", input: {} } } },
+    } });
     await hooks.event({
       event: { type: "message.part.updated", properties: { part: { id: "p", sessionID: "s1", messageID: "m", type: "tool", callID: "c", tool: "bash", state: { status: "error", input: {}, error: "boom", time: { start: 1, end: 2 } } } } },
     });
@@ -608,22 +642,54 @@ async function testOpenCodeLifecycle() {
     await waitFor(() => broker.core.publication()?.mask === (MASK.ERROR | MASK.COMPLETED | MASK.WORKING),
       2_000, "Question and tool-error members keep their states while another member completes");
 
-    await hooks.event({ event: { type: "message.updated", properties: { sessionID: "s1", info: { role: "user" } } } });
+    const memberCountBeforeUserMessage = broker.core.members.get(`opencode:${groupId}`).size;
+    await hooks.event({ event: {
+      type: "message.updated",
+      properties: { info: { id: "msg-1", sessionID: "s1", role: "user", agent: "build", model: { providerID: "p", modelID: "m" } } },
+    } });
     await waitFor(() => broker.core.publication()?.mask === (MASK.WORKING | MASK.COMPLETED | MASK.WORKING),
       2_000, "real new work clears only that member's latched Error");
+    assert.equal(broker.core.members.get(`opencode:${groupId}`).size, memberCountBeforeUserMessage,
+      "a message-shaped event attributes to the Session and never creates a phantom member");
+    assert.equal(broker.core.members.get(`opencode:${groupId}`).has(memberId("msg-1")), false,
+      "the message id is not used as a member identity");
     assert.equal([...broker.core.members.get(`opencode:${groupId}`).values()].some((m) => m.mask === MASK.ERROR), false,
       "the latched Error is cleared for the working member");
 
     await hooks.event({ event: { type: "message.part.updated", properties: { part: { id: "p2", sessionID: "s1", messageID: "m", type: "tool", callID: "c2", tool: "bash", state: { status: "error", input: {}, error: "boom", time: { start: 1, end: 2 } } } } } });
     await waitFor(() => broker.core.publication()?.mask === (MASK.ERROR | MASK.COMPLETED | MASK.WORKING),
       2_000, "a latched Error survives other members' idle and completion");
-    await hooks.event({ event: { type: "permission.replied", properties: { sessionID: "s2", requestID: "p1", reply: "once" } } });
-    await hooks.event({ event: { type: "question.replied", properties: { sessionID: "s2", requestID: "q1", answers: [] } } });
+    await hooks.event({ event: { type: "permission.replied", properties: { sessionID: "s2", permissionID: "p1", response: "once" } } });
+    await hooks.event({ event: {
+      type: "message.part.updated",
+      properties: { part: { id: "qp", sessionID: "s2", messageID: "m", type: "tool", callID: "cq", tool: "question", state: { status: "completed", input: {}, output: "", title: "", metadata: {}, time: { start: 1, end: 2 } } } },
+    } });
     await waitFor(() => broker.core.publication()?.mask === (MASK.ERROR | MASK.WORKING | MASK.WORKING));
 
     await hooks.event({ event: { type: "session.deleted", properties: session("s3") } });
     await waitFor(() => broker.core.members.get(`opencode:${groupId}`)?.size === 2, 2_000, "session deletion removes only that member");
     assert.deepEqual(broker.core.publication()?.mask, MASK.ERROR | MASK.WORKING);
+
+    const workspace2 = path.join(root, "workspace-2");
+    await mkdir(workspace2);
+    const group2 = hashId(await realpath(workspace2));
+    await hooks.event({ event: { type: "session.created", properties: session("s4", { directory: workspace2 }) } });
+    await hooks.event({ event: { type: "session.status", properties: { sessionID: "s4", status: { type: "busy" } } } });
+    await waitFor(() => [...(broker.core.members.get(`opencode:${group2}`) ?? new Map()).values()].some((m) => m.mask === MASK.WORKING), 2_000,
+      "a session in another directory joins that Workspace");
+    await hooks.event({ event: { type: "session.updated", properties: session("s4", { directory: workspace }) } });
+    await waitFor(() => (broker.core.members.get(`opencode:${group2}`)?.size ?? 0) === 0, 2_000,
+      "session.updated moves the member out of the old Workspace");
+    await hooks.event({ event: {
+      type: "permission.updated",
+      properties: { id: "p4", type: "bash", sessionID: "s4", messageID: "m", title: "bash", metadata: {}, time: { created: 1 } },
+    } });
+    await waitFor(() => [...broker.core.members.get(`opencode:${groupId}`).values()].some((m) => m.mask === MASK.WAITING), 2_000,
+      "after the move, lifecycle reports address only the new Workspace");
+    assert.equal(broker.core.members.get(`opencode:${group2}`)?.size ?? 0, 0,
+      "the stale Workspace received no further reports");
+    await hooks.event({ event: { type: "session.deleted", properties: session("s4", { directory: workspace }) } });
+    await waitFor(() => broker.core.members.get(`opencode:${groupId}`)?.size === 2, 2_000);
 
     child = await spawnOpenCodeProcess({ socketPath: broker.socketPath, groupId, mask: MASK.WORKING });
     await waitFor(() => broker.core.members.get(`opencode:${groupId}`)?.size === 3, 3_000,
@@ -808,6 +874,27 @@ async function testInstallationAndRecovery() {
     await installer.verify({ ...installOptions, projectDir });
     assert.equal(await projectCopies(projectDir), 0, `no project-level Pomodoro plugin copy exists for ${projectDir}`);
   }
+
+  const serverConfigPath = path.join(configDir, "opencode.json");
+  const tuiConfigPath = path.join(configDir, "tui.json");
+  const relativeServer = "plugins/pomodoro-agent-status/opencode-server.mjs";
+  const relativeTui = "plugins/pomodoro-agent-status/opencode-tui.mjs";
+  const rewrite = async (configPath, relative) => {
+    const config = JSON.parse(await readFile(configPath, "utf8"));
+    config.plugin = [relative];
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+  };
+  await rewrite(serverConfigPath, relativeServer);
+  await rewrite(tuiConfigPath, relativeTui);
+  await installer.install(installOptions);
+  assert.deepEqual(JSON.parse(await readFile(serverConfigPath, "utf8")).plugin, [relativeServer],
+    "a genuine relative entry is recognized and never duplicated");
+  assert.deepEqual(JSON.parse(await readFile(tuiConfigPath, "utf8")).plugin, [relativeTui]);
+  await installer.verify(installOptions);
+  await installer.uninstall({ configDir });
+  assert.equal(JSON.parse(await readFile(serverConfigPath, "utf8")).plugin, undefined, "uninstall matches the relative server entry");
+  assert.equal(JSON.parse(await readFile(tuiConfigPath, "utf8")).plugin, undefined, "uninstall matches the relative TUI entry");
+  await installer.install(installOptions);
   pass("idempotent user-level installation serves multiple projects without a project-level duplicate");
 
   const oldConfigDir = path.join(root, "old-config");
@@ -881,11 +968,63 @@ async function testInstallationAndRecovery() {
   }
 }
 
+async function testActivationRetention() {
+  const root = await mkdtemp("/tmp/pomodoro-activation-retention-");
+  const workspaceA = path.join(root, "workspace-a");
+  const workspaceB = path.join(root, "workspace-b");
+  await mkdir(workspaceA);
+  await mkdir(workspaceB);
+  const stateDir = path.join(root, "pomodoro", "agent-status");
+  const env = { ...process.env, XDG_STATE_HOME: root };
+  const counter = { toasts: [], triggers: 0, clientTouches: [] };
+  const tui = fakeTuiApi({ directory: workspaceA, worktree: workspaceA, counter });
+  const groupA = hashId(await realpath(workspaceA));
+  let broker = await runBroker({ stateDir, logger: () => {}, publisherOptions: { resolvePort: async () => null } });
+  try {
+    const tuiModule = await import("./opencode-tui.mjs");
+    await tuiModule.default.tui(tui.api, { env });
+    tui.commands()[0].onSelect();
+    await waitFor(() => broker.core.selected === `opencode:${groupA}` && broker.core.revision === 1, 3_000);
+    assert.equal(tui.toasts().length, 1);
+    const rootA = await realpath(workspaceA);
+    await waitFor(() => broker.core.members.get(`opencode:${groupA}`)?.has(hashId(`pomodoro-tui:${rootA}`)), 2_000);
+
+    await broker.close();
+    const impostorSockets = new Set();
+    const impostor = net.createServer((socket) => {
+      impostorSockets.add(socket);
+      socket.once("close", () => impostorSockets.delete(socket));
+      socket.end("not-json\n");
+    });
+    await new Promise((resolve) => impostor.listen(broker.socketPath, resolve));
+    tui.api.state.path.directory = workspaceB;
+    tui.api.state.path.worktree = workspaceB;
+    tui.commands()[0].onSelect();
+    await waitFor(() => tui.toasts().length === 2);
+    assert.equal(tui.toasts()[1].variant, "error", "the failed replacement selection reports bounded failure");
+    for (const socket of impostorSockets) socket.destroy();
+    await new Promise((resolve) => impostor.close(() => resolve()));
+
+    broker = await runBroker({ stateDir, logger: () => {}, publisherOptions: { resolvePort: async () => null } });
+    assert.equal(broker.core.selected, `opencode:${groupA}`, "the failed selection did not change the persisted Selected Agent Source");
+    await waitFor(() => broker.core.publication()?.mask === MASK.IDLE, MEMBER_LEASE_MS + 4_000,
+      "the previous activation keep-alive survives the failed selection and renews past a lease window");
+    assert.ok(broker.core.members.get(`opencode:${groupA}`)?.has(hashId(`pomodoro-tui:${rootA}`)),
+      "the original activation member is still renewed by its keep-alive");
+    assert.equal(broker.core.selected, `opencode:${groupA}`);
+    pass("a failed selection keeps the previous activation alive until a replacement succeeds");
+  } finally {
+    await tui.dispose().catch(() => {});
+    await broker?.close().catch(() => {});
+  }
+}
+
 await testPureCore();
 await testHookSelection();
 await testReporterIntegration();
 await testOpenCodeActivation();
 await testOpenCodePluginSelection();
+await testActivationRetention();
 await testOpenCodeLifecycle();
 await testCrossHostPluginIsolation();
 await testInstallationAndRecovery();

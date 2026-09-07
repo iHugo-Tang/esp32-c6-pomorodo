@@ -53,13 +53,37 @@ export function tuiMemberId(root) {
   return hashId(`${TUI_MEMBER_PREFIX}:${root}`);
 }
 
+// OpenCode 1.18.29 publishes permission lifecycle as `permission.updated`/`permission.replied`
+// (root SDK shapes); later releases use `permission.asked`/`question.*` and may namespace them.
+export const EVENT_ALIASES = Object.freeze({
+  "permission.updated": "permission.asked",
+  "permission.v2.asked": "permission.asked",
+  "permission.v2.replied": "permission.replied",
+  "question.v2.asked": "question.asked",
+  "question.v2.replied": "question.replied",
+  "question.v2.rejected": "question.rejected",
+});
+
+export function normalizeEventType(type) {
+  return EVENT_ALIASES[type] ?? type;
+}
+
+const QUESTION_TOOL = "question";
+
 export function eventSessionId(event) {
+  const type = String(event?.type ?? "");
   const properties = event?.properties ?? {};
-  return properties.info?.id ?? properties.sessionID ?? properties.part?.sessionID ?? null;
+  // session.info carries the Session id; message.info carries a message id plus its sessionID;
+  // parts carry part.sessionID; all other events use a direct sessionID.
+  if (type.startsWith("session.")) return properties.info?.id ?? properties.sessionID ?? null;
+  if (type.startsWith("message.")) {
+    return properties.info?.sessionID ?? properties.part?.sessionID ?? properties.sessionID ?? null;
+  }
+  return properties.sessionID ?? properties.info?.sessionID ?? properties.part?.sessionID ?? null;
 }
 
 export function reduceMemberEvent(state, event) {
-  const type = event?.type;
+  const type = normalizeEventType(event?.type);
   const properties = event?.properties ?? {};
   if (type === "session.status") {
     const status = properties.status?.type;
@@ -83,8 +107,19 @@ export function reduceMemberEvent(state, event) {
   } else if (type === "message.part.updated") {
     const part = properties.part;
     if (part?.type === "tool") {
-      if (part.state?.status === "error") state.fail();
-      else if (part.state?.status === "pending" || part.state?.status === "running") state.work();
+      const status = part.state?.status;
+      const isQuestion = typeof part.tool === "string" && part.tool.toLowerCase() === QUESTION_TOOL;
+      if (status === "pending" || status === "running") {
+        if (isQuestion) state.wait();
+        else state.work();
+      } else if (status === "completed") {
+        if (isQuestion) state.resume();
+        else state.work();
+      } else if (status === "error") {
+        // A rejected or failed Question tool call only ends the interaction.
+        if (isQuestion) state.resume();
+        else state.fail();
+      }
     }
   }
 }
@@ -155,15 +190,33 @@ export class ActivationSession {
   async activate() {
     const brokerWasRunning = await hasListener(this.socketPath);
     await ensureBroker(this.socketPath, { env: this.env });
-    await this.report();
-    const reply = await request(this.socketPath, {
+    // Select first so a selection against a live source costs exactly one revision.
+    const select = () => request(this.socketPath, {
       type: "select", groupId: this.groupId, host: "opencode",
     }, SELECT_TIMEOUT_MS);
-    if (!reply?.ok) throw new Error(reply?.error || "broker rejected selection");
+    const first = await select();
+    if (first?.ok) {
+      this.keepAlive();
+      return this.result(brokerWasRunning, first.revision);
+    }
+    // The source has no live members: report the activation member, then either the
+    // member-return itself re-established the selection (one recovery advance) or an
+    // explicit select performs the single required advance. Never both.
+    const reportReply = await this.report();
+    if (reportReply.selected === this.groupId && reportReply.selectedHost === "opencode") {
+      this.keepAlive();
+      return this.result(brokerWasRunning, reportReply.revision);
+    }
+    const second = await select();
+    if (!second?.ok) throw new Error(second?.error || "broker rejected selection");
     this.keepAlive();
+    return this.result(brokerWasRunning, second.revision);
+  }
+
+  result(brokerWasRunning, revision) {
     return {
       outcome: brokerWasRunning ? "selected" : "waiting",
-      revision: reply.revision,
+      revision,
       groupId: this.groupId,
       memberId: this.memberId,
     };

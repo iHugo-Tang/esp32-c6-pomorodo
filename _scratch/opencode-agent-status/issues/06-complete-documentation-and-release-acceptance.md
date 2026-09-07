@@ -49,14 +49,32 @@
 
 Real TUI smoke test (criterion 5):
 
-1. Fully quit every OpenCode process (also verify with `pgrep -fl opencode`), then run `node plugins/pomodoro-agent-status/scripts/install-opencode.mjs install` and start OpenCode fresh so the new user-level plugins load.
+1. Fully quit every OpenCode process (verify with `pgrep -fl opencode`), then run `node plugins/pomodoro-agent-status/scripts/install-opencode.mjs install` and start OpenCode fresh so the new user-level plugins load.
 2. In the TUI, type `/` and confirm exactly one `pomodoro-select` entry appears in slash autocomplete (no duplicate Markdown command of the same name).
-3. Invoke it in a session with visible work; confirm a bounded success (or waiting) toast appears with a revision, and that no prompt is submitted, no Session message/Task is created, and no model request is made (session transcript and token usage must stay unchanged).
-4. Repeat the invocation and confirm the feedback shows a new revision. Stop any on-demand broker (`pkill -f "broker.mjs --idle"`; a foreground broker stops with Ctrl+C) and invoke again to observe failure feedback that keeps the previous selection.
-5. Record the observed results in this ticket's comments.
+3. Invoke it in a session with visible work; confirm a bounded success (or waiting, when the broker had to start) toast appears with a revision, and that no prompt is submitted, no Session message/Task is created, and no model request is made (session transcript and token usage must stay unchanged).
+4. Repeat the invocation and confirm the feedback shows a new revision. Then quit OpenCode fully again, start it once more, and invoke again to confirm the selection and publication recover with exactly one new revision. An induced real-TUI failure case is not required: with the implemented activation, stopping the broker and re-invoking restarts it on demand and yields waiting/success feedback rather than failure, and forcing a failure in the live TUI would require breaking the broker or state directory on purpose. If a failure case is wanted anyway, stop a foreground broker with Ctrl+C and immediately revoke the state directory's write permission before invoking — otherwise skip it.
+5. If a broker must be stopped for any step, do not use broad `pkill -f` patterns; find the specific process (`pgrep -f "broker.mjs --idle"` for on-demand brokers, or run a foreground broker and stop it with Ctrl+C) and `kill <recorded pid>`.
+6. Record the observed results in this ticket's comments.
 
 Physical-device acceptance (criteria 6-7): with the broker running against real hardware, observe Idle/Working/Waiting/Error/Completed from the selected OpenCode Workspace (drive a session through work, a permission prompt, a failing tool, and completion), confirm Pomodoro timers/statistics are untouched, switch between OpenCode and Codex selections on device, disconnect/reconnect USB and confirm same-Workspace recovery, confirm no second serial owner appears, and run `tools/flash.sh` to confirm the broker releases and restores the port.
 
 **Remaining work / notes**
 
 - The three pending criteria above are the only blockers to calling the shared specification complete; everything automatable has been implemented and checked.
+
+### 2026-09-06 Coordinator review round 1 fixes (single coding executor)
+
+**Gaps fixed**
+
+1. **(Documentation truth) Direct-API validation wording.** Product doc, README, and the parent spec previously implied the installer itself would fail when the direct slash API is unavailable. Corrected everywhere: installer validation covers the version floor and file/registration integrity only; the direct slash API is validated when the TUI plugin initializes in the real OpenCode process after a full restart, and that startup fails explicitly without any Markdown/model fallback.
+2. **(Documentation truth) Smoke-test step 4.** The previous instruction claimed that stopping the broker and re-invoking yields failure feedback; with the implemented on-demand activation it actually restarts the broker and yields waiting/success. Step 4 now verifies repeat selection, full quit/restart recovery, and explains why an induced failure case is optional (with a safe optional procedure); step 5 forbids broad `pkill -f` patterns and requires a recorded PID (`pgrep -f "broker.mjs --idle"`) or a foreground broker.
+3. **(Supporting implementation changes verified this round)** Event attribution is shape-aware (message events use `info.sessionID`), the reducer accepts the installed `permission.updated`/`permission.replied` events and Question-tool detection with documented `*.v2.*` forward-compat aliases, activation costs exactly one revision in every state, a failed selection keeps the previous activation's keep-alive alive, session Workspace moves are atomic and serialized, and the installer's `verify` resolves relative entries against the config directory. These are evidenced in Tickets 02, 03, and 05 comments and by the 19-check host suite.
+
+**Per-criterion results (this round)**
+
+1-4, 8. Passed, evidence unchanged or strengthened (criterion 8's recording now also covers the direct-API validation boundary and the one-revision activation contract).
+5-7. Still pending human acceptance with the corrected instructions above.
+
+**Check evidence**
+
+- `node plugins/pomodoro-agent-status/scripts/check.mjs` → `pomodoro-agent-status check: 19 checks passed`; CMake configure/build and CTest → 6/6; `git diff --check` clean.

@@ -176,10 +176,10 @@ export async function verify({ configDir = resolveConfigDir(), opencodeVersion, 
   const tuiConfig = await readJsonConfig(path.join(configDir, "tui.json"));
   const serverTarget = path.join(targetDir, "opencode-server.mjs");
   const tuiTarget = path.join(targetDir, "opencode-tui.mjs");
-  if (!serverConfig.plugin?.some((entry) => entryMatches(entry, serverTarget, path.dirname(configDir)))) {
+  if (!serverConfig.plugin?.some((entry) => entryMatches(entry, serverTarget, configDir))) {
     throw new Error("opencode.json does not activate the Pomodoro server plugin; rerun install and fully restart OpenCode");
   }
-  if (!tuiConfig.plugin?.some((entry) => entryMatches(entry, tuiTarget, path.dirname(configDir)))) {
+  if (!tuiConfig.plugin?.some((entry) => entryMatches(entry, tuiTarget, configDir))) {
     throw new Error("tui.json does not activate the Pomodoro TUI plugin; rerun install and fully restart OpenCode");
   }
   if (tuiConfig.plugin_enabled?.[PLUGIN_ID] === false) {

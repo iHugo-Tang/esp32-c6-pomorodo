@@ -55,3 +55,26 @@
 - Criterion 1 requires a human TUI smoke test after a full OpenCode restart; it is the only unchecked box and the reason Completion is pending human acceptance. The detailed instructions are recorded under Ticket 06.
 - The on-demand double-advance interpretation above should be reviewed with Tickets 03/05 evidence; it does not affect any acceptance criterion's observable behavior.
 - Firmware, Codex plugin, and existing Codex checks were not modified.
+
+### 2026-09-06 Coordinator review round 1 fixes (single coding executor)
+
+**Gaps fixed**
+
+1. **(High) Event attribution used the wrong id.** `eventSessionId()` preferred `properties.info.id`, but a real `message.updated` carries `info.id` = message id and `info.sessionID` = Session id (installed root SDK: `EventMessageUpdated { properties: { info: Message } }` with `Message.id`/`Message.sessionID`), so user messages created phantom members and cleared the wrong member's Error. Attribution is now event-shape aware: `session.*` uses `info.id`, `message.*` uses `info.sessionID` (then `part.sessionID`, then a direct `sessionID`), and all other events use the direct `sessionID`. Regression: the lifecycle check drives a real-shaped `message.updated` (`info: { id: "msg-1", sessionID: "s1", role: "user", ... }`) and asserts the source member count is unchanged and no member keyed by the message id exists (check 11).
+2. **(High) Exact one-revision contract.** `ActivationSession.activate()` was always report-then-select, so a selection against a persisted selected-but-vacant source cost two revisions (recovery advance + select), violating criterion 4 and the parent spec's one-revision refresh contract. The old "double-advance interpretation" in the first implementation comment and in the parent spec is superseded and removed. `activate()` is now select-first: against a live source the single `select` is the whole revision; when the source has no live members it reports the activation member and decides from the report response's bounded fields (`selected`/`selectedHost`/`revision` — no free-text matching): if the member-return already re-established the selection, activation is complete with that single recovery advance; otherwise one explicit `select` performs the only advance. Updated evidence: the on-demand restored-selection assertion now expects `persisted + 1` (check 9), and first/repeat/active/vacant selections each advance exactly once.
+
+**Check evidence**
+
+- `node plugins/pomodoro-agent-status/scripts/check.mjs` → `pomodoro-agent-status check: 19 checks passed` (checks 1-8, 13-19 unchanged in behavior; the check count grew because new coverage was added in this and later tickets' checks).
+- `node --check` on all plugin scripts → clean; `git diff --check` → clean.
+
+**Per-criterion results (this round)**
+
+1. Still pending human acceptance (unchanged; real TUI slash autocomplete cannot be verified without reloading active config).
+2-3. Passed, evidence unchanged.
+4. Passed, now strictly: first selection 0 → 1, repeat selection +1, selection against a live source +1, and selection against a selected-but-vacant source (including after on-demand broker restart) +1 — the `persisted + 1` assertion replaces the earlier `persisted + 2`.
+5-8. Passed, evidence unchanged (check 9 additionally now uses the installed 1.18.29 `message.updated` shape).
+
+**Remaining human checks**
+
+- Criterion 1: real OpenCode 1.18.29 TUI slash autocomplete smoke test after a full quit/restart (instructions in Ticket 06).
