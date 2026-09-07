@@ -6,6 +6,8 @@
 
 **Status:** ready-for-agent
 
+**Completion:** accepted by coordinator
+
 - [x] A host-qualified OpenCode Workspace identity cannot collide or aggregate with the Codex Workspace identity for the same normalized repository root or working directory.
 - [x] Ordinary OpenCode lifecycle activity before `/pomodoro-select` does not become the Selected Agent Source or advance the device revision.
 - [x] First activation and reactivation of an OpenCode Workspace each create exactly one new revision, including under concurrent activation attempts.
@@ -45,3 +47,12 @@
 - OpenCode selection persists as `opencode:<groupId>`; previously persisted Codex selections (bare `groupId`) remain loadable and resumable, so the upgrade path keeps Codex recovery intact.
 - Completion is pending coordinator review; this comment records implemented-and-checked state only. The shared spec was made more precise (broker `host` field, namespaced OpenCode keys, host-gated first selection) but is not marked complete, and Tickets 02-06 are untouched.
 - TUI/plugin, real OpenCode 1.18.29 smoke, and physical-device validation remain outside this ticket (Tickets 02-06); no hardware check was required or performed here.
+
+### 2026-09-06 Coordinator acceptance
+
+- Acceptance conclusion: passed. The coordinator independently inspected the complete task diff from starting commit `1117f5c9e268e9627198553c7286b494bc983f78` through implementation commit `1a02d93` and found no scope, contract, or documentation gap for Ticket 01.
+- `node plugins/pomodoro-agent-status/scripts/check.mjs` independently returned `pomodoro-agent-status check: 10 checks passed`, including the real-socket OpenCode activation, isolation, validation, concurrency, and persisted-recovery scenarios.
+- `cmake -S test -B build/host`, `cmake --build build/host --parallel`, and `ctest --test-dir build/host --output-on-failure` independently completed with all 6 tests passing.
+- Criteria 1-7 are accepted as passed based on the implementation comment's per-criterion evidence and the independently inspected assertions. No criterion is failed, blocked, or pending human acceptance.
+- TUI and physical-device checks remain assigned to later tickets and do not limit completion of this broker-foundation ticket. The shared specification remains incomplete.
+- The canonical tracker vocabulary has no completed triage role, so the `ready-for-agent` triage label is retained and completion is recorded separately above rather than misusing `ready-for-human`.
