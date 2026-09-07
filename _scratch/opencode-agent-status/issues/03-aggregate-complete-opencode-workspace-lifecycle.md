@@ -49,3 +49,9 @@
 
 - Member removal on plugin disposal relies on the 10 s lease (OpenCode 1.18.29 exposes no server-plugin `dispose` guarantee in the installed typing; a `dispose` hook is provided and additionally stops renewal eagerly when the host calls it).
 - Firmware/device behavior is unchanged; no hardware criterion belongs to this ticket.
+
+### 2026-09-06 Self-review fix (single coding executor)
+
+Self-review finding: the server plugin ignored lifecycle events for sessions it had never seen a `session.created` for — notably a session resumed after a full OpenCode restart, which never replays `session.created`. Such a member could never exist, so a resumed session could not contribute to the Workspace aggregate or to recovery publication.
+
+Fix: `opencode-server.mjs` now lazily creates the member for any lifecycle event whose session is unknown, attributing it to the process's Workspace (`baseRoot`) until a `session.updated` corrects the group. Regression evidence: `testOpenCodeLifecycle()` now drives `session.status` for an unseen `s-resumed` session during the recovery phase and asserts it joins as a second member of the same Workspace; `node plugins/pomodoro-agent-status/scripts/check.mjs` → 17 checks passed; the CTest host suite passes unchanged.

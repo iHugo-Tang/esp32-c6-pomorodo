@@ -50,3 +50,12 @@
 
 - The real "fully quit and restart OpenCode, then use `/pomodoro-select` in the shipped TUI" acceptance remains a human step (Ticket 06); these checks cover the installer, plugin surfaces, and broker against controlled fakes.
 - `uninstall` leaves an emptied `opencode.json`/`tui.json` behind if they contained no other configuration; it never deletes user files it did not create.
+
+### 2026-09-06 Self-review fixes (single coding executor)
+
+Two self-review findings were fixed:
+
+1. **(Low) Duplicate registration from relative-path entries.** `entryMatches()` only recognized absolute and `file://` entries, so a manually added relative `plugin` entry (resolved by OpenCode relative to the config file) would be re-registered as an extra absolute entry, loading the plugin twice. `entryMatches()` now resolves relative entries against the config file's directory; a probe confirmed that an existing relative `tui.json` entry is recognized and `install` appends nothing.
+2. **(Test hygiene) Tautological assertions.** `testInstallationAndRecovery()` contained a `failed = { ok: false }` constant assertion and a pass-either-way `activationFailure` check; both were removed and replaced with a strict assertion that the restarted broker still holds the same Selected Agent Source.
+
+Evidence: `node plugins/pomodoro-agent-status/scripts/check.mjs` → 17 checks passed; CTest host suite unchanged.

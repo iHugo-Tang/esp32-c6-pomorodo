@@ -11,7 +11,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
 import { BrokerCore, MEMBER_LEASE_MS, runBroker } from "./broker.mjs";
-import { ActivationSession, failureFeedback } from "./opencode-core.mjs";
+import { ActivationSession } from "./opencode-core.mjs";
 import {
   MASK, StatusState, brokerSocketPath, discoverHostPid, ensureBroker, hashId, isSelectionPrompt, reporterSocketPath,
   request, startReporter, structuredFailure, validateHookInput, workspaceRoot,
@@ -648,8 +648,11 @@ async function testOpenCodeLifecycle() {
     const returning = await loadServerPlugin(fakeServerInput({ directory: workspace, worktree: workspace, counter }), { env });
     await returning.event({ event: { type: "session.created", properties: session("s1") } });
     await returning.event({ event: { type: "session.status", properties: { sessionID: "s1", status: { type: "busy" } } } });
+    await returning.event({ event: { type: "session.status", properties: { sessionID: "s-resumed", status: { type: "busy" } } } });
     await waitFor(() => broker.core.publication()?.mask === MASK.WORKING, MEMBER_LEASE_MS + 3_000,
       "a returning member of the same Workspace restores publication");
+    await waitFor(() => broker.core.members.get(`opencode:${groupId}`)?.size === 2, 2_000,
+      "a session resumed after an OpenCode restart (no session.created) joins as a member of the process Workspace");
     assert.equal(broker.core.selected, `opencode:${groupId}`);
     assert.ok(broker.core.revision > revisionAtSelection, "restoring publication allocated a new revision");
     assert.deepEqual(counter.clientTouches, [], "the complete lifecycle created no client or model effects");
@@ -867,12 +870,8 @@ async function testInstallationAndRecovery() {
       assert.deepEqual(restarted.core.publication(), { revision: resumed.revision, mask: MASK.IDLE },
         "a complete broker restart preserves the selection and the same Workspace restores publication");
       assert.ok(resumed.revision > firstRevision);
-      const failed = { ok: false };
-      const activationFailure = await new ActivationSession({ root, env: devicelessEnv }).activate()
-        .then(() => null, (error) => error);
-      assert.ok(activationFailure === null || failureFeedback(activationFailure).message.includes("previous selection"),
-        "runtime failure feedback preserves the prior selection wording");
-      assert.equal(failed.ok, false);
+      assert.equal(restarted.core.selected, `opencode:${activated.groupId}`,
+        "the restarted broker still holds the same Selected Agent Source");
     } finally {
       await restarted.close();
     }

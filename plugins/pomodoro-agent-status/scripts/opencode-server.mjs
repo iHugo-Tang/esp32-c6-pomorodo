@@ -81,8 +81,13 @@ export const PomodoroAgentStatusPlugin = async (input, options = {}) => {
           if (member) removeMember(member.groupId, memberId(id));
           return;
         }
-        const member = sessions.get(id);
-        if (!member) return;
+        let member = sessions.get(id);
+        if (!member) {
+          // Sessions resumed after an OpenCode restart never replay session.created;
+          // attribute them to this process's Workspace until session.updated corrects it.
+          member = { groupId: hashId(baseRoot), state: new MemberState() };
+          sessions.set(id, member);
+        }
         const before = member.state.mask;
         reduceMemberEvent(member.state, event);
         if (member.state.mask !== before) reportMember(member.groupId, memberId(id), member.state.mask);

@@ -68,13 +68,13 @@ async function writeJsonConfig(filePath, value) {
   }
 }
 
-function entryMatches(entry, targetPath) {
+function entryMatches(entry, targetPath, baseDir) {
   if (typeof entry !== "string") return false;
-  if (path.isAbsolute(entry)) return path.resolve(entry) === targetPath;
   if (entry.startsWith("file://")) {
     try { return decodeURIComponent(new URL(entry).pathname) === targetPath; } catch { return false; }
   }
-  return false;
+  const resolved = path.isAbsolute(entry) ? path.resolve(entry) : path.resolve(baseDir, entry);
+  return resolved === targetPath;
 }
 
 function pluginEntries(config) {
@@ -85,9 +85,10 @@ function pluginEntries(config) {
 }
 
 async function upsertPluginEntry(configPath, targetPath) {
+  const baseDir = path.dirname(configPath);
   const config = await readJsonConfig(configPath);
   const { entries, replace } = pluginEntries(config);
-  if (entries.some((entry) => entryMatches(entry, targetPath))) return false;
+  if (entries.some((entry) => entryMatches(entry, targetPath, baseDir))) return false;
   if (!replace) config.plugin = [];
   config.plugin.push(targetPath);
   await writeJsonConfig(configPath, config);
@@ -95,9 +96,10 @@ async function upsertPluginEntry(configPath, targetPath) {
 }
 
 async function removePluginEntry(configPath, targetPath) {
+  const baseDir = path.dirname(configPath);
   const config = await readJsonConfig(configPath);
   const { entries, replace } = pluginEntries(config);
-  const remaining = entries.filter((entry) => !entryMatches(entry, targetPath));
+  const remaining = entries.filter((entry) => !entryMatches(entry, targetPath, baseDir));
   if (!replace || remaining.length === entries.length) return false;
   if (remaining.length === 0) delete config.plugin;
   else config.plugin = remaining;
@@ -174,10 +176,10 @@ export async function verify({ configDir = resolveConfigDir(), opencodeVersion, 
   const tuiConfig = await readJsonConfig(path.join(configDir, "tui.json"));
   const serverTarget = path.join(targetDir, "opencode-server.mjs");
   const tuiTarget = path.join(targetDir, "opencode-tui.mjs");
-  if (!serverConfig.plugin?.some((entry) => entryMatches(entry, serverTarget))) {
+  if (!serverConfig.plugin?.some((entry) => entryMatches(entry, serverTarget, path.dirname(configDir)))) {
     throw new Error("opencode.json does not activate the Pomodoro server plugin; rerun install and fully restart OpenCode");
   }
-  if (!tuiConfig.plugin?.some((entry) => entryMatches(entry, tuiTarget))) {
+  if (!tuiConfig.plugin?.some((entry) => entryMatches(entry, tuiTarget, path.dirname(configDir)))) {
     throw new Error("tui.json does not activate the Pomodoro TUI plugin; rerun install and fully restart OpenCode");
   }
   if (tuiConfig.plugin_enabled?.[PLUGIN_ID] === false) {
