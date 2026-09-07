@@ -13,7 +13,7 @@ const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
 import { BrokerCore, MEMBER_LEASE_MS, runBroker } from "./broker.mjs";
 import { ActivationSession, MemberState, eventSessionId, memberId, normalizeEventType, reduceMemberEvent } from "./opencode-core.mjs";
 import {
-  MASK, StatusState, brokerSocketPath, discoverHostPid, ensureBroker, hashId, isSelectionPrompt, reporterSocketPath,
+  MASK, StatusState, brokerExecutable, brokerSocketPath, discoverHostPid, ensureBroker, hashId, isSelectionPrompt, reporterSocketPath,
   request, startReporter, structuredFailure, validateHookInput, workspaceRoot,
 } from "./reporter.mjs";
 
@@ -105,7 +105,39 @@ async function testPureCore() {
     "message attribution uses info.sessionID, never the message id");
   assert.equal(eventSessionId(opencodeEvent("session.updated", { info: { id: "ses-9", directory: "/x" } })), "ses-9");
   assert.equal(eventSessionId(opencodeEvent("message.part.updated", { part: { sessionID: "ses-9" } })), "ses-9");
+  assert.equal(brokerExecutable({ POMODORO_BROKER_NODE: "/opt/node-custom/bin/node" }, "/opt/homebrew/bin/opencode"),
+    "/opt/node-custom/bin/node", "the explicit broker runtime override wins");
+  assert.equal(brokerExecutable({}, "/opt/homebrew/bin/opencode"), "node",
+    "a non-Node plugin host resolves the broker runtime from PATH");
+  assert.equal(brokerExecutable({}, "/opt/homebrew/Cellar/node/25.8.2/bin/node"),
+    "/opt/homebrew/Cellar/node/25.8.2/bin/node", "a Node host keeps spawning its own executable");
   pass("OpenCode event compatibility aliases, Question tool detection, and shape-aware attribution");
+
+  const overrideRoot = await mkdtemp("/tmp/pomodoro-broker-runtime-");
+  const overrideStateDir = path.join(overrideRoot, "pomodoro", "agent-status");
+  const stubLog = path.join(overrideRoot, "stub.log");
+  const stub = path.join(overrideRoot, "stub-node");
+  await writeFile(stub, "#!/bin/sh\nprintf '%s\\n' \"$0 $*\" >> \"$STUB_LOG\"\nexec node \"$@\"\n", { mode: 0o755 });
+  const overrideEnv = {
+    ...process.env, XDG_STATE_HOME: overrideRoot,
+    POMODORO_BROKER_NODE: stub, STUB_LOG: stubLog,
+  };
+  const overrideSocket = brokerSocketPath(overrideEnv);
+  await ensureBroker(overrideSocket, { env: overrideEnv, timeoutMs: 2_000 });
+  await waitFor(async () => {
+    try { await stat(overrideSocket); return true; } catch { return false; }
+  }, 2_000, "the broker started through the overridden runtime");
+  const log = await readFile(stubLog, "utf8");
+  assert.match(log, new RegExp(stub.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the broker child ran the overridden executable");
+  assert.match(log, /broker\.mjs --idle/);
+  const probe = await request(overrideSocket, {
+    type: "report", groupId: "runtime-probe", memberId: "probe", pid: process.pid,
+    startedAt: Date.now(), mask: MASK.IDLE, host: "opencode",
+  }, 1_000);
+  assert.equal(probe.ok, true, "the broker started through the override serves real IPC");
+  pass("the broker child is spawned with an explicit Node runtime, not the plugin host executable");
+  await waitFor(() => stat(overrideSocket).then(() => false, () => true), MEMBER_LEASE_MS + 4_000,
+    "the on-demand broker started through the override exits when reports stop");
 }
 
 function brokerRequest(socketPath, value) { return request(socketPath, value, 1_000); }
@@ -920,6 +952,12 @@ async function testInstallationAndRecovery() {
   assert.deepEqual((await readdir(path.join(badShapeConfig, "plugins", "pomodoro-agent-status"))).sort(),
     ["broker.mjs", "opencode-core.mjs", "opencode-server.mjs", "opencode-tui.mjs", "reporter.mjs"],
     "the installed plugin directory survives a refused uninstall untouched");
+
+  assert.equal(await installer.verifyRuntimeNode(), "node", "verify validates the broker's Node runtime from PATH");
+  assert.throws(() => installer.verifyRuntimeNode({ POMODORO_BROKER_NODE: path.join(root, "missing-node") }), /POMODORO_BROKER_NODE/,
+    "a broken runtime override fails explicitly");
+  assert.throws(() => installer.verifyRuntimeNode({ PATH: path.join(root, "empty-path") }), /Node/,
+    "an unusable PATH fails explicitly instead of failing silently at selection time");
 
   const oldConfigDir = path.join(root, "old-config");
   await mkdir(oldConfigDir, { recursive: true });

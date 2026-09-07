@@ -170,7 +170,7 @@ node plugins/pomodoro-agent-status/scripts/install-opencode.mjs verify
 node plugins/pomodoro-agent-status/scripts/install-opencode.mjs uninstall
 ```
 
-`install` 是幂等的用户级安装：把权威源码复制到用户配置目录并在 `opencode.json`/`tui.json` 中注册 server 与 TUI 两个插件面。安装器只重写纯 JSON 配置：存在 `opencode.jsonc`/`tui.jsonc`（单独或与同名 JSON 并存）或任一配置无法解析时，安装/卸载/校验会在改动任何文件之前整体拒绝并给出手动处理指引。配置变更只在完全退出所有 OpenCode 进程并重启后生效。`verify` 会校验版本下限、文件一致性、两个注册项，并可用 `--project-dir DIR` 同时检查 `.opencode/plugin/` 与 `.opencode/plugins/` 两个项目级目录没有重复的 Pomodoro 插件副本。当前集成已实现并有自动化 host 检查覆盖；真实 OpenCode TUI 冒烟与物理设备验收仍待人工执行。
+`install` 是幂等的用户级安装：把权威源码复制到用户配置目录并在 `opencode.json`/`tui.json` 中注册 server 与 TUI 两个插件面。安装器只重写纯 JSON 配置：存在 `opencode.jsonc`/`tui.jsonc`（单独或与同名 JSON 并存）或任一配置无法解析时，安装/卸载/校验会在改动任何文件之前整体拒绝并给出手动处理指引。按需 broker 子进程用显式 Node 运行时启动：可用 `POMODORO_BROKER_NODE` 指定；非 Node 宿主（OpenCode/Bun TUI）从 PATH 解析 `node`，不可用时显式报错；`verify` 会校验该运行时。配置变更只在完全退出所有 OpenCode 进程并重启后生效。`verify` 会校验版本下限、文件一致性、两个注册项，并可用 `--project-dir DIR` 同时检查 `.opencode/plugin/` 与 `.opencode/plugins/` 两个项目级目录没有重复的 Pomodoro 插件副本。当前集成已实现并有自动化 host 检查覆盖；真实 OpenCode TUI 冒烟与物理设备验收仍待人工执行。
 
 在 OpenCode TUI 中输入 `/pomodoro-select` 直接选择当前 OpenCode Workspace。该动作不提交 prompt、不创建 Session 消息、不产生模型请求，也不产生伪状态周期。反馈只有三种有界结果：选择成功（含 revision）、等待 broker 接管、失败（保留原选择）。首版只支持从 OpenCode TUI 选择；OpenCode Desktop、Web、非交互 CLI 与 npm 发布不在范围内。`/pomodoro-select` 依赖 1.18.29 的直接 slash 注册 API（已标记 deprecated）。安装校验本身只校验版本下限与文件/注册项一致性；直接 slash API 由 TUI 插件在启动时校验——该 API 不可用时 TUI 插件启动显式失败，不会退化为会触发模型的同名 Markdown 命令。
 

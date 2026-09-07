@@ -22,6 +22,18 @@ export function hashId(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+// The detached broker must be executed by a real Node runtime. `process.execPath`
+// is Node when this code runs under Node (Codex, the installer, the host check),
+// but inside a non-Node plugin host — the compiled OpenCode/Bun TUI — it is that
+// host binary, which cannot execute the broker script. `POMODORO_BROKER_NODE`
+// overrides explicitly; otherwise a Node executable is resolved from PATH.
+export function brokerExecutable(env = process.env, execPath = process.execPath) {
+  const override = env.POMODORO_BROKER_NODE;
+  if (override) return override;
+  if (path.basename(execPath) === "node") return execPath;
+  return "node";
+}
+
 export async function workspaceRoot(cwd, gitRoot = defaultGitRoot) {
   const resolved = await realpath(cwd);
   try {
@@ -181,7 +193,7 @@ function brokerHasListener(socketPath) {
 export async function ensureBroker(socketPath, { env = process.env, timeoutMs = 750,
   brokerScript = path.join(path.dirname(fileURLToPath(import.meta.url)), "broker.mjs") } = {}) {
   if (await brokerHasListener(socketPath)) return false;
-  const child = spawn(process.execPath, [brokerScript, "--idle"], {
+  const child = spawn(brokerExecutable(env), [brokerScript, "--idle"], {
     detached: true, stdio: "ignore", env,
   });
   child.unref();

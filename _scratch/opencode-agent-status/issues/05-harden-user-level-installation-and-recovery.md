@@ -118,3 +118,7 @@ Evidence: `node plugins/pomodoro-agent-status/scripts/check.mjs` → 17 checks p
 **Per-criterion results (this round)**
 
 Criteria 1-3, 5-9 remain passed; criterion 4 remains pending human acceptance. No criterion regressed.
+
+### 2026-09-06 Real-TUI round fix: broker runtime validation (single coding executor)
+
+The coordinator's real-TUI repro showed the broker child never starts from the compiled OpenCode/Bun TUI because `ensureBroker()` spawned `process.execPath` (the host binary there). `reporter.mjs` now spawns an explicit Node runtime (`POMODORO_BROKER_NODE` override, else `node` from PATH; a Node host keeps its own executable). `verify` gained `verifyRuntimeNode`, which proves the configured runtime executes and fails explicitly otherwise — so a broken PATH or override is caught at verification time instead of failing silently at selection time inside the TUI. Isolated tests: a working PATH resolves `node`; a missing override executable and an unusable PATH both fail explicitly (check 18). The runtime-selection integration test pins the spawned executable via a recording/re-exec stub, independent of the test process's own runtime. Criterion 4 remains pending human acceptance (real TUI); criteria 1-3 and 5-9 remain passed.

@@ -93,3 +93,7 @@ Physical-device acceptance (criteria 6-7): with the broker running against real 
 **Check evidence**
 
 - `node plugins/pomodoro-agent-status/scripts/check.mjs` → `pomodoro-agent-status check: 21 checks passed`; CMake configure/build and CTest → 6/6; `git diff --check` clean.
+
+### 2026-09-06 Real-TUI round fix (single coding executor)
+
+The coordinator's real OpenCode 1.18.29 TUI repro exposed a bug the fake-API acceptance could not see: inside the compiled TUI, `ensureBroker()` spawned `process.execPath` (the OpenCode/Bun binary), so no broker could ever start and selection always failed with bounded "broker unavailable" feedback. Fixed by spawning an explicit Node runtime (`POMODORO_BROKER_NODE` override, else `node` from PATH; Node hosts keep their own executable), with `verify` validating that runtime. Product doc, README, and the curated spec now document the broker child's explicit Node runtime, the override, and the explicit-failure behavior. This is recorded truthfully as a fake-API acceptance gap: host-runtime differences only surface in the real TUI. Criteria 5-7 remain pending human acceptance; the coordinator must rerun the real-TUI smoke (criterion 5, and with it Ticket 02 criterion 1) after a full quit/restart now that the broker can start from the TUI.

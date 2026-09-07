@@ -206,6 +206,7 @@ export async function uninstall({ configDir = resolveConfigDir(), pluginDirName 
 
 export async function verify({ configDir = resolveConfigDir(), opencodeVersion, projectDir, pluginDirName = PLUGIN_DIRECTORY_NAME } = {}) {
   assertSupportedVersion(opencodeVersion);
+  verifyRuntimeNode();
   await assertPlainJsonConfigs(configDir);
   const targetDir = path.join(configDir, "plugins", pluginDirName);
   for (const file of PLUGIN_FILES) {
@@ -252,6 +253,25 @@ export async function verify({ configDir = resolveConfigDir(), opencodeVersion, 
 
 export function installedOpenCodeVersion({ opencode = "opencode", cwd = process.cwd() } = {}) {
   return execFileSync(opencode, ["--version"], { encoding: "utf8", cwd, timeout: 10_000 }).trim();
+}
+
+// The broker child is spawned from plugin hosts with an explicit Node executable
+// (POMODORO_BROKER_NODE override, else `node` from PATH). Validate that runtime
+// here so a broken PATH or override fails explicitly instead of silently at
+// selection time inside the TUI.
+export function verifyRuntimeNode(env = process.env) {
+  const override = env.POMODORO_BROKER_NODE;
+  const executable = override ?? "node";
+  try {
+    execFileSync(executable, ["--version"], { encoding: "utf8", timeout: 10_000, env });
+  } catch {
+    throw new Error(
+      override
+        ? `POMODORO_BROKER_NODE=${override} does not run; the broker child needs that Node executable to start.`
+        : "no Node executable is reachable on PATH; the broker child is spawned with an explicit Node runtime from non-Node hosts. Install Node on PATH or set POMODORO_BROKER_NODE.",
+    );
+  }
+  return executable;
 }
 
 async function main(args = process.argv.slice(2)) {
