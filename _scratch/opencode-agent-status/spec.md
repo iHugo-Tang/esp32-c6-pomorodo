@@ -120,6 +120,7 @@ The existing broker, USB ownership, flash reservation, `OC1` protocol, firmware 
 
 ## Further Notes
 
+- Delivery status: Ticket 01, the host-qualified Agent Source activation foundation, is accepted after coordinator inspection and independent Standards/Spec review. Tickets 02-06 remain outstanding, so this shared specification remains incomplete and retains the `ready-for-agent` label.
 - This specification implements the accepted architecture in ADR-0016 and preserves ADR-0012, ADR-0013, and ADR-0014. ADR-0015 is superseded.
 - The confirmed requirements handoff is the source for stable requirement identifiers `OCAS-R001` through `OCAS-R014`, acceptance identifiers `OCAS-AC001` through `OCAS-AC017`, and failure scenarios `OCAS-F001` through `OCAS-F007`.
 - The implementation should proceed through the confirmed candidate slices: establish the cross-host source model, add the OpenCode lifecycle adapter and host checks, add the direct TUI selection path, verify shared broker isolation and recovery, then align product documentation and perform hardware acceptance.
