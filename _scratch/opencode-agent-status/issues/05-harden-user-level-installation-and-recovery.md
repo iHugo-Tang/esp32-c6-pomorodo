@@ -146,3 +146,15 @@ The user suspected the stale old installations behind a permanently blue ESP32 W
 5. Passed: host check (23), syntax checks, CTest 6/6.
 6. Docs unchanged: this one-off cleanup does not change product scope or operator guidance (README already documents manual legacy-state removal).
 7. Pending human acceptance: fully restart Codex Desktop and OpenCode; re-trust the new hooks via `/hooks` (the reinstall changed hook hashes — trust state was reset); run `$pomodoro-select` and `/pomodoro-select`; observe source switching and Idle/Working/Waiting/Error/Completed; confirm the blue Working dot clears after idle without Pomodoro state changes.
+
+### 2026-09-06 Coordinator correction: stale reporter helpers terminated (user-authorized)
+
+The operational run left three old-plugin reporter helper processes alive (pids 10222, 17465, 33031, all `…/pomodoro-agent-status/0.1.0+codex.20260823200252/scripts/reporter.mjs`, orphaned to launchd). Because they could recreate the old broker/state on their threads' next lifecycle event, the user's clean-reinstall authorization was applied to exactly those helpers: command lines revalidated (each still the stale-version Pomodoro reporter; hosts untouched), then `kill 10222 17465 33031`. After one lease interval (12 s) the evidence is:
+
+- No process command references `pomodoro-agent-status/0.1.0+codex.20260823200252` (`ps ax | grep` → none).
+- `~/.local/state/opencode/pomodoro-status` remains absent.
+- The current `0.1.0` cache is untouched and still matches the repository (`diff -r` clean); no unrelated process was terminated (Codex hosts 7628/10789 confirmed alive).
+- Exactly one current broker (pid 57414) remains and exactly one process owns `/dev/cu.usbmodem11101` (`lsof`).
+- Install/config evidence still valid: exactly one server + one TUI entry, one enabled Codex registration, shared state present with restricted permissions.
+
+This supersedes the previous statement that the old reporters would simply die with their threads: they were user-authorized terminated targets, and human acceptance items (full Codex/OpenCode restarts, `/hooks` re-trust, both selections, device observation) are unchanged.

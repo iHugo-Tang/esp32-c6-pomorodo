@@ -101,3 +101,7 @@ The coordinator's real OpenCode 1.18.29 TUI repro exposed a bug the fake-API acc
 ### 2026-09-06 Operational run note (single coding executor, user-authorized one-off)
 
 A clean reinstall of both hosts and both Pomodoro state directories was performed at the user's request (details and per-criterion evidence in Ticket 05's operational comment). Server/serial-side evidence is now concrete: no legacy broker exists, the legacy state directory is removed, and exactly one current broker owns `/dev/cu.usbmodem11101`, publishing the activated Workspace's Idle. This does not change the acceptance boundaries: criteria 5-7 remain pending human acceptance — full Codex Desktop/OpenCode restarts, `/hooks` re-trust (hook hashes changed with the reinstall), `$pomodoro-select` and `/pomodoro-select` runs, source-switching observation, and the visual confirmation that the blue Working dot clears after idle without Pomodoro state changes.
+
+### 2026-09-06 Correction (single coding executor)
+
+The operational note above said the three old-plugin reporter helpers would die with their user threads. That is superseded: the user's clean-reinstall authorization covered terminating those exact helper PIDs, which was done after revalidating their command lines; no stale-version process remains, no legacy broker/state can be recreated, and exactly one current broker owns the device. Criteria 5-7 remain pending human acceptance as stated.
