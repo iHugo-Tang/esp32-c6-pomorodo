@@ -393,10 +393,147 @@ async function testOnDemandBroker() {
   pass("on-demand broker exits after reports stop");
 }
 
+function forbiddenClientProxy(counter) {
+  return new Proxy({}, {
+    get(target, property) {
+      counter.clientTouches.push(String(property));
+      return () => { throw new Error("model/session API use is forbidden in this check"); };
+    },
+  });
+}
+
+function fakeTuiApi({ directory, worktree, counter }) {
+  const disposers = [];
+  const commands = [];
+  return {
+    api: {
+      app: { version: "1.18.29" },
+      command: {
+        register: (factory) => {
+          commands.push(factory);
+          return () => {};
+        },
+        trigger: () => counter.triggers++,
+        show: () => counter.triggers++,
+      },
+      ui: { toast: (input) => counter.toasts.push(input) },
+      state: { path: { directory, worktree, state: directory, config: directory } },
+      client: forbiddenClientProxy(counter),
+      lifecycle: {
+        signal: new AbortController().signal,
+        onDispose(fn) { disposers.push(fn); return () => {}; },
+      },
+    },
+    commands: () => commands.flatMap((factory) => factory()),
+    toasts: () => counter.toasts,
+    dispose: () => Promise.all(disposers.map((fn) => fn())),
+  };
+}
+
+async function testOpenCodePluginSelection() {
+  const root = await mkdtemp("/tmp/pomodoro-opencode-plugin-");
+  const workspace = path.join(root, "workspace");
+  await mkdir(workspace);
+  const stateDir = path.join(root, "pomodoro", "agent-status");
+  const env = { ...process.env, XDG_STATE_HOME: root };
+  const counter = { toasts: [], triggers: 0, clientTouches: [] };
+  const tui = fakeTuiApi({ directory: workspace, worktree: workspace, counter });
+  const socketGone = () => stat(broker.socketPath).then(() => false, () => true);
+  const broker = await runBroker({ stateDir, logger: () => {}, publisherOptions: { resolvePort: async () => null } });
+  const serverInput = {
+    project: { id: "proj" },
+    directory: workspace,
+    worktree: workspace,
+    client: forbiddenClientProxy(counter),
+    serverUrl: new URL("http://127.0.0.1:0"),
+    $: undefined,
+  };
+  try {
+    const serverModule = await import("./opencode-server.mjs");
+    const serverExport = Object.entries(serverModule).filter(([, value]) => typeof value === "function");
+    assert.equal(serverExport.length, 1, "the server plugin module exports exactly one plugin function");
+    const hooks = await serverExport[0][1](serverInput, { env });
+
+    const tuiModule = await import("./opencode-tui.mjs");
+    assert.equal(typeof tuiModule.default, "object", "the TUI module is a { id, tui } module");
+    await tuiModule.default.tui(tui.api, { env });
+    const commands = tui.commands();
+    assert.equal(commands.length, 1, "exactly one TUI command is registered");
+    assert.deepEqual(commands[0].slash, { name: "pomodoro-select" });
+    assert.equal(typeof commands[0].onSelect, "function");
+
+    const groupId = hashId(await realpath(workspace));
+    const before = broker.core.revision;
+    commands[0].onSelect();
+    const selection = await waitFor(() => broker.core.selected === `opencode:${groupId}` && broker.core.revision === before + 1)
+      .then(() => true, () => { throw new Error("selection did not create exactly one revision"); });
+    assert.equal(selection, true);
+    assert.deepEqual(broker.core.publication(), { revision: before + 1, mask: MASK.IDLE });
+    assert.equal(counter.triggers, 0, "selection did not trigger any command dispatch");
+    await waitFor(() => tui.toasts().length === 1);
+    assert.match(tui.toasts()[0].message, /revision/);
+    assert.deepEqual(counter.clientTouches, [], "neither plugin touched the SDK client (no model, message, or Task use)");
+
+    commands[0].onSelect();
+    await waitFor(() => broker.core.revision === before + 2, 2_000);
+    assert.equal(broker.core.revision, before + 2, "repeat selection creates exactly one more revision");
+    assert.equal(counter.clientTouches.length, 0);
+    await waitFor(() => tui.toasts().length === 2);
+    assert.match(tui.toasts()[1].message, /revision/);
+
+    const tuiSession = `ses-tui-${process.pid}`;
+    await hooks.event({ event: { type: "session.created", properties: { info: { id: tuiSession, directory: workspace } } } });
+    await hooks.event({ event: { type: "session.status", properties: { sessionID: tuiSession, status: { type: "busy" } } } });
+    await waitFor(() => broker.core.publication()?.mask === MASK.WORKING);
+    assert.equal(broker.core.selected, `opencode:${groupId}`);
+    await hooks.event({ event: { type: "session.idle", properties: { sessionID: tuiSession } } });
+    await waitFor(() => broker.core.publication()?.mask === MASK.COMPLETED);
+    assert.equal(counter.clientTouches.length, 0, "the lifecycle path created no client or model effects");
+    await hooks.dispose();
+
+    const persistedBefore = await readFile(path.join(stateDir, "agent-coordination.json"), "utf8");
+    await broker.close();
+    const impostorSockets = new Set();
+    const impostor = net.createServer((socket) => {
+      impostorSockets.add(socket);
+      socket.once("close", () => impostorSockets.delete(socket));
+      socket.end("not-json\n");
+    });
+    await new Promise((resolve) => impostor.listen(broker.socketPath, resolve));
+    tui.commands()[0].onSelect();
+    await waitFor(() => tui.toasts().length === 3);
+    assert.equal(tui.toasts()[2].variant, "error", "selection failure feedback is bounded and visible");
+    assert.doesNotMatch(tui.toasts()[2].message, /Error:|at /, "failure feedback exposes no error details");
+    assert.deepEqual(counter.clientTouches, []);
+    for (const socket of impostorSockets) socket.destroy();
+    await new Promise((resolve) => impostor.close(() => resolve()));
+    assert.equal(await readFile(path.join(stateDir, "agent-coordination.json"), "utf8"), persistedBefore,
+      "the failed selection neither changed nor overwrote the persisted selection");
+
+    tui.commands()[0].onSelect();
+    await waitFor(() => tui.toasts().length === 4);
+    assert.equal(tui.toasts()[3].variant, "info", "a freshly started broker reports waiting-for-takeover feedback");
+    assert.match(tui.toasts()[3].message, /waiting for the broker/);
+    const resumed = await request(brokerSocketPath(env), {
+      type: "report", groupId: hashId(await realpath(workspace)), memberId: "check-probe",
+      pid: process.pid, startedAt: Date.now(), mask: MASK.IDLE, host: "opencode",
+    }, 1_000);
+    const persistedRevision = JSON.parse(persistedBefore).revision;
+    assert.deepEqual(resumed, { ok: true, selected: hashId(await realpath(workspace)), revision: persistedRevision + 2, selectedHost: "opencode" },
+      "the on-demand broker restored the persisted selection; the returning member's recovery report and the select each advance exactly once");
+    pass("real plugin entry points select the Workspace with one revision, publish Working/Completed, start the broker on demand, and fail without a broker");
+  } finally {
+    await tui.dispose().catch(() => {});
+    await broker.close().catch(() => {});
+    await waitFor(socketGone, MEMBER_LEASE_MS + 4_000);
+  }
+}
+
 await testPureCore();
 await testHookSelection();
 await testReporterIntegration();
 await testOpenCodeActivation();
+await testOpenCodePluginSelection();
 await testUnselectedExpiryIsolation();
 await testLegacyPersistedSelection();
 await testBrokerRecoveryAndFailures();
