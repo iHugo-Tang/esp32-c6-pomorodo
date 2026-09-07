@@ -22,6 +22,7 @@ const REQUEST_FIELDS = {
   report: ["type", "groupId", "memberId", "pid", "startedAt", "mask"],
   select: ["type", "groupId"],
   remove: ["type", "groupId", "memberId"],
+  activate: ["type", "groupId", "memberId", "pid", "startedAt", "mask"],
 };
 
 function exactFields(value, expected) {
@@ -68,7 +69,7 @@ export function validateRequest(value, isAlive = pidIsAlive) {
   if (value.type !== "select" && !validId(value.memberId)) {
     throw new Error("invalid memberId");
   }
-  if (value.type === "report") {
+  if (value.type === "report" || value.type === "activate") {
     if (!Number.isSafeInteger(value.pid) || value.pid <= 0 || !isAlive(value.pid)) {
       throw new Error("pid is not alive");
     }
@@ -182,6 +183,14 @@ export class BrokerCore {
       if (request.type === "select") {
         if (!this.sourceIsLive(source)) throw new Error("source has no live members");
         await this.advance(source);
+      } else if (request.type === "activate") {
+        // One serialized operation: refresh the activation member and perform the
+        // explicit selection, so every accepted activation costs exactly one advance
+        // regardless of prior state (fresh, live reselect, or selected-but-vacant).
+        await this.advance(source);
+        const members = this.members.get(source) ?? new Map();
+        members.set(request.memberId, { ...request, lastSeen: this.now() });
+        this.members.set(source, members);
       } else if (request.type === "remove") {
         const members = this.members.get(source);
         const oldMask = this.sourceMask(source);

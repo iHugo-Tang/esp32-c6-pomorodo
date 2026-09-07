@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
-import { chmod, mkdir, readFile, readdir, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, readdir, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -128,8 +128,7 @@ async function installPluginFiles(targetDir) {
   await chmod(targetDir, 0o755);
 }
 
-async function assertNotDisabled(configDir) {
-  const tuiConfig = await readJsonConfig(path.join(configDir, "tui.json"));
+async function assertNotDisabled(tuiConfig) {
   if (tuiConfig.plugin_enabled?.[PLUGIN_ID] === false) {
     throw new Error(
       `tui.json disables the "${PLUGIN_ID}" plugin via plugin_enabled. `
@@ -138,34 +137,71 @@ async function assertNotDisabled(configDir) {
   }
 }
 
+// The installer only rewrites plain-JSON `opencode.json` and `tui.json`. When a
+// JSONC variant exists (JSONC-only or next to a JSON file) it refuses before any
+// copy or write, because a naive JSON rewrite would strip comments or create a
+// conflicting second global configuration.
+export async function assertPlainJsonConfigs(configDir) {
+  for (const base of ["opencode", "tui"]) {
+    const jsoncPath = path.join(configDir, `${base}.jsonc`);
+    const jsonPath = path.join(configDir, `${base}.json`);
+    const jsoncExists = await stat(jsoncPath).then(() => true, (error) => {
+      if (error?.code === "ENOENT") return false;
+      throw error;
+    });
+    if (!jsoncExists) continue;
+    const jsonExists = await stat(jsonPath).then(() => true, (error) => {
+      if (error?.code === "ENOENT") return false;
+      throw error;
+    });
+    throw new Error(
+      `${jsoncExists ? jsoncPath : ""} uses JSONC${jsonExists ? ` next to an existing ${jsonPath}` : ""}. `
+      + "This installer only rewrites plain-JSON configuration and cannot preserve comments; it refuses to "
+      + "create or modify a conflicting configuration. Resolve manually: keep the .jsonc file and add the "
+      + "Pomodoro plugin entries by hand (absolute paths to plugins/pomodoro-agent-status/opencode-server.mjs "
+      + "in the opencode plugin list and opencode-tui.mjs in the tui plugin list), or migrate the config to "
+      + "plain JSON first, then rerun install.",
+    );
+  }
+}
+
 export async function install({ configDir = resolveConfigDir(), opencodeVersion, pluginDirName = PLUGIN_DIRECTORY_NAME } = {}) {
   assertSupportedVersion(opencodeVersion);
-  await assertNotDisabled(configDir);
+  // Validate everything that could refuse before copying or writing anything.
+  await assertPlainJsonConfigs(configDir);
+  const serverConfigPath = path.join(configDir, "opencode.json");
+  const tuiConfigPath = path.join(configDir, "tui.json");
+  const serverConfig = await readJsonConfig(serverConfigPath);
+  const tuiConfig = await readJsonConfig(tuiConfigPath);
+  pluginEntries(serverConfig);
+  pluginEntries(tuiConfig);
+  await assertNotDisabled(tuiConfig);
   const targetDir = path.join(configDir, "plugins", pluginDirName);
   await installPluginFiles(targetDir);
   const serverTarget = path.join(targetDir, "opencode-server.mjs");
   const tuiTarget = path.join(targetDir, "opencode-tui.mjs");
-  await upsertPluginEntry(path.join(configDir, "opencode.json"), serverTarget);
-  await upsertPluginEntry(path.join(configDir, "tui.json"), tuiTarget);
+  await upsertPluginEntry(serverConfigPath, serverTarget);
+  await upsertPluginEntry(tuiConfigPath, tuiTarget);
   return { configDir, pluginDir: targetDir, serverTarget, tuiTarget };
 }
 
 export async function uninstall({ configDir = resolveConfigDir(), pluginDirName = PLUGIN_DIRECTORY_NAME } = {}) {
+  await assertPlainJsonConfigs(configDir);
+  // Parse both configs before touching anything so a malformed file fails closed.
+  await readJsonConfig(path.join(configDir, "opencode.json"));
+  await readJsonConfig(path.join(configDir, "tui.json"));
   const targetDir = path.join(configDir, "plugins", pluginDirName);
   const serverTarget = path.join(targetDir, "opencode-server.mjs");
   const tuiTarget = path.join(targetDir, "opencode-tui.mjs");
-  await removePluginEntry(path.join(configDir, "opencode.json"), serverTarget).catch((error) => {
-    if (error?.code !== "ENOENT") throw error;
-  });
-  await removePluginEntry(path.join(configDir, "tui.json"), tuiTarget).catch((error) => {
-    if (error?.code !== "ENOENT") throw error;
-  });
+  await removePluginEntry(path.join(configDir, "opencode.json"), serverTarget);
+  await removePluginEntry(path.join(configDir, "tui.json"), tuiTarget);
   await rm(targetDir, { recursive: true, force: true });
   return { configDir, removed: targetDir };
 }
 
 export async function verify({ configDir = resolveConfigDir(), opencodeVersion, projectDir, pluginDirName = PLUGIN_DIRECTORY_NAME } = {}) {
   assertSupportedVersion(opencodeVersion);
+  await assertPlainJsonConfigs(configDir);
   const targetDir = path.join(configDir, "plugins", pluginDirName);
   for (const file of PLUGIN_FILES) {
     const installed = await readFile(path.join(targetDir, file), "utf8");
@@ -186,15 +222,19 @@ export async function verify({ configDir = resolveConfigDir(), opencodeVersion, 
     throw new Error(`tui.json disables "${PLUGIN_ID}" via plugin_enabled; the TUI surface is not active`);
   }
   if (projectDir) {
-    const local = path.join(path.resolve(projectDir), ".opencode", "plugins");
-    let names = [];
-    try {
-      names = await readdir(local);
-    } catch (error) {
-      if (error?.code !== "ENOENT") throw error;
-    }
-    if (names.some((name) => name.toLowerCase().includes("pomodoro"))) {
-      throw new Error(`${local} contains a project-level Pomodoro plugin copy; remove it to avoid loading the integration twice`);
+    const projectRoot = path.resolve(projectDir);
+    // OpenCode loads project-level plugins from both canonical directories.
+    for (const dirName of ["plugin", "plugins"]) {
+      const local = path.join(projectRoot, ".opencode", dirName);
+      let names = [];
+      try {
+        names = await readdir(local);
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw error;
+      }
+      if (names.some((name) => name.toLowerCase().includes("pomodoro"))) {
+        throw new Error(`${local} contains a project-level Pomodoro plugin copy; remove it to avoid loading the integration twice`);
+      }
     }
   }
   return {

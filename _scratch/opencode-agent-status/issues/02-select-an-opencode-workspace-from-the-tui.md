@@ -78,3 +78,28 @@
 **Remaining human checks**
 
 - Criterion 1: real OpenCode 1.18.29 TUI slash autocomplete smoke test after a full quit/restart (instructions in Ticket 06).
+
+### 2026-09-06 Coordinator review round 2 fixes (single coding executor)
+
+**Gap fixed (High): concurrent activation correctness.**
+
+- The select-first/report/conditional-select flow was not atomic: with two concurrent first activations, A's select+select could interleave with B's report such that B observed the source already selected at an unchanged revision and returned without advancing — a zero-revision invocation, violating the confirmed contract.
+- The broker now has a dedicated atomic operation: `activate` carries the strictly validated member fields (`groupId`, `memberId`, alive `pid`, `startedAt`, `mask` 0..15) plus the optional `host`, and executes as one serialized broker-queue step that refreshes the activation member and performs the explicit selection — exactly one advance per accepted invocation in every state (fresh unselected source, live reselect, selected-but-vacant recovery after restart, or switching from another selected source). Strict exact-field/8 KiB/PID/mask validation, the Codex first-valid-source rule for `report`, persistence, request-scoped reaping, and sole broker serial ownership are unchanged. Unlike `report`, `activate` may establish a first selection for its host (it is an explicit selection action, not lifecycle activity).
+- `ActivationSession.activate()` now sends exactly one `activate` request. The select-first branching, its docs, and its evidence are superseded and removed: the parent spec's interface summary and the curated spec's broker/`/pomodoro-select` sections now describe the atomic operation, and the request list includes `activate`.
+
+**Check evidence**
+
+- New check 9 (`testAtomicActivation`): fresh unselected source +1 (revision 1), live reselect +1 (revision 2), eight invalid `activate` requests rejected over the real socket with the revision unchanged (missing mask/field, extra field, dead PID, `startedAt: 0`, mask 16, invalid host string, missing `memberId`, numeric host), a host-less `activate` accepted as Codex with the historical response shape, activation while another source is selected +1, and three concurrent `ActivationSession.activate()` calls (two same-root, one other-root) returning three distinct monotonic revisions with the broker revision equal to the last accepted one. After a broker restart with persisted selected-but-vacant state, one activation advances exactly `persisted + 1` and publication resumes in the same step (check 10).
+- `node plugins/pomodoro-agent-status/scripts/check.mjs` → `pomodoro-agent-status check: 21 checks passed` (plugin/TUI-path checks 11-13 now exercise the atomic activation; the on-demand restored-selection assertion remains `persisted + 1`).
+- `node --check` on all plugin scripts → clean; `git diff --check` → clean.
+
+**Per-criterion results (this round)**
+
+1. Still pending human acceptance (unchanged).
+2-3. Passed, evidence unchanged.
+4. Passed, now provably under concurrency: every accepted invocation advances exactly once — serial, concurrent, fresh, reselect, and selected-vacant recovery (check 9/10 plus the TUI-path checks 11-12).
+5-8. Passed, evidence unchanged.
+
+**Remaining human checks**
+
+- Criterion 1: real OpenCode 1.18.29 TUI slash autocomplete smoke test (Ticket 06 instructions).

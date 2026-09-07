@@ -190,27 +190,16 @@ export class ActivationSession {
   async activate() {
     const brokerWasRunning = await hasListener(this.socketPath);
     await ensureBroker(this.socketPath, { env: this.env });
-    // Select first so a selection against a live source costs exactly one revision.
-    const select = () => request(this.socketPath, {
-      type: "select", groupId: this.groupId, host: "opencode",
+    // One atomic broker operation: refresh the activation member and select the
+    // Workspace in a single queued step, so every accepted invocation advances
+    // exactly one revision in every state (fresh, live reselect, selected-vacant).
+    const reply = await request(this.socketPath, {
+      type: "activate", groupId: this.groupId, memberId: this.memberId,
+      pid: this.pid, startedAt: this.startedAt, mask: MASK.IDLE, host: "opencode",
     }, SELECT_TIMEOUT_MS);
-    const first = await select();
-    if (first?.ok) {
-      this.keepAlive();
-      return this.result(brokerWasRunning, first.revision);
-    }
-    // The source has no live members: report the activation member, then either the
-    // member-return itself re-established the selection (one recovery advance) or an
-    // explicit select performs the single required advance. Never both.
-    const reportReply = await this.report();
-    if (reportReply.selected === this.groupId && reportReply.selectedHost === "opencode") {
-      this.keepAlive();
-      return this.result(brokerWasRunning, reportReply.revision);
-    }
-    const second = await select();
-    if (!second?.ok) throw new Error(second?.error || "broker rejected selection");
+    if (!reply?.ok) throw new Error(reply?.error || "broker rejected activation");
     this.keepAlive();
-    return this.result(brokerWasRunning, second.revision);
+    return this.result(brokerWasRunning, reply.revision);
   }
 
   result(brokerWasRunning, revision) {

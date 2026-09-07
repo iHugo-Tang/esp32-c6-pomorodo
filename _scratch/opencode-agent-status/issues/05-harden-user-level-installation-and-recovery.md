@@ -84,3 +84,25 @@ Evidence: `node plugins/pomodoro-agent-status/scripts/check.mjs` → 17 checks p
 **Remaining human checks**
 
 - Criterion 4 (and Ticket 02 criterion 1, Ticket 06 criteria 5-7): real TUI and physical-device acceptance as instructed in Ticket 06.
+
+### 2026-09-06 Coordinator review round 2 fixes (single coding executor)
+
+**Gaps fixed**
+
+1. **(Medium) Project duplicate detection covers both canonical directories.** `verify --project-dir` now checks `.opencode/plugin/` (singular) and `.opencode/plugins/` (plural). Isolated tests: a singular-directory Pomodoro copy is rejected, a plural-directory copy is rejected, and absent directories (both temp projects and the Pomodoro repository) pass (check 13).
+2. **(Medium) JSONC safety / all-or-nothing installation.** The installer rewrites plain JSON only. `install`, `uninstall`, and `verify` now refuse — before copying or writing anything — when `opencode.jsonc` or `tui.jsonc` exists (JSONC-only or next to a JSON file), with precise manual-resolution guidance; both target files are parsed (and the `plugin` arrays validated, plus the `plugin_enabled` disable state) before the first mutation, so a malformed file fails closed with no partial changes. Isolated tests: a JSONC-only config refuses install with the JSONC source byte-identical, the plain TUI config byte-identical, and no plugin directory or conflicting `opencode.json` created; a dual JSON/JSONC config refuses; `uninstall` refuses on the same condition; a malformed `tui.json` next to a valid `opencode.json` fails with neither file modified and no plugin directory created (check 13).
+3. **(Documentation truth) Version naming.** Corrected: the OpenCode binary is 1.18.29; the actual installed `@opencode-ai/plugin` and `@opencode-ai/sdk` packages resolved by the active installation (`~/.config/opencode/node_modules/`) are version **1.18.29** (inspected on this machine; the round-1 comment's "version 1.18.29" attribution was to those packages, which is accurate here, but the phrasing now names the packages and their inspected locations). Stale plugin-package copies exist elsewhere on this machine (`~/.opencode/node_modules` at 1.4.11 and a nested config at 1.17.18) and are documented as not the runtime contract. The coordinator-reported 1.2.25 was not found in any installed location on this machine; no doc claims it. The root SDK Event shapes are described as those shipped alongside the current installation rather than as a package-version claim.
+
+**Check evidence**
+
+- `node plugins/pomodoro-agent-status/scripts/check.mjs` → `pomodoro-agent-status check: 21 checks passed`.
+- Isolated CLI round trip with real `opencode --version` (1.18.29) on a temp config: install → verify → relative-entry rewrite → install (no duplicate) → verify → uninstall (both relative entries removed); `node --check` clean; CMake/CTest 6/6; `git diff --check` clean.
+
+**Per-criterion results (this round)**
+
+1-3, 5-9. Passed, evidence unchanged or strengthened (criterion 1's duplicate evidence now spans both canonical directories and the JSONC no-partial-mutation assertions; criterion 9's isolation evidence unchanged).
+4. Still pending human acceptance — requires observing `/pomodoro-select` discoverable and dispatched in the real shipped TUI after a full quit/restart (Ticket 06 instructions).
+
+**Remaining human checks**
+
+- Criterion 4 (and Ticket 02 criterion 1, Ticket 06 criteria 5-7): real TUI and physical-device acceptance as instructed in Ticket 06.

@@ -52,7 +52,7 @@ Real TUI smoke test (criterion 5):
 1. Fully quit every OpenCode process (verify with `pgrep -fl opencode`), then run `node plugins/pomodoro-agent-status/scripts/install-opencode.mjs install` and start OpenCode fresh so the new user-level plugins load.
 2. In the TUI, type `/` and confirm exactly one `pomodoro-select` entry appears in slash autocomplete (no duplicate Markdown command of the same name).
 3. Invoke it in a session with visible work; confirm a bounded success (or waiting, when the broker had to start) toast appears with a revision, and that no prompt is submitted, no Session message/Task is created, and no model request is made (session transcript and token usage must stay unchanged).
-4. Repeat the invocation and confirm the feedback shows a new revision. Then quit OpenCode fully again, start it once more, and invoke again to confirm the selection and publication recover with exactly one new revision. An induced real-TUI failure case is not required: with the implemented activation, stopping the broker and re-invoking restarts it on demand and yields waiting/success feedback rather than failure, and forcing a failure in the live TUI would require breaking the broker or state directory on purpose. If a failure case is wanted anyway, stop a foreground broker with Ctrl+C and immediately revoke the state directory's write permission before invoking — otherwise skip it.
+4. Repeat the invocation and confirm the feedback shows a new revision. Then quit OpenCode fully again, start it once more, and invoke again to confirm the selection and publication recover with exactly one new revision. An induced real-TUI failure case is not required and no destructive mutation of the live setup is suggested; with the implemented activation, stopping the broker and re-invoking restarts it on demand and yields waiting/success feedback rather than failure.
 5. If a broker must be stopped for any step, do not use broad `pkill -f` patterns; find the specific process (`pgrep -f "broker.mjs --idle"` for on-demand brokers, or run a foreground broker and stop it with Ctrl+C) and `kill <recorded pid>`.
 6. Record the observed results in this ticket's comments.
 
@@ -78,3 +78,18 @@ Physical-device acceptance (criteria 6-7): with the broker running against real 
 **Check evidence**
 
 - `node plugins/pomodoro-agent-status/scripts/check.mjs` → `pomodoro-agent-status check: 19 checks passed`; CMake configure/build and CTest → 6/6; `git diff --check` clean.
+
+### 2026-09-06 Coordinator review round 2 fixes (single coding executor)
+
+1. **(Safety) The optional failure procedure was removed.** The previous smoke instructions suggested revoking state-directory write permission in the live user setup — a destructive mutation that is unnecessary because a real failure case is not required by criterion 5. The instructions now contain only safe restart/reselection steps and recorded-PID process handling (`pgrep -f "broker.mjs --idle"` → `kill <pid>`, or a foreground broker stopped with Ctrl+C); broad `pkill -f` remains forbidden.
+2. **(Documentation truth) Delivered vs accepted.** The product doc, curated spec, README, and parent spec now state explicitly that "delivered/implemented" means implemented and covered by the automated host checks, while the real OpenCode TUI smoke test and all physical-device criteria remain pending human execution; no doc claims validation that did not occur. The parent spec carries a dedicated "Delivery truth" note.
+3. **(Supporting changes verified this round)** Atomic broker `activate` operation (member refresh + selection in one serialized step, exactly one revision per accepted invocation including concurrent ones) replaced the non-atomic select-first flow; installer duplicate detection covers both canonical project directories and JSONC/malformed configurations are refused before any mutation. Evidenced in Tickets 02 and 05 comments and by the 21-check host suite.
+
+**Per-criterion results (this round)**
+
+1-4, 8. Passed, evidence unchanged or strengthened.
+5-7. Still pending human acceptance with the corrected, non-destructive instructions above.
+
+**Check evidence**
+
+- `node plugins/pomodoro-agent-status/scripts/check.mjs` → `pomodoro-agent-status check: 21 checks passed`; CMake configure/build and CTest → 6/6; `git diff --check` clean.

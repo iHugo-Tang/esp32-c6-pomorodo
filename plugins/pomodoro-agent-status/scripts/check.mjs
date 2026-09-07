@@ -874,6 +874,14 @@ async function testInstallationAndRecovery() {
     await installer.verify({ ...installOptions, projectDir });
     assert.equal(await projectCopies(projectDir), 0, `no project-level Pomodoro plugin copy exists for ${projectDir}`);
   }
+  const projectSingular = path.join(root, "project-singular");
+  const projectPlural = path.join(root, "project-plural");
+  await mkdir(path.join(projectSingular, ".opencode", "plugin", "pomodoro-copy"), { recursive: true });
+  await mkdir(path.join(projectPlural, ".opencode", "plugins", "pomodoro-copy"), { recursive: true });
+  await assert.rejects(installer.verify({ ...installOptions, projectDir: projectSingular }), /project-level Pomodoro plugin copy/,
+    "a singular .opencode/plugin duplicate is rejected");
+  await assert.rejects(installer.verify({ ...installOptions, projectDir: projectPlural }), /project-level Pomodoro plugin copy/,
+    "a plural .opencode/plugins duplicate is rejected");
 
   const serverConfigPath = path.join(configDir, "opencode.json");
   const tuiConfigPath = path.join(configDir, "tui.json");
@@ -907,6 +915,40 @@ async function testInstallationAndRecovery() {
   await assert.rejects(tuiModule.default.tui({ ui: { toast() {} } }), /api\.command/,
     "TUI initialization fails explicitly without the direct slash API");
   await assert.rejects(tuiModule.default.tui({ command: { register() {}, trigger() {} } }), /toast/);
+
+  const jsoncConfig = path.join(root, "jsonc-config");
+  await mkdir(jsoncConfig, { recursive: true });
+  const jsonc = `{\n  // user comment that must survive\n  "theme": "opencode"\n}\n`;
+  await writeFile(path.join(jsoncConfig, "opencode.jsonc"), jsonc, { mode: 0o600 });
+  const tuiPlain = `{\n  "theme": "opencode"\n}\n`;
+  await writeFile(path.join(jsoncConfig, "tui.json"), tuiPlain, { mode: 0o600 });
+  await assert.rejects(installer.install({ configDir: jsoncConfig, opencodeVersion: "1.18.29" }), /JSONC/,
+    "a JSONC-only configuration refuses installation instead of creating a conflicting opencode.json");
+  assert.equal(await readFile(path.join(jsoncConfig, "opencode.jsonc"), "utf8"), jsonc,
+    "the JSONC source stays byte-identical after refusal");
+  assert.equal(await readFile(path.join(jsoncConfig, "tui.json"), "utf8"), tuiPlain,
+    "the plain TUI config stays byte-identical after refusal");
+  assert.deepEqual(await readdir(jsoncConfig).then((files) => files.sort()), ["opencode.jsonc", "tui.json"],
+    "no plugin directory or conflicting config was created");
+
+  await writeFile(path.join(jsoncConfig, "opencode.json"), `${tuiPlain}`, { mode: 0o600 });
+  await assert.rejects(installer.install({ configDir: jsoncConfig, opencodeVersion: "1.18.29" }), /JSONC/,
+    "a dual JSON/JSONC configuration also refuses");
+  await assert.rejects(installer.uninstall({ configDir: jsoncConfig }), /JSONC/,
+    "uninstall refuses to edit configurations it cannot parse safely");
+  assert.equal(await readFile(path.join(jsoncConfig, "opencode.jsonc"), "utf8"), jsonc);
+
+  const partialConfig = path.join(root, "partial-config");
+  await mkdir(partialConfig, { recursive: true });
+  const validServer = `{\n  "theme": "x"\n}\n`;
+  await writeFile(path.join(partialConfig, "opencode.json"), validServer, { mode: 0o600 });
+  await writeFile(path.join(partialConfig, "tui.json"), "{broken\n", { mode: 0o600 });
+  await assert.rejects(installer.install({ configDir: partialConfig, opencodeVersion: "1.18.29" }), /not valid JSON/,
+    "a malformed TUI config fails before any mutation");
+  assert.equal(await readFile(path.join(partialConfig, "opencode.json"), "utf8"), validServer,
+    "the valid config is untouched by the failed install");
+  assert.deepEqual(await readdir(partialConfig).then((files) => files.sort()), ["opencode.json", "tui.json"],
+    "no plugin directory was created for a failed all-or-nothing install");
 
   const stateRoot = path.join(root, "state");
   const stateDir = path.join(stateRoot, "pomodoro", "agent-status");
@@ -1019,10 +1061,89 @@ async function testActivationRetention() {
   }
 }
 
+async function testAtomicActivation() {
+  const root = await mkdtemp("/tmp/pomodoro-atomic-activation-");
+  const workspaceA = path.join(root, "ws-a");
+  const workspaceB = path.join(root, "ws-b");
+  await mkdir(workspaceA);
+  await mkdir(workspaceB);
+  const stateDir = path.join(root, "pomodoro", "agent-status");
+  const env = { ...process.env, XDG_STATE_HOME: root };
+  const rootA = await realpath(workspaceA);
+  const rootB = await realpath(workspaceB);
+  const groupA = hashId(rootA);
+  const groupB = hashId(rootB);
+  let broker = await runBroker({ stateDir, logger: () => {}, publisherOptions: { resolvePort: async () => null } });
+  const activationA = () => new ActivationSession({ root: rootA, env });
+  const activationB = () => new ActivationSession({ root: rootB, env });
+  try {
+    assert.equal(await (await activationA()).activate().then((r) => r.revision), 1, "fresh unselected source: exactly one advance");
+    assert.equal(await (await activationA()).activate().then((r) => r.revision), 2, "live reselect: exactly one advance");
+
+    const invalid = [
+      { type: "activate", groupId: groupA, memberId: "m", pid: process.pid, startedAt: Date.now() },
+      { type: "activate", groupId: groupA, memberId: "m", pid: process.pid, startedAt: Date.now(), mask: MASK.IDLE, host: "opencode", extra: 1 },
+      { type: "activate", groupId: groupA, memberId: "m", pid: 0x7fffffff, startedAt: Date.now(), mask: MASK.IDLE, host: "opencode" },
+      { type: "activate", groupId: groupA, memberId: "m", pid: process.pid, startedAt: 0, mask: MASK.IDLE, host: "opencode" },
+      { type: "activate", groupId: groupA, memberId: "m", pid: process.pid, startedAt: Date.now(), mask: 16, host: "opencode" },
+      { type: "activate", groupId: groupA, memberId: "m", pid: process.pid, startedAt: Date.now(), mask: MASK.IDLE, host: "cursor" },
+      { type: "activate", groupId: groupA, pid: process.pid, startedAt: Date.now(), mask: MASK.IDLE, host: "opencode" },
+      { type: "activate", groupId: groupA, memberId: "m", pid: process.pid, startedAt: Date.now(), mask: MASK.IDLE, host: 9 },
+    ];
+    for (const bad of invalid) {
+      const reply = await brokerRequest(broker.socketPath, bad);
+      assert.equal(reply.ok, false, `invalid activate is rejected: ${JSON.stringify(bad)}`);
+    }
+    assert.equal(broker.core.revision, 2, "rejected activate requests never advance");
+
+    const codexActivate = await brokerRequest(broker.socketPath, {
+      type: "activate", groupId: groupA, memberId: "codex-activator", pid: process.pid, startedAt: Date.now(), mask: MASK.WORKING,
+    });
+    assert.deepEqual(codexActivate, { ok: true, selected: groupA, revision: 3 },
+      "activate without host defaults to Codex and keeps the historical response shape");
+
+    const codexSeeded = await brokerRequest(broker.socketPath, { type: "report", groupId: groupB, memberId: "codex-seed", pid: process.pid, startedAt: Date.now(), mask: MASK.WAITING });
+    assert.equal(codexSeeded.ok, true, "the Codex first-valid-source rule still selects Codex");
+    const switched = await activationB().activate();
+    assert.equal(switched.revision, codexSeeded.revision + 1, "activation while another source is selected costs exactly one advance");
+    assert.equal(broker.core.selected, `opencode:${groupB}`);
+
+    const [first, second, third] = await Promise.all([
+      activationA().activate(),
+      activationA().activate(),
+      activationB().activate(),
+    ]);
+    assert.equal(first.ok !== false, true);
+    const revisions = [first.revision, second.revision, third.revision];
+    assert.deepEqual(revisions.slice().sort((a, b) => a - b), revisions, "concurrent activations return monotonic revisions");
+    assert.equal(new Set(revisions).size, 3, "each concurrent invocation advances exactly once");
+    assert.equal(broker.core.revision, Math.max(...revisions), "the broker revision matches the last accepted activation");
+    pass("atomic activation: one advance per accepted invocation, serially and concurrently");
+  } finally {
+    await broker.close().catch(() => {});
+  }
+
+  const persistedRevision = JSON.parse(await readFile(path.join(stateDir, "agent-coordination.json"), "utf8")).revision;
+  broker = await runBroker({ stateDir, logger: () => {}, publisherOptions: { resolvePort: async () => null } });
+  try {
+    assert.equal(broker.core.publication(), null, "the restarted broker starts selected but vacant");
+    const revived = await activationA().activate();
+    assert.equal(revived.revision, persistedRevision + 1,
+      "activation after a restart against a persisted selected-but-vacant source advances exactly once");
+    assert.deepEqual(broker.core.publication(), { revision: revived.revision, mask: MASK.IDLE },
+      "publication resumes with the activated member in the same step");
+    assert.equal(broker.core.selected, `opencode:${groupA}`);
+    pass("atomic activation restores a persisted selected-vacant Workspace with exactly one revision");
+  } finally {
+    await broker.close().catch(() => {});
+  }
+}
+
 await testPureCore();
 await testHookSelection();
 await testReporterIntegration();
 await testOpenCodeActivation();
+await testAtomicActivation();
 await testOpenCodePluginSelection();
 await testActivationRetention();
 await testOpenCodeLifecycle();
