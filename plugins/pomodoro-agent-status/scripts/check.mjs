@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { chmod, mkdtemp, mkdir, realpath, stat } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -187,7 +187,6 @@ async function testOpenCodeActivation() {
       { type: "select", groupId, host: null },
       { type: "select", host: "opencode" },
       { type: "activate", groupId, host: "opencode" },
-      { type: "select", groupId: `opencode:${groupId}` },
       { ...opencodeReport, unexpected: 1 },
       { type: "report", groupId, memberId: "x", pid: process.pid, startedAt, host: "opencode" },
       { type: "report", groupId: "g".repeat(200), memberId: "x", pid: process.pid, startedAt, mask: MASK.IDLE, host: "opencode" },
@@ -207,7 +206,8 @@ async function testOpenCodeActivation() {
       "Codex first-valid-source still selects the same groupId");
 
     await brokerRequest(broker.socketPath, { ...opencodeReport, mask: MASK.ERROR });
-    assert.equal(broker.core.selected, codexReport.groupId);
+    assert.equal(broker.core.selected, `codex:${groupId}`,
+      "the Codex source and the OpenCode source with the same groupId stay distinct");
     assert.deepEqual(broker.core.publication(), { revision: 1, mask: MASK.WAITING },
       "unselected OpenCode reports cannot change the selected revision or mask");
 
@@ -240,22 +240,86 @@ async function testOpenCodeActivation() {
     assert.deepEqual(broker.core.publication(), { revision: 7, mask: MASK.WAITING },
       "explicit Codex selection excludes the OpenCode aggregate");
 
+    const oddGroupId = `opencode:${groupId}`;
+    const oddReport = { type: "report", groupId: oddGroupId, memberId: "codex-odd", pid: process.pid, startedAt, mask: MASK.WORKING };
+    const oddReported = await brokerRequest(broker.socketPath, oddReport);
+    assert.equal(oddReported.ok, true, "previously valid Codex groupIds remain valid");
+    assert.deepEqual(broker.core.publication(), { revision: 7, mask: MASK.WAITING },
+      "the odd Codex source is unselected and cannot change publication");
+    const oddSelected = await brokerRequest(broker.socketPath, { type: "select", groupId: oddGroupId });
+    assert.equal(oddSelected.ok, true);
+    assert.equal(oddSelected.selected, `codex:${oddGroupId}`);
+    assert.deepEqual(broker.core.publication(), { revision: 8, mask: MASK.WORKING },
+      "a Codex groupId with an opencode: prefix neither collides with nor aggregates the OpenCode source");
+
     await brokerRequest(broker.socketPath, { type: "select", groupId, host: "opencode" });
-    assert.deepEqual(broker.core.publication(), { revision: 8, mask: MASK.ERROR });
+    assert.deepEqual(broker.core.publication(), { revision: 9, mask: MASK.ERROR });
     pass("host-qualified OpenCode activation, isolation, validation, and reactivation through the broker boundary");
   } finally {
     await broker.close();
   }
 
+  const persisted = JSON.parse(await readFile(path.join(stateDir, "agent-coordination.json"), "utf8"));
+  assert.deepEqual(Object.keys(persisted).sort(), ["revision", "selected", "selectedHost"]);
+  assert.equal(persisted.selected, groupId);
+  assert.equal(persisted.selectedHost, "opencode");
+  assert.equal(persisted.revision, 9);
+
   broker = await runBroker({ stateDir, logger: () => {}, publisherOptions: { resolvePort: async () => null } });
   try {
     await brokerRequest(broker.socketPath, opencodeReport);
-    assert.deepEqual(broker.core.publication(), { revision: 9, mask: MASK.IDLE },
+    assert.deepEqual(broker.core.publication(), { revision: 10, mask: MASK.IDLE },
       "the host-qualified selection resumes after broker restart");
     await brokerRequest(broker.socketPath, codexReport);
-    assert.deepEqual(broker.core.publication(), { revision: 9, mask: MASK.IDLE },
+    assert.deepEqual(broker.core.publication(), { revision: 10, mask: MASK.IDLE },
       "Codex reports cannot take over a selected OpenCode Workspace");
     pass("persisted host-qualified selection recovers across broker restart without fallback");
+  } finally {
+    await broker.close();
+  }
+}
+
+async function testUnselectedExpiryIsolation() {
+  const root = await mkdtemp("/tmp/pomodoro-expiry-");
+  const stateDir = path.join(root, "pomodoro", "agent-status");
+  const groupId = hashId("/expiry/repo");
+  const startedAt = Date.now();
+  const broker = await runBroker({ stateDir, logger: () => {}, publisherOptions: { resolvePort: async () => null } });
+  try {
+    broker.core.isAlive = () => true;
+    await brokerRequest(broker.socketPath, { type: "report", groupId, memberId: "codex-a", pid: 111, startedAt, mask: MASK.WORKING });
+    await brokerRequest(broker.socketPath, { type: "report", groupId, memberId: "codex-b", pid: 222, startedAt, mask: MASK.WAITING });
+    await brokerRequest(broker.socketPath, { type: "report", groupId, memberId: "oc-main", pid: 333, startedAt, mask: MASK.IDLE, host: "opencode" });
+    assert.deepEqual(broker.core.publication(), { revision: 2, mask: MASK.WORKING | MASK.WAITING });
+
+    broker.core.isAlive = (pid) => pid !== 222;
+    const before = broker.core.publication();
+    await brokerRequest(broker.socketPath, { type: "report", groupId, memberId: "oc-main", pid: 333, startedAt, mask: MASK.ERROR, host: "opencode" });
+    assert.deepEqual(broker.core.publication(), before,
+      "an unselected OpenCode report cannot trigger the selected source's expiry advance");
+    await waitFor(() => broker.core.publication()?.revision === before.revision + 1);
+    assert.deepEqual(broker.core.publication(), { revision: before.revision + 1, mask: MASK.WORKING },
+      "the background reaper still advances the selected source when a member expires");
+    assert.equal(broker.core.selected, `codex:${groupId}`, "selection is unchanged by the unselected report");
+    pass("unselected reports cannot trigger selected-source expiry advances; the background reaper owns them");
+  } finally {
+    await broker.close();
+  }
+}
+
+async function testLegacyPersistedSelection() {
+  const root = await mkdtemp("/tmp/pomodoro-legacy-");
+  const stateDir = path.join(root, "pomodoro", "agent-status");
+  await mkdir(stateDir, { recursive: true, mode: 0o700 });
+  const groupId = "opencode:legacy-codex-workspace";
+  await writeFile(path.join(stateDir, "agent-coordination.json"),
+    `${JSON.stringify({ selected: groupId, revision: 7 })}\n`, { mode: 0o600 });
+  const broker = await runBroker({ stateDir, logger: () => {}, publisherOptions: { resolvePort: async () => null } });
+  try {
+    await brokerRequest(broker.socketPath, { type: "report", groupId, memberId: "codex-main", pid: process.pid, startedAt: Date.now(), mask: MASK.WAITING });
+    assert.deepEqual(broker.core.publication(), { revision: 8, mask: MASK.WAITING },
+      "a legacy bare Codex selection resumes even when its groupId starts with the OpenCode prefix");
+    pass("legacy persisted bare Codex selections load and resume as Codex");
   } finally {
     await broker.close();
   }
@@ -329,6 +393,8 @@ await testPureCore();
 await testHookSelection();
 await testReporterIntegration();
 await testOpenCodeActivation();
+await testUnselectedExpiryIsolation();
+await testLegacyPersistedSelection();
 await testBrokerRecoveryAndFailures();
 await testOnDemandBroker();
 console.log(`pomodoro-agent-status check: ${checks} checks passed`);

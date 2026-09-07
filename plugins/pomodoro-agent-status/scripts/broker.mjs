@@ -17,7 +17,6 @@ export const MAX_REVISION = 0xffff_ffff;
 
 const ID_MAX_LENGTH = 128;
 const O_EXLOCK = 0x20;
-const OPENCODE_PREFIX = "opencode:";
 const HOSTS = new Set(["codex", "opencode"]);
 const REQUEST_FIELDS = {
   report: ["type", "groupId", "memberId", "pid", "startedAt", "mask"],
@@ -32,7 +31,13 @@ function exactFields(value, expected) {
 }
 
 function sourceKey(host, groupId) {
-  return host === "codex" ? groupId : `${OPENCODE_PREFIX}${groupId}`;
+  return `${host}:${groupId}`;
+}
+
+function selectionState(key) {
+  if (key === null) return { selected: null, selectedHost: null };
+  const separator = key.indexOf(":");
+  return { selected: key.slice(separator + 1), selectedHost: key.slice(0, separator) };
 }
 
 function validId(value) {
@@ -56,17 +61,10 @@ export function validateRequest(value, isAlive = pidIsAlive) {
   const expected = REQUEST_FIELDS[value.type];
   if (!expected) throw new Error("unknown request type");
   if ("host" in value && !HOSTS.has(value.host)) throw new Error("invalid host");
-  const host = value.host ?? "codex";
   if (!exactFields(value, "host" in value ? [...expected, "host"] : expected)) {
     throw new Error("request fields do not match type");
   }
   if (!validId(value.groupId)) throw new Error("invalid groupId");
-  if (host === "opencode" && value.groupId.length > ID_MAX_LENGTH - OPENCODE_PREFIX.length) {
-    throw new Error("invalid groupId");
-  }
-  if (host === "codex" && value.groupId.startsWith(OPENCODE_PREFIX)) {
-    throw new Error("invalid groupId");
-  }
   if (value.type !== "select" && !validId(value.memberId)) {
     throw new Error("invalid memberId");
   }
@@ -115,12 +113,16 @@ export class BrokerCore {
     return this.enqueue(() => this.reapNow());
   }
 
-  async reapNow() {
+  async reapNow(scope = null) {
     const now = this.now();
     const selectedKey = this.selected;
     const oldMask = this.selected ? this.sourceMask(this.selected) : 0;
     const survivors = new Map();
     for (const [key, members] of this.members) {
+      if (scope !== null && key !== scope) {
+        survivors.set(key, members);
+        continue;
+      }
       const live = new Map();
       for (const [memberId, member] of members) {
         if (now - member.lastSeen < MEMBER_LEASE_MS && this.isAlive(member.pid)) live.set(memberId, member);
@@ -153,7 +155,7 @@ export class BrokerCore {
     try {
       if (this.revision >= MAX_REVISION) throw new Error("revision exhausted");
       const revision = this.revision + 1;
-      await this.persist({ selected, revision });
+      await this.persist({ ...selectionState(selected), revision });
       this.selected = selected;
       this.revision = revision;
     } catch (error) {
@@ -171,9 +173,9 @@ export class BrokerCore {
     try {
       request = validateRequest(raw, this.isAlive);
       if (this.failed) throw new Error("broker state unavailable");
-      await this.reapNow();
       const host = request.host ?? "codex";
       const source = sourceKey(host, request.groupId);
+      await this.reapNow(source);
 
       if (request.type === "select") {
         if (!this.sourceIsLive(source)) throw new Error("source has no live members");
@@ -218,14 +220,23 @@ export class BrokerCore {
 
 function validatePersistedState(value) {
   if (!value || typeof value !== "object" || Array.isArray(value) ||
-      !exactFields(value, ["selected", "revision"]) ||
       !Number.isInteger(value.revision) || value.revision < 0 || value.revision > MAX_REVISION) {
     throw new Error("invalid agent-coordination.json");
   }
+  const legacy = exactFields(value, ["selected", "revision"]);
+  const qualified = exactFields(value, ["selected", "selectedHost", "revision"]);
+  if (!legacy && !qualified) throw new Error("invalid agent-coordination.json");
   if (value.selected !== null && !validId(value.selected)) {
     throw new Error("invalid agent-coordination.json");
   }
-  return value;
+  const host = legacy && value.selected !== null ? "codex" : qualified ? value.selectedHost : null;
+  if ((value.selected === null) !== (host === null) || (host !== null && !HOSTS.has(host))) {
+    throw new Error("invalid agent-coordination.json");
+  }
+  return {
+    selected: value.selected === null ? null : sourceKey(host, value.selected),
+    revision: value.revision,
+  };
 }
 
 export async function prepareState(stateDir) {

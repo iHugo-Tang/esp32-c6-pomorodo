@@ -48,6 +48,45 @@
 - Completion is pending coordinator review; this comment records implemented-and-checked state only. The shared spec was made more precise (broker `host` field, namespaced OpenCode keys, host-gated first selection) but is not marked complete, and Tickets 02-06 are untouched.
 - TUI/plugin, real OpenCode 1.18.29 smoke, and physical-device validation remain outside this ticket (Tickets 02-06); no hardware check was required or performed here.
 
+### 2026-09-06 Independent review findings (completion back to pending review)
+
+Independent code review against `1117f5c9e268e9627198553c7286b494bc983f78` returned Standards PASS, Spec FAIL with two findings. Completion is recorded as pending review again until both are fixed and reinspected.
+
+1. **(Medium) Unselected requests can trigger the selected source's expiry advance.** `handleOne()` ran a full `reapNow()` for every request, so lease/PID expiry of a *selected* member could call `advance()` while servicing an *unselected* OpenCode report — that request would change the selected publication revision/mask, violating criterion 4.
+2. **(Low) Ambiguous prefix namespace and persistence.** Rejecting Codex groupIds beginning with `opencode:` changed the previously valid Codex ID contract, and persisted selection had no host discriminator, so the `opencode:` string prefix was ambiguous with legacy bare Codex selections.
+
+Both findings are being addressed in the next commit; criteria will be re-evidenced there.
+
+### 2026-09-06 Review fixes (single coding executor)
+
+**Fixes (commit 2)**
+
+- Finding 1 (`broker.mjs`): request handling now reaps only the requesting source (`reapNow(scope)`); the background reaper (250 ms tick) remains the sole owner of full lease cleanup and of the selected source's expiry advance. A request from an unselected source therefore cannot trigger an advance of the selected publication. Lease cleanup and selected-source recovery/mask-change behavior are preserved: the scoped reap still prunes the requesting source's dead members (so `select` cannot pick a dead-only source and recovery detection stays correct), and a report from the selected source still advances its own publication when a sibling expires. Verified as a real-socket regression (`testUnselectedExpiryIsolation`): with the old full reap the new test fails (the unselected OpenCode report produced `{revision 3, mask WORKING}` instead of the unchanged `{2, WORKING|WAITING}`); with the fix the report leaves publication untouched and the background reaper performs exactly the one expiry advance.
+- Finding 2 (`broker.mjs`): the Codex `opencode:`-prefix rejection and the OpenCode groupId length restriction were removed, so every previously valid Codex groupId (up to the existing 128-char limit) is valid again. Internal source keys are now `host:groupId` for both hosts. Persisted selection is `{selected, selectedHost, revision}` with the bare groupId and explicit host; legacy two-field files (bare `selected`, no host) load as Codex selections and resume, including legacy groupIds that begin with `opencode:`. Regression evidence: `testOpenCodeActivation` now reports and selects a Codex source with groupId `opencode:<hash>` alongside the OpenCode source with `<hash>` — no collision or aggregation (selecting the odd Codex source publishes only its own `{WORKING}`); the restart block asserts the persisted file is `{selected, selectedHost, revision}` with `selectedHost: "opencode"` and the bare groupId, and resumes; `testLegacyPersistedSelection` writes a legacy two-field file whose selected value starts with `opencode:` and proves the broker resumes it as a Codex selection.
+
+**Check evidence (exact commands and outcomes)**
+
+- `node plugins/pomodoro-agent-status/scripts/check.mjs` → `pomodoro-agent-status check: 12 checks passed` (was 10; adds the expiry-isolation and legacy-persistence checks).
+- Discriminator runs: with `reapNow()` temporarily restored to unscoped, the new expiry check failed as the finding predicts; restored to `reapNow(source)`, all 12 pass.
+- `cmake -S test -B build/host` → configured; `cmake --build build/host --parallel` → built; `ctest --test-dir build/host --output-on-failure` → `100% tests passed out of 6` (all six listed and executed).
+- `git diff --check` → clean.
+
+**Per-criterion results (after fixes)**
+
+1. Passed. Same-`groupId` sources stay distinct via `host:groupId` keys; the `opencode:`-prefixed Codex groupId coexists with the OpenCode source without collision or aggregation, and both directions of selection publish only the selected host's aggregate.
+2. Passed. OpenCode reports before activation leave selection null, revision 0, publication null; unselected OpenCode reports (including while Codex is selected) never advance.
+3. Passed. First activation +1, reactivation +1, two concurrent attempts serialized to exactly one advance each; the expiry-isolation check additionally shows an unselected request cannot inject an extra advance.
+4. Passed. Unselected reports cannot change the selected revision or mask — including the lease-expiry case: the request that would previously have advanced the selected source now leaves publication untouched, and the background reaper performs exactly one legitimate expiry advance.
+5. Passed. Nine invalid activation requests plus the over-8-KiB line are rejected through the real socket; selection and revision unchanged; subsequent valid requests succeed. (The previously rejected prefixed Codex groupId is now a positive coexistence case instead.)
+6. Passed. Existing check functions 1-5 and 10-12 remain unchanged and pass; the only pre-existing assertion adjusted is `broker.core.selected` in the new Ticket 01 test itself (Codex keys are now `codex:<groupId>`).
+7. Passed. All new behavior is exercised through the real broker socket and the persisted state file, including concurrency, restart, legacy-file loading, and expiry timing.
+
+**Remaining problems / notes**
+
+- Completion remains pending coordinator review; the shared spec's broker interface/persistence bullets were updated to the verified behavior and are not marked complete. Tickets 02-06 remain untouched.
+- Supersede note: this comment supersedes the "Implementation (single coding executor)" comment above where it describes the Codex `opencode:`-prefix rejection, bare Codex internal keys, and the OpenCode groupId length restriction — those were removed by the review fixes.
+- In-memory keys and the `selected` field in broker responses are `host:groupId`; the persisted file keeps the bare `groupId` plus `selectedHost`. TUI/plugin, real OpenCode 1.18.29 smoke, and physical-device validation remain outside this ticket.
+
 ### 2026-09-06 Coordinator acceptance
 
 - Acceptance conclusion: passed. The coordinator independently inspected the complete task diff from starting commit `1117f5c9e268e9627198553c7286b494bc983f78` through implementation commit `1a02d93` and found no scope, contract, or documentation gap for Ticket 01.
