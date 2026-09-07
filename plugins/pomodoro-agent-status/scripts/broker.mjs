@@ -17,6 +17,8 @@ export const MAX_REVISION = 0xffff_ffff;
 
 const ID_MAX_LENGTH = 128;
 const O_EXLOCK = 0x20;
+const OPENCODE_PREFIX = "opencode:";
+const HOSTS = new Set(["codex", "opencode"]);
 const REQUEST_FIELDS = {
   report: ["type", "groupId", "memberId", "pid", "startedAt", "mask"],
   select: ["type", "groupId"],
@@ -27,6 +29,10 @@ function exactFields(value, expected) {
   const actual = Object.keys(value).sort();
   return actual.length === expected.length &&
     actual.every((field, index) => field === [...expected].sort()[index]);
+}
+
+function sourceKey(host, groupId) {
+  return host === "codex" ? groupId : `${OPENCODE_PREFIX}${groupId}`;
 }
 
 function validId(value) {
@@ -49,8 +55,18 @@ export function validateRequest(value, isAlive = pidIsAlive) {
   }
   const expected = REQUEST_FIELDS[value.type];
   if (!expected) throw new Error("unknown request type");
-  if (!exactFields(value, expected)) throw new Error("request fields do not match type");
+  if ("host" in value && !HOSTS.has(value.host)) throw new Error("invalid host");
+  const host = value.host ?? "codex";
+  if (!exactFields(value, "host" in value ? [...expected, "host"] : expected)) {
+    throw new Error("request fields do not match type");
+  }
   if (!validId(value.groupId)) throw new Error("invalid groupId");
+  if (host === "opencode" && value.groupId.length > ID_MAX_LENGTH - OPENCODE_PREFIX.length) {
+    throw new Error("invalid groupId");
+  }
+  if (host === "codex" && value.groupId.startsWith(OPENCODE_PREFIX)) {
+    throw new Error("invalid groupId");
+  }
   if (value.type !== "select" && !validId(value.memberId)) {
     throw new Error("invalid memberId");
   }
@@ -156,7 +172,8 @@ export class BrokerCore {
       request = validateRequest(raw, this.isAlive);
       if (this.failed) throw new Error("broker state unavailable");
       await this.reapNow();
-      const source = request.groupId;
+      const host = request.host ?? "codex";
+      const source = sourceKey(host, request.groupId);
 
       if (request.type === "select") {
         if (!this.sourceIsLive(source)) throw new Error("source has no live members");
@@ -184,7 +201,7 @@ export class BrokerCore {
         for (const [memberId, member] of members) {
           if (memberId !== request.memberId) nextMask |= member.mask;
         }
-        const firstSelection = this.selected === null;
+        const firstSelection = this.selected === null && host === "codex";
         const selectedRecovery = this.selected === source && !wasLive;
         const selectedMaskChange = this.selected === source && wasLive && oldMask !== nextMask;
         if (firstSelection) await this.advance(source);

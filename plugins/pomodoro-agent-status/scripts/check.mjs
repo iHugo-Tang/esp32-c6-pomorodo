@@ -165,6 +165,102 @@ async function testReporterIntegration() {
   pass("different Workspaces remain isolated");
 }
 
+async function testOpenCodeActivation() {
+  const root = await mkdtemp("/tmp/pomodoro-opencode-");
+  const stateDir = path.join(root, "pomodoro", "agent-status");
+  const groupId = hashId("/same/normalized/repo/root");
+  const startedAt = Date.now();
+  const codexReport = { type: "report", groupId, memberId: "codex-main", pid: process.pid, startedAt, mask: MASK.WAITING };
+  const opencodeReport = { type: "report", groupId, memberId: "opencode-main", pid: process.pid, startedAt, mask: MASK.IDLE, host: "opencode" };
+  let broker = await runBroker({ stateDir, logger: () => {}, publisherOptions: { resolvePort: async () => null } });
+  try {
+    await brokerRequest(broker.socketPath, opencodeReport);
+    await brokerRequest(broker.socketPath, { ...opencodeReport, memberId: "opencode-sub", mask: MASK.WORKING });
+    assert.equal(broker.core.selected, null, "OpenCode reports before activation do not select a source");
+    assert.equal(broker.core.revision, 0, "OpenCode reports before activation do not advance the revision");
+    assert.equal(broker.core.publication(), null);
+
+    const invalid = [
+      { type: "select", groupId, host: "opencode", extra: true },
+      { type: "select", groupId, host: "cursor" },
+      { type: "select", groupId, host: 9 },
+      { type: "select", groupId, host: null },
+      { type: "select", host: "opencode" },
+      { type: "activate", groupId, host: "opencode" },
+      { type: "select", groupId: `opencode:${groupId}` },
+      { ...opencodeReport, unexpected: 1 },
+      { type: "report", groupId, memberId: "x", pid: process.pid, startedAt, host: "opencode" },
+      { type: "report", groupId: "g".repeat(200), memberId: "x", pid: process.pid, startedAt, mask: MASK.IDLE, host: "opencode" },
+    ];
+    for (const bad of invalid) {
+      const reply = await brokerRequest(broker.socketPath, bad);
+      assert.equal(reply.ok, false, `invalid activation data is rejected: ${JSON.stringify(bad)}`);
+    }
+    const oversized = { type: "select", groupId: groupId + "x".repeat(9 * 1024), host: "opencode" };
+    assert.match((await request(broker.socketPath, oversized, 1_000)).error, /8 KiB/);
+    assert.equal(broker.core.selected, null, "rejections leave selection unchanged");
+    assert.equal(broker.core.revision, 0, "rejections leave the revision unchanged");
+
+    const codexSelected = await brokerRequest(broker.socketPath, codexReport);
+    assert.equal(codexSelected.ok, true);
+    assert.deepEqual(broker.core.publication(), { revision: 1, mask: MASK.WAITING },
+      "Codex first-valid-source still selects the same groupId");
+
+    await brokerRequest(broker.socketPath, { ...opencodeReport, mask: MASK.ERROR });
+    assert.equal(broker.core.selected, codexReport.groupId);
+    assert.deepEqual(broker.core.publication(), { revision: 1, mask: MASK.WAITING },
+      "unselected OpenCode reports cannot change the selected revision or mask");
+
+    const activated = await brokerRequest(broker.socketPath, { type: "select", groupId, host: "opencode" });
+    assert.equal(activated.ok, true);
+    assert.equal(activated.selected, `opencode:${groupId}`, "activation addresses the host-qualified source");
+    assert.equal(activated.revision, 2, "first activation creates exactly one new revision");
+    assert.deepEqual(broker.core.publication(), { revision: 2, mask: MASK.ERROR | MASK.WORKING },
+      "the selected OpenCode aggregate excludes the Codex source with the same groupId");
+
+    const reactivated = await brokerRequest(broker.socketPath, { type: "select", groupId, host: "opencode" });
+    assert.equal(reactivated.ok, true);
+    assert.equal(reactivated.revision, 3, "reactivation creates exactly one new revision");
+
+    const [firstAttempt, secondAttempt] = await Promise.all([
+      brokerRequest(broker.socketPath, { type: "select", groupId, host: "opencode" }),
+      brokerRequest(broker.socketPath, { type: "select", groupId, host: "opencode" }),
+    ]);
+    assert.equal(firstAttempt.ok && secondAttempt.ok, true);
+    assert.equal(Math.abs(firstAttempt.revision - secondAttempt.revision), 1,
+      "concurrent activation attempts stay serialized");
+    assert.equal(broker.core.revision, 5, "each concurrent activation creates exactly one new revision");
+
+    await brokerRequest(broker.socketPath, { type: "remove", groupId, memberId: "opencode-sub", host: "opencode" });
+    assert.deepEqual(broker.core.publication(), { revision: 6, mask: MASK.ERROR },
+      "member removal addresses the host-qualified source");
+
+    const codexExplicit = await brokerRequest(broker.socketPath, { type: "select", groupId });
+    assert.equal(codexExplicit.ok, true);
+    assert.deepEqual(broker.core.publication(), { revision: 7, mask: MASK.WAITING },
+      "explicit Codex selection excludes the OpenCode aggregate");
+
+    await brokerRequest(broker.socketPath, { type: "select", groupId, host: "opencode" });
+    assert.deepEqual(broker.core.publication(), { revision: 8, mask: MASK.ERROR });
+    pass("host-qualified OpenCode activation, isolation, validation, and reactivation through the broker boundary");
+  } finally {
+    await broker.close();
+  }
+
+  broker = await runBroker({ stateDir, logger: () => {}, publisherOptions: { resolvePort: async () => null } });
+  try {
+    await brokerRequest(broker.socketPath, opencodeReport);
+    assert.deepEqual(broker.core.publication(), { revision: 9, mask: MASK.IDLE },
+      "the host-qualified selection resumes after broker restart");
+    await brokerRequest(broker.socketPath, codexReport);
+    assert.deepEqual(broker.core.publication(), { revision: 9, mask: MASK.IDLE },
+      "Codex reports cannot take over a selected OpenCode Workspace");
+    pass("persisted host-qualified selection recovers across broker restart without fallback");
+  } finally {
+    await broker.close();
+  }
+}
+
 async function testBrokerRecoveryAndFailures() {
   const root = await mkdtemp("/tmp/pomodoro-recovery-");
   const stateDir = path.join(root, "pomodoro", "agent-status");
@@ -232,6 +328,7 @@ async function testOnDemandBroker() {
 await testPureCore();
 await testHookSelection();
 await testReporterIntegration();
+await testOpenCodeActivation();
 await testBrokerRecoveryAndFailures();
 await testOnDemandBroker();
 console.log(`pomodoro-agent-status check: ${checks} checks passed`);
