@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { chmod, mkdtemp, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, realpath, stat, unlink, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -11,6 +11,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
 import { BrokerCore, MEMBER_LEASE_MS, runBroker } from "./broker.mjs";
+import { ActivationSession } from "./opencode-core.mjs";
 import {
   MASK, StatusState, brokerSocketPath, discoverHostPid, ensureBroker, hashId, isSelectionPrompt, reporterSocketPath,
   request, startReporter, structuredFailure, validateHookInput, workspaceRoot,
@@ -661,12 +662,116 @@ async function testOpenCodeLifecycle() {
   }
 }
 
+async function testCrossHostPluginIsolation() {
+  const root = await mkdtemp("/tmp/pomodoro-cross-host-");
+  const workspace = await realpath(process.cwd());
+  const stateDir = path.join(root, "pomodoro", "agent-status");
+  const env = { ...process.env, XDG_STATE_HOME: root };
+  const counter = { toasts: [], triggers: 0, clientTouches: [] };
+  const groupId = hashId(workspace);
+  const serialLines = [];
+  let opens = 0;
+  let transport = null;
+  const broker = await runBroker({
+    stateDir,
+    logger: () => {},
+    publisherOptions: {
+      resolvePort: async () => "/dev/fake-cu",
+      connect: async (port, onLine) => {
+        opens++;
+        transport = {
+          write: async (line) => { serialLines.push(line); },
+          close: async () => { transport = null; },
+        };
+        setImmediate(() => onLine("OC1 ENABLED"));
+        return transport;
+      },
+    },
+  });
+  const codexSession = `codex-host-${process.pid}`;
+  const reporter = await startReporter({ sessionId: codexSession, cwd: workspace, hostPid: process.pid, env, intervalMs: 60 });
+  const hooks = await loadServerPlugin(fakeServerInput({ directory: workspace, worktree: workspace, counter }), { env });
+  const codexEvent = (event, fields = {}) => hook(event, { session_id: codexSession, cwd: workspace, ...fields });
+  try {
+    await request(reporter.localSocket, codexEvent("UserPromptSubmit", { prompt: "codex work" }));
+    await request(reporter.localSocket, codexEvent("PermissionRequest", { tool_name: "Bash" }));
+    await waitFor(() => broker.core.publication()?.mask === MASK.WAITING, 3_000,
+      "the first valid Codex report selects Codex and publishes its aggregate");
+    const codexRevision = broker.core.revision;
+    await waitFor(() => serialLines.includes(`OC1 STATE ${codexRevision} ${MASK.WAITING}`), 4_000,
+      "the broker is the only serial owner and publishes over OC1 while both hosts report");
+
+    await hooks.event({ event: { type: "session.created", properties: { info: { id: "oc-solo", directory: workspace } } } });
+    await hooks.event({ event: { type: "session.status", properties: { sessionID: "oc-solo", status: { type: "busy" } } } });
+    await waitFor(() => broker.core.members.get(`opencode:${groupId}`)?.size === 1);
+    assert.deepEqual(broker.core.publication(), { revision: codexRevision, mask: MASK.WAITING },
+      "OpenCode Working while Codex is selected does not alter the selected revision or mask");
+
+    const activation = await new ActivationSession({ root: workspace, env }).activate();
+    assert.equal(activation.outcome, "selected");
+    assert.deepEqual(broker.core.publication(), { revision: codexRevision + 1, mask: MASK.WORKING },
+      "with Codex Waiting and OpenCode Working in the same repository, selecting OpenCode publishes only Working");
+    await request(reporter.localSocket, codexEvent("PostToolUse", { tool_name: "Bash", tool_response: { exit_code: 2 } }));
+    await request(reporter.localSocket, codexEvent("Stop"));
+    await waitFor(() => [...broker.core.members.get(`codex:${groupId}`)?.values() ?? []].some((m) => m.mask === MASK.ERROR), 3_000,
+      "the unselected Codex member latched an Error report");
+    assert.deepEqual(broker.core.publication(), { revision: codexRevision + 1, mask: MASK.WORKING },
+      "Error from the unselected host stays isolated from device publication");
+    await request(reporter.localSocket, codexEvent("UserPromptSubmit", { prompt: "recovery work" }));
+    await request(reporter.localSocket, codexEvent("PermissionRequest", { tool_name: "Bash" }));
+    await waitFor(() => [...broker.core.members.get(`codex:${groupId}`).values()].every((m) => m.mask === MASK.WAITING), 3_000,
+      "the unselected Codex member recovered to Waiting");
+    assert.deepEqual(broker.core.publication(), { revision: codexRevision + 1, mask: MASK.WORKING },
+      "recovery reports from the unselected host stay isolated from device publication");
+
+    const codexBack = await request(reporter.localSocket, codexEvent("UserPromptSubmit", { prompt: "$pomodoro-select" }));
+    assert.equal(codexBack.ok, true);
+    const codexRevised = codexBack.revision;
+    assert.deepEqual(broker.core.publication(), { revision: codexRevised, mask: MASK.WAITING },
+      "selecting Codex afterward publishes only Waiting");
+    await hooks.event({ event: { type: "session.error", properties: { sessionID: "oc-solo", error: { name: "ApiError" } } } });
+    await hooks.event({ event: { type: "session.status", properties: { sessionID: "oc-solo", status: { type: "retry", attempt: 1, message: "x", next: 1 } } } });
+    await waitFor(() => [...broker.core.members.get(`opencode:${groupId}`).values()].some((m) => m.mask === MASK.ERROR), 3_000,
+      "the unselected OpenCode member latched an Error");
+    assert.deepEqual(broker.core.publication(), { revision: codexRevised, mask: MASK.WAITING },
+      "later Error and recovery reports from the unselected OpenCode host cannot alter the selected revision or mask");
+
+    const [firstAttempt, secondAttempt] = await Promise.all([
+      brokerRequest(broker.socketPath, { type: "select", groupId, host: "opencode" }),
+      brokerRequest(broker.socketPath, { type: "select", groupId }),
+    ]);
+    assert.equal(firstAttempt.ok && secondAttempt.ok, true);
+    assert.equal(Math.abs(firstAttempt.revision - secondAttempt.revision), 1,
+      "concurrent cross-host selections stay serialized");
+    assert.ok(broker.core.revision >= Math.max(firstAttempt.revision, secondAttempt.revision),
+      "revisions stay monotonic across concurrent selections");
+
+    await writeFile(path.join(stateDir, "flash-reservation"), `${process.pid}\n`, { mode: 0o600 });
+    const opensBeforeReservation = opens;
+    await waitFor(() => transport === null, 2_000, "flash reservation makes the broker release the serial port");
+    assert.equal(opens, opensBeforeReservation, "the broker does not reopen the port while the reservation is held");
+    await request(reporter.localSocket, codexEvent("UserPromptSubmit", { prompt: "work during flashing" }));
+    await hooks.event({ event: { type: "session.status", properties: { sessionID: "oc-solo", status: { type: "busy" } } } });
+    await waitFor(() => broker.core.publication() !== null, 2_000, "IPC and publication keep working during the reservation");
+    await unlink(path.join(stateDir, "flash-reservation"));
+    await waitFor(() => transport !== null && serialLines.some((line) => line.startsWith("OC1 STATE")), 3_000,
+      "communication resumes after the reservation is removed");
+    pass("cross-host isolation through real plugin surfaces with single serial ownership and flash reservation release");
+  } finally {
+    if (transport) await transport.close().catch(() => {});
+    await reporter.close().catch(() => {});
+    await hooks.dispose().catch(() => {});
+    await broker.close().catch(() => {});
+  }
+}
+
 await testPureCore();
 await testHookSelection();
 await testReporterIntegration();
 await testOpenCodeActivation();
 await testOpenCodePluginSelection();
 await testOpenCodeLifecycle();
+await testCrossHostPluginIsolation();
 await testUnselectedExpiryIsolation();
 await testLegacyPersistedSelection();
 await testBrokerRecoveryAndFailures();
