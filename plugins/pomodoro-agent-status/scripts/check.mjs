@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { chmod, mkdtemp, mkdir, readFile, realpath, stat, unlink, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, readFile, readdir, realpath, stat, unlink, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -11,7 +11,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
 import { BrokerCore, MEMBER_LEASE_MS, runBroker } from "./broker.mjs";
-import { ActivationSession } from "./opencode-core.mjs";
+import { ActivationSession, failureFeedback } from "./opencode-core.mjs";
 import {
   MASK, StatusState, brokerSocketPath, discoverHostPid, ensureBroker, hashId, isSelectionPrompt, reporterSocketPath,
   request, startReporter, structuredFailure, validateHookInput, workspaceRoot,
@@ -765,6 +765,123 @@ async function testCrossHostPluginIsolation() {
   }
 }
 
+async function testInstallationAndRecovery() {
+  const root = await mkdtemp("/tmp/pomodoro-install-");
+  const configDir = path.join(root, "opencode-config");
+  await mkdir(configDir, { recursive: true });
+  const installer = await import("./install-opencode.mjs");
+  const installOptions = { configDir, opencodeVersion: "1.18.29" };
+
+  await installer.install(installOptions);
+  await installer.install(installOptions);
+  const pluginDir = path.join(configDir, "plugins", "pomodoro-agent-status");
+  const installedFiles = (await readdir(pluginDir)).sort();
+  assert.deepEqual(installedFiles, ["broker.mjs", "opencode-core.mjs", "opencode-server.mjs", "opencode-tui.mjs", "reporter.mjs"],
+    "the user-level plugin directory holds exactly the authoritative surfaces");
+  for (const file of installedFiles) {
+    assert.equal(await readFile(path.join(pluginDir, file), "utf8"), await readFile(path.join(scriptsDir, file), "utf8"),
+      `installed ${file} is byte-identical to the repository source`);
+  }
+  const serverConfig = JSON.parse(await readFile(path.join(configDir, "opencode.json"), "utf8"));
+  const tuiConfig = JSON.parse(await readFile(path.join(configDir, "tui.json"), "utf8"));
+  assert.equal(serverConfig.plugin.length, 1, "the server plugin is registered exactly once");
+  assert.equal(tuiConfig.plugin.length, 1, "the TUI plugin is registered exactly once");
+  assert.equal(serverConfig.plugin[0], path.join(pluginDir, "opencode-server.mjs"));
+  assert.equal(tuiConfig.plugin[0], path.join(pluginDir, "opencode-tui.mjs"));
+
+  const projectA = path.join(root, "project-a");
+  const projectB = path.join(root, "project-b");
+  const pomodoroProject = await realpath(path.join(scriptsDir, "..", "..", ".."));
+  const projectCopies = async (projectDir) => {
+    try {
+      return (await readdir(path.join(projectDir, ".opencode", "plugins"))).filter((name) => name.toLowerCase().includes("pomodoro")).length;
+    } catch (error) {
+      if (error?.code === "ENOENT") return 0;
+      throw error;
+    }
+  };
+  await mkdir(path.join(projectA, ".opencode"), { recursive: true });
+  for (const projectDir of [projectA, projectB, pomodoroProject]) {
+    await installer.verify({ ...installOptions, projectDir });
+    assert.equal(await projectCopies(projectDir), 0, `no project-level Pomodoro plugin copy exists for ${projectDir}`);
+  }
+  pass("idempotent user-level installation serves multiple projects without a project-level duplicate");
+
+  const oldConfigDir = path.join(root, "old-config");
+  await mkdir(oldConfigDir, { recursive: true });
+  await assert.rejects(installer.install({ configDir: oldConfigDir, opencodeVersion: "1.18.0" }), /1\.18\.29/,
+    "installation below the minimum verified version fails explicitly");
+  assert.deepEqual(await readdir(oldConfigDir).then((files) => files.filter((name) => name !== "plugins")), [],
+    "a failed install leaves no configuration behind");
+  const tuiModule = await import("./opencode-tui.mjs");
+  await assert.rejects(tuiModule.default.tui({ ui: { toast() {} } }), /api\.command/,
+    "TUI initialization fails explicitly without the direct slash API");
+  await assert.rejects(tuiModule.default.tui({ command: { register() {}, trigger() {} } }), /toast/);
+
+  const stateRoot = path.join(root, "state");
+  const stateDir = path.join(stateRoot, "pomodoro", "agent-status");
+  await mkdir(stateDir, { recursive: true, mode: 0o700 });
+  const corrupt = "{broken\n";
+  await writeFile(path.join(stateDir, "agent-coordination.json"), corrupt, { mode: 0o600 });
+  await assert.rejects(runBroker({ stateDir, logger: () => {}, publisherOptions: { resolvePort: async () => null } }),
+    /invalid agent-coordination\.json/, "corrupt persisted state fails closed");
+  assert.equal(await readFile(path.join(stateDir, "agent-coordination.json"), "utf8"), corrupt,
+    "corrupt persisted state is not overwritten");
+
+  const failOpenStateDir = path.join(root, "absent-state", "pomodoro", "agent-status");
+  const failOpenEnv = { ...process.env, XDG_STATE_HOME: path.join(root, "absent-state") };
+  const counter = { toasts: [], triggers: 0, clientTouches: [] };
+  const hooks = await loadServerPlugin(fakeServerInput({ directory: root, worktree: root, counter }), { env: failOpenEnv });
+  await hooks.event({ event: { type: "session.created", properties: { info: { id: "s-fail", directory: root } } } });
+  await hooks.event({ event: { type: "session.status", properties: { sessionID: "s-fail", status: { type: "busy" } } } });
+  await hooks.event({ event: { type: "message.updated", properties: { sessionID: "s-fail", info: { role: "user" } } } });
+  assert.deepEqual(counter.clientTouches, [], "OpenCode lifecycle handling is unaffected while the broker is missing");
+  await mkdir(failOpenStateDir, { recursive: true, mode: 0o700 });
+  await writeFile(path.join(failOpenStateDir, "agent-coordination.json"), "{broken\n", { mode: 0o600 });
+  await assert.rejects(new ActivationSession({ root, env: failOpenEnv }).activate(), /broker/,
+    "selection without a working broker fails with a bounded error");
+  assert.equal(await readFile(path.join(failOpenStateDir, "agent-coordination.json"), "utf8"), "{broken\n",
+    "the failed activation did not overwrite protected state");
+  await hooks.dispose();
+
+  const workingStateDir = path.join(path.join(root, "ok-state"), "pomodoro", "agent-status");
+  const broker = await runBroker({ stateDir: workingStateDir, logger: () => {}, publisherOptions: { resolvePort: async () => null } });
+  const devicelessEnv = { ...process.env, XDG_STATE_HOME: path.join(root, "ok-state") };
+  try {
+    const activated = await new ActivationSession({ root, env: devicelessEnv }).activate();
+    assert.equal(activated.outcome, "selected", "selection succeeds with no device attached");
+    assert.deepEqual(broker.core.publication(), { revision: activated.revision, mask: MASK.IDLE },
+      "a missing device leaves the broker retrying serial access without failing selection");
+    assert.equal((await stat(workingStateDir)).mode & 0o777, 0o700, "the state directory stays restricted");
+    assert.equal((await stat(broker.socketPath)).mode & 0o777, 0o600, "the broker socket stays restricted");
+    assert.equal((await stat(path.join(workingStateDir, "agent-coordination.json"))).mode & 0o777, 0o600);
+    const firstRevision = activated.revision;
+    await broker.close();
+    const restarted = await runBroker({ stateDir: workingStateDir, logger: () => {}, publisherOptions: { resolvePort: async () => null } });
+    try {
+      const resumed = await request(restarted.socketPath, {
+        type: "report", groupId: activated.groupId, memberId: activated.memberId,
+        pid: process.pid, startedAt: Date.now(), mask: MASK.IDLE, host: "opencode",
+      }, 1_000);
+      assert.equal(resumed.ok, true);
+      assert.deepEqual(restarted.core.publication(), { revision: resumed.revision, mask: MASK.IDLE },
+        "a complete broker restart preserves the selection and the same Workspace restores publication");
+      assert.ok(resumed.revision > firstRevision);
+      const failed = { ok: false };
+      const activationFailure = await new ActivationSession({ root, env: devicelessEnv }).activate()
+        .then(() => null, (error) => error);
+      assert.ok(activationFailure === null || failureFeedback(activationFailure).message.includes("previous selection"),
+        "runtime failure feedback preserves the prior selection wording");
+      assert.equal(failed.ok, false);
+    } finally {
+      await restarted.close();
+    }
+    pass("installation validation, fail-open recovery, restricted permissions, and restart-safe selection");
+  } finally {
+    await broker.close().catch(() => {});
+  }
+}
+
 await testPureCore();
 await testHookSelection();
 await testReporterIntegration();
@@ -772,6 +889,7 @@ await testOpenCodeActivation();
 await testOpenCodePluginSelection();
 await testOpenCodeLifecycle();
 await testCrossHostPluginIsolation();
+await testInstallationAndRecovery();
 await testUnselectedExpiryIsolation();
 await testLegacyPersistedSelection();
 await testBrokerRecoveryAndFailures();
