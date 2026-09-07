@@ -57,7 +57,7 @@ _Avoid_：设备姿态、屏幕旋转、IMU 手势
 _Avoid_：Charging、充电状态、USB 连接
 
 **Agent Source**：
-一个可被独立选择、并把一个或多个存活成员聚合成 Agent Status 的 Codex Workspace。
+一个可被独立选择、并把一个或多个存活成员聚合成 Agent Status 的 Codex Workspace 或 OpenCode Workspace。即使两个 Workspace 指向同一代码库，不同宿主的 Workspace 仍是不同来源。
 _Avoid_：会话、成员、串口所有者
 
 **Selected Agent Source**：
@@ -75,3 +75,7 @@ _Avoid_：完成提示音、每成员提示音、持续警报
 **Codex Workspace**：
 同一代码库内全部 Codex chat、fork、side chat 与 subagent 共享的 Agent Source；Git 仓库以规范化根目录为边界，非 Git 目录以规范化工作目录为边界。
 _Avoid_：Codex Process、单个 agent、单个 chat
+
+**OpenCode Workspace**：
+同一代码库内全部 OpenCode Session 与 subagent 共享的 Agent Source；Git 仓库以规范化根目录为边界，非 Git 目录以规范化工作目录为边界。它与相同路径的 Codex Workspace 是不同来源。
+_Avoid_：OpenCode Process、单个 Session、当前进程

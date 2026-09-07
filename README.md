@@ -38,7 +38,7 @@
 - 手动设置本地日期和时间，不使用网络校时。
 - 支持触摸、滑动切换模式、声音、亮度和自动旋转。
 - 支持电池状态、低电量提示、自动调暗和熄屏。
-- 可通过 USB 显示当前 Codex Workspace 的 Agent Status。
+- 可通过 USB 显示当前 Codex Workspace 或 OpenCode Workspace 的 Agent Status。
 
 ## 硬件
 
@@ -133,9 +133,13 @@ python tools/export_screenshot.py \
 
 ## Agent Status（可选）
 
-设备可以在主界面左下角显示所选 Codex Workspace 的状态：Error、Waiting、Working、Completed 或 Idle。状态通过 USB 发送，不会控制或修改 Pomodoro 计时。
+设备可以在主界面左下角显示所选 Workspace 的状态：Error、Waiting、Working、Completed 或 Idle。状态通过 USB 发送，不会控制或修改 Pomodoro 计时。Codex 与 OpenCode 是两个独立来源；只有显式选择才会切换，且同一时刻只有一个来源生效。
 
-插件源码位于 [plugins/pomodoro-agent-status](plugins/pomodoro-agent-status)。安装方法：
+插件源码位于 [plugins/pomodoro-agent-status](plugins/pomodoro-agent-status)。
+
+### Codex
+
+安装方法：
 
 ```sh
 python3 ~/.codex/skills/.system/plugin-creator/scripts/create_basic_plugin.py \
@@ -151,6 +155,28 @@ $pomodoro-select
 ```
 
 这会选择当前 Codex Workspace，并在需要时启动 broker。也可以手动以前台方式运行 broker：
+
+```sh
+node tools/pomodoro-agent-status-broker.mjs
+```
+
+### OpenCode
+
+最低已验证版本为 OpenCode 1.18.29。安装、校验与卸载：
+
+```sh
+node plugins/pomodoro-agent-status/scripts/install-opencode.mjs install
+node plugins/pomodoro-agent-status/scripts/install-opencode.mjs verify
+node plugins/pomodoro-agent-status/scripts/install-opencode.mjs uninstall
+```
+
+`install` 是幂等的用户级安装：把权威源码复制到用户配置目录并在 `opencode.json`/`tui.json` 中注册 server 与 TUI 两个插件面。配置变更只在完全退出所有 OpenCode 进程并重启后生效。`verify` 会校验版本下限、文件一致性、两个注册项，并可用 `--project-dir DIR` 确认该项目没有重复的项目级插件副本。
+
+在 OpenCode TUI 中输入 `/pomodoro-select` 直接选择当前 OpenCode Workspace。该动作不提交 prompt、不创建 Session 消息、不产生模型请求，也不产生伪状态周期。反馈只有三种有界结果：选择成功（含 revision）、等待 broker 接管、失败（保留原选择）。首版只支持从 OpenCode TUI 选择；OpenCode Desktop、Web、非交互 CLI 与 npm 发布不在范围内。`/pomodoro-select` 依赖 1.18.29 的直接 slash 注册 API（已标记 deprecated）；该 API 不可用时安装校验与插件启动都会显式失败，不会退化为会触发模型的同名 Markdown 命令。
+
+### Broker 与旧数据
+
+自动启动的 broker 在十秒没有有效 Agent report 后退出；手动以前台方式运行 broker：
 
 ```sh
 node tools/pomodoro-agent-status-broker.mjs
@@ -172,7 +198,7 @@ rm -rf -- "${XDG_STATE_HOME:-$HOME/.local/state}/opencode/pomodoro-status"
 | `main`                          | ESP-IDF 程序入口和依赖               |
 | `test`                          | 主机端自动化测试                     |
 | `tools`                         | 烧录、截图和 Agent Status 工具       |
-| `plugins/pomodoro-agent-status` | Codex Agent Status 插件源码          |
+| `plugins/pomodoro-agent-status` | Codex 与 OpenCode Agent Status 插件源码 |
 | `docs`                          | 产品说明、硬件记录和 ADR             |
 
 领域术语见 [CONTEXT.md](CONTEXT.md)，架构决定见 [docs/adr](docs/adr)。

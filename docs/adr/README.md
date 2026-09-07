@@ -27,4 +27,5 @@ ADR 记录重要决定及其原因。编号表示决定发生的顺序，不表�
 - [ADR-0012：独立 Agent Status broker](0012-use-independent-agent-status-broker.md) — accepted，来源模型部分被 ADR-0015 取代
 - [ADR-0013：Codex Workspace lifecycle adapter](0013-use-codex-workspace-lifecycle-adapter.md) — accepted，启动方式部分被 ADR-0014 取代
 - [ADR-0014：选择时按需启动 broker](0014-start-agent-status-broker-on-selection.md) — accepted
-- [ADR-0015：只支持 Codex Workspace](0015-agent-status-only-supports-codex-workspaces.md) — accepted，当前来源边界
+- [ADR-0015：只支持 Codex Workspace](0015-agent-status-only-supports-codex-workspaces.md) — superseded by ADR-0016
+- [ADR-0016：支持 OpenCode Workspace](0016-support-opencode-workspaces-as-agent-sources.md) — accepted，当前来源边界

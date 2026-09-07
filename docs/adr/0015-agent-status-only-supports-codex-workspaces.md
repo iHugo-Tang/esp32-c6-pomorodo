@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0016
 ---
 
 # Agent Status 仅支持 Codex Workspace
