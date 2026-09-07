@@ -6,7 +6,7 @@
 
 **Status:** ready-for-agent
 
-**Completion:** pending coordinator review
+**Completion:** accepted by coordinator
 
 - [x] Busy and retrying members contribute Working; pending permission and Question interaction contribute Waiting.
 - [x] Session errors and structured tool failures contribute latched Error, successful idle contributes Completed, and inactive members contribute Idle.
@@ -72,3 +72,11 @@ Fix: `opencode-server.mjs` now lazily creates the member for any lifecycle event
 **Per-criterion results (this round)**
 
 1-9. All remain passed with the same or strengthened evidence: criteria 1-2 now rest on the installed event shapes (criterion 1's Waiting evidence includes `permission.updated` and Question-tool detection), criteria 5-6 member behavior is unchanged, and criterion 9's "drives the complete lifecycle through plugin boundaries" now uses real 1.18.29 shapes plus the new move/correction and phantom-member regressions.
+
+### 2026-09-06 Final coordinator acceptance
+
+- Independent review of `bb759b05a4633be4fcda24563f22acdb28f3e32b...d6da696` returned Standards PASS and Spec PASS with zero findings.
+- The coordinator independently reran `node plugins/pomodoro-agent-status/scripts/check.mjs`; all 22 checks passed, including the complete OpenCode lifecycle, process-boundary aggregation, Workspace movement, vacancy, and recovery scenarios.
+- The coordinator independently reran the documented CMake configure/build flow and `ctest --test-dir build/host --output-on-failure`; all 6 host tests passed. All eight plugin scripts passed `node --check`, the isolated installer round trip passed, and `git diff --check` was clean.
+- Criteria 1-9 are accepted as passed. No criterion in this ticket requires real-TUI or physical-device evidence; those acceptance boundaries remain in Tickets 02, 05, and 06.
+- The canonical tracker vocabulary has no completed triage role, so `Status: ready-for-agent` is retained and completion is recorded separately above.

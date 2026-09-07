@@ -6,7 +6,7 @@
 
 **Status:** ready-for-agent
 
-**Completion:** pending coordinator review
+**Completion:** accepted by coordinator
 
 - [x] With Codex Waiting and OpenCode Working in the same repository, selecting OpenCode publishes only Working.
 - [x] Selecting Codex afterward publishes only Waiting, and later OpenCode reports cannot alter the selected revision or mask.
@@ -46,3 +46,11 @@
 
 - The serial transport here is a controlled fake; real-device serial behavior remains a physical-device criterion (Ticket 06).
 - "The broker remains the only serial owner" is additionally guaranteed architecturally: neither new module imports any serial capability, and the check records every open of the fake port.
+
+### 2026-09-06 Final coordinator acceptance
+
+- Independent review of `bb759b05a4633be4fcda24563f22acdb28f3e32b...d6da696` returned Standards PASS and Spec PASS with zero findings.
+- The coordinator independently reran `node plugins/pomodoro-agent-status/scripts/check.mjs`; all 22 checks passed, including cross-host selection isolation, serialized concurrent activation, sole serial ownership, flash reservation, and unchanged Codex behavior.
+- The coordinator independently reran the documented CMake configure/build flow and `ctest --test-dir build/host --output-on-failure`; all 6 host tests passed. All eight plugin scripts passed `node --check`, the isolated installer round trip passed, and `git diff --check` was clean.
+- Criteria 1-8 are accepted as passed at the host-integration boundary. Ticket 06 correctly retains real-device serial ownership and flash recovery as pending physical-device acceptance rather than claiming that controlled transport proves hardware behavior.
+- The canonical tracker vocabulary has no completed triage role, so `Status: ready-for-agent` is retained and completion is recorded separately above.
