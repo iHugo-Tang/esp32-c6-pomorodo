@@ -2,10 +2,11 @@
 
 This is a single-context repository.
 
-Before exploring or changing the project:
+For changes involving product behavior, domain terminology, or architecture:
 
 - Read the root `CONTEXT.md` for the domain glossary.
-- Read ADRs under `docs/adr/` that affect the area being changed.
+- Read applicable ADRs under `docs/adr/`, checking their current status in
+  `docs/adr/README.md`.
 - Use the glossary's canonical vocabulary in code, tests, tickets, and documentation.
 - Surface any conflict with an existing ADR instead of silently overriding it.
 
