@@ -7,7 +7,9 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
 import { BrokerCore, MEMBER_LEASE_MS, runBroker } from "./broker.mjs";
 import {
   MASK, StatusState, brokerSocketPath, discoverHostPid, ensureBroker, hashId, isSelectionPrompt, reporterSocketPath,
@@ -19,13 +21,13 @@ function pass(name) { console.log(`ok ${++checks}: ${name}`); }
 function hook(event, fields = {}) {
   return { session_id: "session-a", cwd: process.cwd(), hook_event_name: event, ...fields };
 }
-async function waitFor(test, timeout = 2_000) {
+async function waitFor(test, timeout = 2_000, message = "timed out waiting for condition") {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     if (await test()) return;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
-  throw new Error("timed out waiting for condition");
+  throw new Error(message);
 }
 
 async function testPureCore() {
@@ -529,11 +531,142 @@ async function testOpenCodePluginSelection() {
   }
 }
 
+function fakeServerInput({ directory, worktree, counter }) {
+  return {
+    project: { id: "proj" },
+    directory,
+    worktree,
+    client: forbiddenClientProxy(counter),
+    serverUrl: new URL("http://127.0.0.1:0"),
+    $: undefined,
+  };
+}
+
+async function loadServerPlugin(input, options) {
+  const serverModule = await import("./opencode-server.mjs");
+  const exports = Object.entries(serverModule).filter(([, value]) => typeof value === "function");
+  assert.equal(exports.length, 1, "the server plugin module exports exactly one plugin function");
+  const hooks = await exports[0][1](input, options);
+  return hooks;
+}
+
+async function spawnOpenCodeProcess({ socketPath, groupId, mask, intervalMs = 150 }) {
+  const script = `
+import { request } from ${JSON.stringify(pathToFileURL(path.join(scriptsDir, "opencode-core.mjs")).href)};
+const socketPath = process.env.CHILD_SOCKET;
+const groupId = process.env.CHILD_GROUP;
+const mask = Number(process.env.CHILD_MASK);
+const startedAt = Date.now();
+const keep = setInterval(() => {
+  request(socketPath, { type: "report", groupId, memberId: "child-member", pid: process.pid, startedAt, mask, host: "opencode" }).catch(() => {});
+}, ${intervalMs});
+process.on("disconnect", () => { clearInterval(keep); process.exit(0); });
+`;
+  return spawn(process.execPath, ["--input-type=module", "-e", script], {
+    env: { ...process.env, CHILD_SOCKET: socketPath, CHILD_GROUP: groupId, CHILD_MASK: String(mask) },
+    stdio: ["ignore", "ignore", "inherit"],
+  });
+}
+
+async function testOpenCodeLifecycle() {
+  const root = await mkdtemp("/tmp/pomodoro-opencode-lifecycle-");
+  const workspace = path.join(root, "workspace");
+  await mkdir(workspace);
+  const stateDir = path.join(root, "pomodoro", "agent-status");
+  const env = { ...process.env, XDG_STATE_HOME: root };
+  const counter = { toasts: [], triggers: 0, clientTouches: [] };
+  const broker = await runBroker({ stateDir, logger: () => {}, publisherOptions: { resolvePort: async () => null } });
+  const groupId = hashId(await realpath(workspace));
+  const hooks = await loadServerPlugin(fakeServerInput({ directory: workspace, worktree: workspace, counter }), { env });
+  const session = (id, extra = {}) => ({ info: { id, directory: workspace, ...extra } });
+  let child = null;
+  try {
+    await hooks.event({ event: { type: "session.created", properties: session("s1") } });
+    await hooks.event({ event: { type: "session.created", properties: session("s2") } });
+    await hooks.event({ event: { type: "session.created", properties: session("s3", { parentID: "s1" }) } });
+    await waitFor(() => broker.core.sourceIsLive(`opencode:${groupId}`) &&
+      broker.core.members.get(`opencode:${groupId}`)?.size === 3, 2_000);
+    const selected = await brokerRequest(broker.socketPath, { type: "select", groupId, host: "opencode" });
+    assert.equal(selected.ok, true, "explicit selection requires the live members reported by the plugin");
+    const revisionAtSelection = selected.revision;
+    const revBefore = broker.core.revision;
+
+    await hooks.event({ event: { type: "session.status", properties: { sessionID: "s1", status: { type: "busy" } } } });
+    await hooks.event({ event: { type: "session.status", properties: { sessionID: "s3", status: { type: "retry", attempt: 1, message: "x", next: 1 } } } });
+    await hooks.event({ event: { type: "permission.asked", properties: { id: "p1", sessionID: "s2", permission: "bash", patterns: [], metadata: {}, always: [] } } });
+    await waitFor(() => broker.core.publication()?.mask === (MASK.WORKING | MASK.WAITING));
+    assert.deepEqual(broker.core.publication(), { revision: revBefore + 2, mask: MASK.WORKING | MASK.WAITING },
+      "busy, retry, and permission members aggregate; each aggregate change advances exactly once");
+
+    await hooks.event({ event: { type: "question.asked", properties: { id: "q1", sessionID: "s2", questions: [] } } });
+    await hooks.event({
+      event: { type: "message.part.updated", properties: { part: { id: "p", sessionID: "s1", messageID: "m", type: "tool", callID: "c", tool: "bash", state: { status: "error", input: {}, error: "boom", time: { start: 1, end: 2 } } } } },
+    });
+    await waitFor(() => broker.core.publication()?.mask === (MASK.ERROR | MASK.WAITING | MASK.WORKING));
+    await hooks.event({ event: { type: "session.idle", properties: { sessionID: "s2" } } });
+    await waitFor(() => broker.core.publication()?.mask === (MASK.ERROR | MASK.COMPLETED | MASK.WORKING),
+      2_000, "Question and tool-error members keep their states while another member completes");
+
+    await hooks.event({ event: { type: "message.updated", properties: { sessionID: "s1", info: { role: "user" } } } });
+    await waitFor(() => broker.core.publication()?.mask === (MASK.WORKING | MASK.COMPLETED | MASK.WORKING),
+      2_000, "real new work clears only that member's latched Error");
+    assert.equal([...broker.core.members.get(`opencode:${groupId}`).values()].some((m) => m.mask === MASK.ERROR), false,
+      "the latched Error is cleared for the working member");
+
+    await hooks.event({ event: { type: "message.part.updated", properties: { part: { id: "p2", sessionID: "s1", messageID: "m", type: "tool", callID: "c2", tool: "bash", state: { status: "error", input: {}, error: "boom", time: { start: 1, end: 2 } } } } } });
+    await waitFor(() => broker.core.publication()?.mask === (MASK.ERROR | MASK.COMPLETED | MASK.WORKING),
+      2_000, "a latched Error survives other members' idle and completion");
+    await hooks.event({ event: { type: "permission.replied", properties: { sessionID: "s2", requestID: "p1", reply: "once" } } });
+    await hooks.event({ event: { type: "question.replied", properties: { sessionID: "s2", requestID: "q1", answers: [] } } });
+    await waitFor(() => broker.core.publication()?.mask === (MASK.ERROR | MASK.WORKING | MASK.WORKING));
+
+    await hooks.event({ event: { type: "session.deleted", properties: session("s3") } });
+    await waitFor(() => broker.core.members.get(`opencode:${groupId}`)?.size === 2, 2_000, "session deletion removes only that member");
+    assert.deepEqual(broker.core.publication()?.mask, MASK.ERROR | MASK.WORKING);
+
+    child = await spawnOpenCodeProcess({ socketPath: broker.socketPath, groupId, mask: MASK.WORKING });
+    await waitFor(() => broker.core.members.get(`opencode:${groupId}`)?.size === 3, 3_000,
+      "a member from a separate OpenCode process aggregates into the same Workspace");
+    assert.equal(broker.core.selected, `opencode:${groupId}`);
+    child.kill("SIGKILL");
+    child = null;
+    await waitFor(() => broker.core.members.get(`opencode:${groupId}`)?.size === 2, MEMBER_LEASE_MS + 3_000,
+      "a dead process member is removed by lease/PID cleanup");
+    assert.equal(broker.core.publication()?.mask, MASK.ERROR | MASK.WORKING,
+      "removing the dead member did not disturb the live aggregate");
+
+    await hooks.dispose();
+    await waitFor(() => broker.core.publication() === null, MEMBER_LEASE_MS + 3_000,
+      "plugin disposal stops lease renewal, so all members expire and publication stops");
+    assert.equal(broker.core.selected, `opencode:${groupId}`, "the Workspace stays selected while all members are gone");
+    const codexWhileVacant = await brokerRequest(broker.socketPath, { type: "report", groupId, memberId: "codex-lurker", pid: process.pid, startedAt: Date.now(), mask: MASK.WAITING });
+    assert.equal(codexWhileVacant.ok, true);
+    assert.equal(broker.core.selected, `opencode:${groupId}`, "a Codex report cannot take over the vacant selected Workspace");
+    assert.equal(broker.core.publication(), null);
+
+    const returning = await loadServerPlugin(fakeServerInput({ directory: workspace, worktree: workspace, counter }), { env });
+    await returning.event({ event: { type: "session.created", properties: session("s1") } });
+    await returning.event({ event: { type: "session.status", properties: { sessionID: "s1", status: { type: "busy" } } } });
+    await waitFor(() => broker.core.publication()?.mask === MASK.WORKING, MEMBER_LEASE_MS + 3_000,
+      "a returning member of the same Workspace restores publication");
+    assert.equal(broker.core.selected, `opencode:${groupId}`);
+    assert.ok(broker.core.revision > revisionAtSelection, "restoring publication allocated a new revision");
+    assert.deepEqual(counter.clientTouches, [], "the complete lifecycle created no client or model effects");
+    await returning.dispose();
+    pass("complete OpenCode lifecycle aggregates members across processes with latched errors, removal, vacancy, and recovery");
+  } finally {
+    if (child) child.kill("SIGKILL");
+    await hooks.dispose().catch(() => {});
+    await broker.close().catch(() => {});
+  }
+}
+
 await testPureCore();
 await testHookSelection();
 await testReporterIntegration();
 await testOpenCodeActivation();
 await testOpenCodePluginSelection();
+await testOpenCodeLifecycle();
 await testUnselectedExpiryIsolation();
 await testLegacyPersistedSelection();
 await testBrokerRecoveryAndFailures();
