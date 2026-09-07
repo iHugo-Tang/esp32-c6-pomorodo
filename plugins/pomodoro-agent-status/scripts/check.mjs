@@ -905,6 +905,22 @@ async function testInstallationAndRecovery() {
   await installer.install(installOptions);
   pass("idempotent user-level installation serves multiple projects without a project-level duplicate");
 
+  const badShapeConfig = path.join(root, "bad-shape-config");
+  await mkdir(badShapeConfig, { recursive: true });
+  await installer.install({ configDir: badShapeConfig, opencodeVersion: "1.18.29" });
+  const serverBefore = await readFile(path.join(badShapeConfig, "opencode.json"), "utf8");
+  const brokenTui = JSON.stringify({ plugin: "not-an-array" }, null, 2);
+  await writeFile(path.join(badShapeConfig, "tui.json"), `${brokenTui}\n`, { mode: 0o600 });
+  await assert.rejects(installer.uninstall({ configDir: badShapeConfig }), /not an array/,
+    "uninstall refuses a non-array tui plugin before mutating opencode.json");
+  assert.equal(await readFile(path.join(badShapeConfig, "opencode.json"), "utf8"), serverBefore,
+    "the valid server config is byte-identical after the refused uninstall");
+  assert.equal(await readFile(path.join(badShapeConfig, "tui.json"), "utf8"), `${brokenTui}\n`,
+    "the invalid TUI config is byte-identical after the refused uninstall");
+  assert.deepEqual((await readdir(path.join(badShapeConfig, "plugins", "pomodoro-agent-status"))).sort(),
+    ["broker.mjs", "opencode-core.mjs", "opencode-server.mjs", "opencode-tui.mjs", "reporter.mjs"],
+    "the installed plugin directory survives a refused uninstall untouched");
+
   const oldConfigDir = path.join(root, "old-config");
   await mkdir(oldConfigDir, { recursive: true });
   await assert.rejects(installer.install({ configDir: oldConfigDir, opencodeVersion: "1.18.0" }), /1\.18\.29/,
@@ -1136,6 +1152,55 @@ async function testAtomicActivation() {
     pass("atomic activation restores a persisted selected-vacant Workspace with exactly one revision");
   } finally {
     await broker.close().catch(() => {});
+  }
+
+  const staleRoot = path.join(root, "ws-stale");
+  await mkdir(staleRoot);
+  const staleGroup = hashId(await realpath(staleRoot));
+  const staleRootPath = await realpath(staleRoot);
+  const staleEnv = { ...process.env, XDG_STATE_HOME: path.join(root, "stale-state") };
+  const staleBroker = await runBroker({
+    stateDir: path.join(root, "stale-state", "pomodoro", "agent-status"),
+    logger: () => {},
+    publisherOptions: { resolvePort: async () => null },
+    reapMs: 60_000,
+  });
+  let child = null;
+  try {
+    // Stage the finding exactly: the selected source holds one live member (the
+    // activation member, renewed manually) plus one stale member whose removal
+    // changes the aggregate mask.
+    const staleSession = new ActivationSession({ root: staleRootPath, env: staleEnv });
+    const firstActivation = await staleSession.activate();
+    assert.equal(firstActivation.revision, 1);
+    staleSession.stop();
+    child = await spawnOpenCodeProcess({ socketPath: staleBroker.socketPath, groupId: staleGroup, mask: MASK.WORKING });
+    await waitFor(() => staleBroker.core.publication()?.mask === MASK.WORKING, 3_000,
+      "the child member contributes Working to the selected aggregate");
+    child.kill("SIGKILL");
+    // Deterministic window: no source-scoped request runs between the child's death
+    // and the activation below. The activation member stays lease-fresh while the
+    // dead child member becomes prunable, so the activate's own scoped reap is what
+    // removes it (with an aggregate mask change) — the double-advance window.
+    await new Promise((resolve) => {
+      child.on("exit", resolve);
+      setTimeout(resolve, 2_000).unref?.();
+    });
+    child = null;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const revBefore = staleBroker.core.revision;
+    const activated = await new ActivationSession({ root: staleRootPath, env: staleEnv }).activate();
+    assert.equal(activated.revision, revBefore + 1,
+      "one activate request yields exactly +1 even though its scoped reap removes a stale selected-source member");
+    assert.deepEqual(staleBroker.core.publication(), { revision: activated.revision, mask: MASK.IDLE },
+      "the aggregate after activation reflects only the refreshed activation member");
+    assert.equal(staleBroker.core.members.get(`opencode:${staleGroup}`).size, 1,
+      "the stale member was removed by the same activation step");
+    assert.equal(staleBroker.core.selected, `opencode:${staleGroup}`);
+    pass("activation cleans stale selected-source members and still advances exactly once");
+  } finally {
+    if (child) child.kill("SIGKILL");
+    await staleBroker.close().catch(() => {});
   }
 }
 

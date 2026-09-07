@@ -116,7 +116,7 @@ export class BrokerCore {
     return this.enqueue(() => this.reapNow());
   }
 
-  async reapNow(scope = null) {
+  async reapNow(scope = null, { advance = true } = {}) {
     const now = this.now();
     const selectedKey = this.selected;
     const oldMask = this.selected ? this.sourceMask(this.selected) : 0;
@@ -135,7 +135,7 @@ export class BrokerCore {
     const selectedSurvivors = selectedKey ? survivors.get(selectedKey) : null;
     let nextMask = 0;
     for (const member of selectedSurvivors?.values() ?? []) nextMask |= member.mask;
-    if (selectedSurvivors && nextMask !== oldMask) await this.advance();
+    if (advance && selectedSurvivors && nextMask !== oldMask) await this.advance();
     this.members = survivors;
   }
 
@@ -178,19 +178,24 @@ export class BrokerCore {
       if (this.failed) throw new Error("broker state unavailable");
       const host = request.host ?? "codex";
       const source = sourceKey(host, request.groupId);
-      await this.reapNow(source);
+      // The activate branch performs its own prune-and-select as one advance, so
+      // the pre-dispatch scoped reap must not advance for it (report, select, and
+      // remove keep the ordinary reaping semantics).
+      await this.reapNow(source, { advance: request.type !== "activate" });
 
       if (request.type === "select") {
         if (!this.sourceIsLive(source)) throw new Error("source has no live members");
         await this.advance(source);
       } else if (request.type === "activate") {
-        // One serialized operation: refresh the activation member and perform the
-        // explicit selection, so every accepted activation costs exactly one advance
-        // regardless of prior state (fresh, live reselect, or selected-but-vacant).
-        await this.advance(source);
+        // One serialized operation: clean this source's stale members without the
+        // reaper's own advance, refresh the activation member, then perform the
+        // explicit selection — the single advance covers removal, refresh, and
+        // selection, so every accepted activation costs exactly one revision.
+        await this.reapNow(source, { advance: false });
         const members = this.members.get(source) ?? new Map();
         members.set(request.memberId, { ...request, lastSeen: this.now() });
         this.members.set(source, members);
+        await this.advance(source);
       } else if (request.type === "remove") {
         const members = this.members.get(source);
         const oldMask = this.sourceMask(source);
@@ -520,7 +525,7 @@ export function defaultStateDir(env = process.env) {
   return path.join(root, "pomodoro", "agent-status");
 }
 
-export async function runBroker({ stateDir = defaultStateDir(), logger = console.error, publisherOptions = {}, idleMs = null } = {}) {
+export async function runBroker({ stateDir = defaultStateDir(), logger = console.error, publisherOptions = {}, idleMs = null, reapMs = 250 } = {}) {
   const prepared = await prepareState(stateDir);
   const core = new BrokerCore(prepared);
   const socketPath = path.join(stateDir, "agent-status.sock");
@@ -567,7 +572,7 @@ export async function runBroker({ stateDir = defaultStateDir(), logger = console
       })
       .catch((error) => logger(`broker: ${error.message}`))
       .finally(() => { ticking = false; });
-  }, 250);
+  }, reapMs);
   timer.unref?.();
   await publisher.tick();
   return {

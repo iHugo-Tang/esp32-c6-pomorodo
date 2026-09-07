@@ -106,3 +106,15 @@ Evidence: `node plugins/pomodoro-agent-status/scripts/check.mjs` → 17 checks p
 **Remaining human checks**
 
 - Criterion 4 (and Ticket 02 criterion 1, Ticket 06 criteria 5-7): real TUI and physical-device acceptance as instructed in Ticket 06.
+
+### 2026-09-06 Coordinator review round 3 fix (single coding executor)
+
+**Gap fixed (Medium): uninstall all-or-nothing validation.** `uninstallOpenCode()` parsed both configs but did not validate their `plugin` shapes before the first removal, so a valid `opencode.json` could be rewritten before a non-array `tui.json` `plugin` was refused. `uninstall` now parses and shape-validates both `plugin` arrays (via the same `pluginEntries` check used by install) before the first mutation. Isolated regression (check 13): a valid `opencode.json` plus a `tui.json` whose `plugin` is a string — `uninstall` rejects; both files stay byte-identical; the installed plugin directory is untouched. (`plugin_enabled` structure is not consulted by uninstall, which removes entries only, so no additional disable-related validation applies there.)
+
+**Check evidence**
+
+- `node plugins/pomodoro-agent-status/scripts/check.mjs` → `pomodoro-agent-status check: 22 checks passed`; isolated installer CLI round trip (install → verify → uninstall on a temp config) → clean; `node --check` clean; CMake/CTest 6/6; `git diff --check` clean.
+
+**Per-criterion results (this round)**
+
+Criteria 1-3, 5-9 remain passed; criterion 4 remains pending human acceptance. No criterion regressed.

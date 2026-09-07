@@ -103,3 +103,23 @@
 **Remaining human checks**
 
 - Criterion 1: real OpenCode 1.18.29 TUI slash autocomplete smoke test (Ticket 06 instructions).
+
+### 2026-09-06 Coordinator review round 3 fix (single coding executor)
+
+**Gap fixed (High): activate could double-advance through the request-scoped reap.**
+
+- `BrokerCore.handleOne` runs a scoped `reapNow(source)` for every request before dispatch. For an `activate` against the currently selected source, that pre-dispatch reap could itself remove an expired/dead member, observe the aggregate mask change, and call `advance()` — then the activate branch called `advance()` again, so one invocation advanced twice.
+- Fix: the pre-dispatch scoped reap now advances for `report`, `select`, and `remove` exactly as before, but passes `{ advance: false }` for `activate`; the activate branch prunes stale members, refreshes/sets its activation member, and performs the single `advance(source)` — removal, refresh, and selection are covered by exactly one revision. Ordinary `report`/`select` reaping semantics, serialized queue ownership, strict validation, persistence, and sole serial ownership are unchanged. A `reapMs` option was added to `runBroker` (default 250 ms, unchanged behavior) so the regression can run with the background reaper dormant.
+
+**Regression evidence (check 11, real socket, deterministic)**
+
+- Selected source with the lease-fresh activation member plus a killed child-process member (pid reaped, aggregate `WORKING`): one `activate` request yields exactly `revision + 1` (`3`), publication `{revision: 3, mask: IDLE}`, the stale member removed by the same step, and the selection unchanged.
+- Discriminator: with the pre-dispatch reap restored to always-advance, check 11 fails with `actual: 4, expected: 3` — the regression provably covers the old implementation.
+
+**Check evidence**
+
+- `node plugins/pomodoro-agent-status/scripts/check.mjs` → `pomodoro-agent-status check: 22 checks passed`; `node --check` on all plugin scripts clean; CMake/CTest 6/6; `git diff --check` clean.
+
+**Per-criterion results (this round)**
+
+1. Still pending human acceptance (unchanged). Criteria 2-8 remain passed; criterion 4's "exactly one revision per invocation" now also holds when the activation itself cleans a stale selected-source member.

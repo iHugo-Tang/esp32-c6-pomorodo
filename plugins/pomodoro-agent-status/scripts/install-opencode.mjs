@@ -187,14 +187,19 @@ export async function install({ configDir = resolveConfigDir(), opencodeVersion,
 
 export async function uninstall({ configDir = resolveConfigDir(), pluginDirName = PLUGIN_DIRECTORY_NAME } = {}) {
   await assertPlainJsonConfigs(configDir);
-  // Parse both configs before touching anything so a malformed file fails closed.
-  await readJsonConfig(path.join(configDir, "opencode.json"));
-  await readJsonConfig(path.join(configDir, "tui.json"));
+  const serverConfigPath = path.join(configDir, "opencode.json");
+  const tuiConfigPath = path.join(configDir, "tui.json");
+  // Parse and shape-validate both configs before the first mutation, so a valid
+  // JSON file is never partially rewritten when the other one would be refused.
+  const serverConfig = await readJsonConfig(serverConfigPath);
+  const tuiConfig = await readJsonConfig(tuiConfigPath);
+  pluginEntries(serverConfig);
+  pluginEntries(tuiConfig);
   const targetDir = path.join(configDir, "plugins", pluginDirName);
   const serverTarget = path.join(targetDir, "opencode-server.mjs");
   const tuiTarget = path.join(targetDir, "opencode-tui.mjs");
-  await removePluginEntry(path.join(configDir, "opencode.json"), serverTarget);
-  await removePluginEntry(path.join(configDir, "tui.json"), tuiTarget);
+  await removePluginEntry(serverConfigPath, serverTarget);
+  await removePluginEntry(tuiConfigPath, tuiTarget);
   await rm(targetDir, { recursive: true, force: true });
   return { configDir, removed: targetDir };
 }
