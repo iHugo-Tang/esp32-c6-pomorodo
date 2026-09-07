@@ -2,9 +2,11 @@
 
 ## Source and selection
 
-An Agent Source is one Codex Workspace. A Git repository uses its normalized repository root as the Workspace boundary; a non-Git directory uses its normalized working directory. Chats, forks, side chats, and subagents within that boundary are members of the same source.
+An Agent Source is one host-qualified Workspace: a Codex Workspace or an OpenCode Workspace. A Git repository uses its normalized repository root as the Workspace boundary; a non-Git directory uses its normalized working directory. Host type is part of the source identity, so a Codex Workspace and an OpenCode Workspace for the same path never merge. Chats, forks, side chats, and subagents within that boundary are members of the same source.
 
-The device displays one Selected Agent Source. The first valid source becomes selected. After that, only an explicit selection changes it. If the selected source disappears, the selection remains and the device waits for that Workspace to return; another source never takes over automatically. Selecting or reselecting a Workspace starts a new revision even when its visible status is unchanged.
+Only the Codex integration is delivered: the broker contract already accepts host-qualified sources and explicit OpenCode activation, but the OpenCode server and TUI plugins are not delivered, so ordinary OpenCode activity can neither publish status nor become selected.
+
+The device displays one Selected Agent Source. The first valid Codex report establishes the selection; OpenCode reports cannot become the first selected source. After that, only an explicit selection changes it. If the selected source disappears, the selection remains and the device waits for that Workspace to return; another source never takes over automatically. Selecting or reselecting a Workspace starts a new revision even when its visible status is unchanged.
 
 `$pomodoro-select` selects the current Codex Workspace. It first reports the source, starts the broker if necessary, and performs only the selection revision; the control turn must not create a Working or Completed cycle.
 
@@ -38,9 +40,13 @@ The broker socket and state live under `${XDG_STATE_HOME:-$HOME/.local/state}/po
 - `select`: Workspace group identity.
 - `remove`: Workspace group identity and member identity.
 
-The removed client dimension is invalid. Unknown operations, extra or missing fields, invalid identifiers, dead or invalid PIDs, invalid timestamps, masks outside `0..15`, malformed JSON, and oversized lines reject only that request.
+Every request may also carry one optional, strictly validated `host` field: only `codex` (the default when absent) and `opencode` are accepted. Internal source keys are `host:groupId` for both hosts, so equal groupIds never merge across hosts and every previously valid Codex `groupId` — including one beginning with `opencode:` — remains valid without colliding with an OpenCode source.
 
-A report renews a ten-second member lease. Dead PIDs and expired members are removed. A Workspace mask is the bitwise OR of its live member masks. The broker persists only the selected Workspace identity and monotonically increasing revision by atomic replacement. Members and masks are rebuilt from reports after restart. Corrupt or unsafe state fails closed and is not overwritten.
+The removed client dimension is invalid. Unknown operations, extra or missing fields, invalid identifiers or hosts, dead or invalid PIDs, invalid timestamps, masks outside `0..15`, malformed JSON, and oversized lines reject only that request.
+
+A report renews a ten-second member lease. Dead PIDs and expired members are removed. Request-scoped reaping covers only the requesting source; the background reaper owns full cleanup and the selected source's expiry advance, so an unselected request can never advance the selected publication. A Workspace mask is the bitwise OR of its live member masks. The broker persists only the selected Workspace identity with an explicit host (`selected`, `selectedHost`, `revision`) and the monotonically increasing revision by atomic replacement; legacy state files with a bare `selected` and no host load as Codex selections and resume. Members and masks are rebuilt from reports after restart. Corrupt or unsafe state fails closed and is not overwritten.
+
+Responses keep the historical contract: `selected` is the bare Workspace identity (null when nothing is selected) and carries no host discriminator for null or Codex selections; an OpenCode selection adds `selectedHost: "opencode"`.
 
 The Codex adapter reports every three seconds from a lightweight reporter whose live PID carries the lease. It removes the member when the host exits. Broker absence or malformed responses do not block Codex; the reporter retains state and retries. Lifecycle events map ordinary prompt and tool work to Working, permission and user-input requests to Waiting, structured tool failure to latched Error, a successful stop to Completed, and session start to Idle. Compaction does not reset status. Real new work clears a latched Error. Subagents join and leave as separate members.
 
@@ -63,7 +69,7 @@ A live-PID `flash-reservation` in the Agent Status state directory makes the bro
 
 ## OpenCode compatibility
 
-OpenCode Process is not a supported Agent Source. The project has no project-level OpenCode status plugin, and OpenCode cannot publish status, select a source, or own the device serial port.
+The historical OpenCode Process integration is not a supported Agent Source and is not restored. The accepted source model and broker contract now include OpenCode Workspaces with host-qualified identities and explicit activation, but the OpenCode server and TUI plugins are not delivered: OpenCode still cannot publish status, select a source, or own the device serial port, and ordinary OpenCode activity cannot become the first selected source.
 
 Runtime code does not inspect, migrate, or delete the historical OpenCode state directory. An operator may remove it only after stopping the old broker. The `OC1` wire protocol remains because current Agent Status still uses it; the name does not imply OpenCode support.
 

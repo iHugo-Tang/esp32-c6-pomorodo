@@ -6,7 +6,7 @@
 
 **Status:** ready-for-agent
 
-**Completion:** accepted by coordinator
+**Completion:** pending coordinator review
 
 - [x] A host-qualified OpenCode Workspace identity cannot collide or aggregate with the Codex Workspace identity for the same normalized repository root or working directory.
 - [x] Ordinary OpenCode lifecycle activity before `/pomodoro-select` does not become the Selected Agent Source or advance the device revision.
@@ -95,3 +95,38 @@ Both findings are being addressed in the next commit; criteria will be re-eviden
 - Criteria 1-7 are accepted as passed based on the implementation comment's per-criterion evidence and the independently inspected assertions. No criterion is failed, blocked, or pending human acceptance.
 - TUI and physical-device checks remain assigned to later tickets and do not limit completion of this broker-foundation ticket. The shared specification remains incomplete.
 - The canonical tracker vocabulary has no completed triage role, so the `ready-for-agent` triage label is retained and completion is recorded separately above rather than misusing `ready-for-human`.
+
+### 2026-09-06 Second review round (Standards FAIL / Spec FAIL after `d4f45d4`)
+
+The second independent review returned Standards FAIL and Spec FAIL with four findings. `Completion` is set back to pending coordinator review; the acceptance comment above records that the earlier acceptance covered the diff through the first review round and is superseded by this round for the points below. Historical comments are preserved.
+
+1. **(High) Response leak of internal keys.** `response()` exposed the internal `core.selected`, so Codex responses changed from bare `<groupId>` to `codex:<groupId>`.
+2. **(Medium) ADR-0014 consistency.** ADR-0016 preserved ADR-0014's on-demand-start principle but had not superseded ADR-0014's narrow "does not modify the `report`/`select`/`remove` schema" consequence, which the optional `host` field now invalidates.
+3. **(Medium) Canonical documentation.** The Agent Status product doc and curated spec still described a Codex-only source model with no record of the delivered broker foundation or the undelivered OpenCode integration.
+4. **(Low) Ticket consistency.** The ticket still read `Completion: accepted by coordinator` despite this later review round.
+
+### 2026-09-06 Second review fixes (single coding executor)
+
+**Fixes (commit 3)**
+
+- Finding 1 (`broker.mjs`): `response()` now serializes the selection through `selectionState()` — `selected` is again the bare Workspace identity (null when nothing is selected) with no extra field for null or Codex selections, exactly matching the pre-Ticket-01 contract; an OpenCode selection adds one additive field `selectedHost: "opencode"`. Real-socket regressions added to `testOpenCodeActivation`: exact deepEqual of the null-selection reply `{ok, selected: null, revision}`, the Codex selection replies `{ok, selected: <bare groupId>, revision}` (first-valid-source, explicit Codex selection, and the odd-prefix Codex source — no `selectedHost` field), and the OpenCode replies `{ok, selected: <bare groupId>, revision, selectedHost: "opencode"}` for activation and reactivation. Call sites checked: `reporter.mjs` reads only `ok` and `revision`; no other consumer of `selected` exists in the plugin.
+- Finding 2 (`docs/adr/0016`): ADR-0016's consequences now explicitly supersede ADR-0014's narrow no-schema-change consequence (the three request types accept the optional strict `host` field) while restating that ADR-0012, ADR-0013, and ADR-0014's on-demand-start principle remain valid. ADR-0014's historical text is untouched.
+- Finding 3 (`docs/product/agent-status.md`, `_scratch/specs/agent-status.md`): both now describe the host-qualified source model, the delivered broker foundation (optional `host` field, Codex-only first-selection rule, `host:groupId` keys, `{selected, selectedHost, revision}` persistence with legacy bare-Codex loading, scoped request reaping with reaper-owned expiry advances, and the compatible response shape), and state truthfully that the OpenCode server/TUI integration is not delivered — ordinary OpenCode activity can neither publish status nor become selected. The historical OpenCode Process section is updated to distinguish it from the accepted-but-undelivered OpenCode Workspace source.
+- Finding 4 (this ticket): `Completion` changed to `pending coordinator review` before the fixes; all historical comments retained; this round and its evidence appended; still pending re-review. The parent feature spec's interface decisions now record the final response shape.
+
+**Check evidence (exact commands and outcomes)**
+
+- `node plugins/pomodoro-agent-status/scripts/check.mjs` → `pomodoro-agent-status check: 12 checks passed` (including the new exact response-shape assertions).
+- `cmake -S test -B build/host` → configured; `cmake --build build/host --parallel` → built; `ctest --test-dir build/host --output-on-failure` → `100% tests passed out of 6`.
+- `git diff --check` → clean.
+
+**Per-criterion results (all still passed; evidence unchanged except as noted)**
+
+1-5. Passed as evidenced in the review-fixes comment above; the response-shape fix does not alter publication, revision, validation, or isolation behavior, and the new deepEqual assertions pin the exact wire responses for null, Codex, and OpenCode selections.
+6. Passed. Codex response contract is restored and now explicitly regression-asserted through the real socket (`{ok, selected: <bare groupId>, revision}` with no additional fields); existing checks 1-5 and 10-12 unchanged and passing.
+7. Passed. Response compatibility and OpenCode disambiguation are verified through the real broker socket, not private helpers.
+
+**Remaining problems / notes**
+
+- Completion remains pending coordinator re-review. The shared OpenCode feature spec is not complete, and Tickets 02-06 remain untouched; TUI/plugin and physical-device validation remain outside this ticket.
+- Supersede note: this comment supersedes the earlier review-fixes comment where it says the `selected` field in broker responses is `host:groupId` — responses now carry the bare groupId plus `selectedHost` only for OpenCode.

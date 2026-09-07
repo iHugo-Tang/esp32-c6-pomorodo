@@ -174,7 +174,9 @@ async function testOpenCodeActivation() {
   const opencodeReport = { type: "report", groupId, memberId: "opencode-main", pid: process.pid, startedAt, mask: MASK.IDLE, host: "opencode" };
   let broker = await runBroker({ stateDir, logger: () => {}, publisherOptions: { resolvePort: async () => null } });
   try {
-    await brokerRequest(broker.socketPath, opencodeReport);
+    const firstReply = await brokerRequest(broker.socketPath, opencodeReport);
+    assert.deepEqual(firstReply, { ok: true, selected: null, revision: 0 },
+      "responses keep the historical shape while nothing is selected");
     await brokerRequest(broker.socketPath, { ...opencodeReport, memberId: "opencode-sub", mask: MASK.WORKING });
     assert.equal(broker.core.selected, null, "OpenCode reports before activation do not select a source");
     assert.equal(broker.core.revision, 0, "OpenCode reports before activation do not advance the revision");
@@ -201,7 +203,8 @@ async function testOpenCodeActivation() {
     assert.equal(broker.core.revision, 0, "rejections leave the revision unchanged");
 
     const codexSelected = await brokerRequest(broker.socketPath, codexReport);
-    assert.equal(codexSelected.ok, true);
+    assert.deepEqual(codexSelected, { ok: true, selected: groupId, revision: 1 },
+      "Codex responses keep the historical bare selected value and field set");
     assert.deepEqual(broker.core.publication(), { revision: 1, mask: MASK.WAITING },
       "Codex first-valid-source still selects the same groupId");
 
@@ -212,15 +215,15 @@ async function testOpenCodeActivation() {
       "unselected OpenCode reports cannot change the selected revision or mask");
 
     const activated = await brokerRequest(broker.socketPath, { type: "select", groupId, host: "opencode" });
-    assert.equal(activated.ok, true);
-    assert.equal(activated.selected, `opencode:${groupId}`, "activation addresses the host-qualified source");
+    assert.deepEqual(activated, { ok: true, selected: groupId, revision: 2, selectedHost: "opencode" },
+      "activation is unambiguous: bare groupId plus an explicit OpenCode discriminator");
     assert.equal(activated.revision, 2, "first activation creates exactly one new revision");
     assert.deepEqual(broker.core.publication(), { revision: 2, mask: MASK.ERROR | MASK.WORKING },
       "the selected OpenCode aggregate excludes the Codex source with the same groupId");
 
     const reactivated = await brokerRequest(broker.socketPath, { type: "select", groupId, host: "opencode" });
-    assert.equal(reactivated.ok, true);
-    assert.equal(reactivated.revision, 3, "reactivation creates exactly one new revision");
+    assert.deepEqual(reactivated, { ok: true, selected: groupId, revision: 3, selectedHost: "opencode" },
+      "reactivation creates exactly one new revision");
 
     const [firstAttempt, secondAttempt] = await Promise.all([
       brokerRequest(broker.socketPath, { type: "select", groupId, host: "opencode" }),
@@ -236,7 +239,8 @@ async function testOpenCodeActivation() {
       "member removal addresses the host-qualified source");
 
     const codexExplicit = await brokerRequest(broker.socketPath, { type: "select", groupId });
-    assert.equal(codexExplicit.ok, true);
+    assert.deepEqual(codexExplicit, { ok: true, selected: groupId, revision: 7 },
+      "explicit Codex selection excludes the OpenCode aggregate");
     assert.deepEqual(broker.core.publication(), { revision: 7, mask: MASK.WAITING },
       "explicit Codex selection excludes the OpenCode aggregate");
 
@@ -247,8 +251,8 @@ async function testOpenCodeActivation() {
     assert.deepEqual(broker.core.publication(), { revision: 7, mask: MASK.WAITING },
       "the odd Codex source is unselected and cannot change publication");
     const oddSelected = await brokerRequest(broker.socketPath, { type: "select", groupId: oddGroupId });
-    assert.equal(oddSelected.ok, true);
-    assert.equal(oddSelected.selected, `codex:${oddGroupId}`);
+    assert.deepEqual(oddSelected, { ok: true, selected: oddGroupId, revision: 8 },
+      "a Codex selection response carries no host discriminator");
     assert.deepEqual(broker.core.publication(), { revision: 8, mask: MASK.WORKING },
       "a Codex groupId with an opencode: prefix neither collides with nor aggregates the OpenCode source");
 

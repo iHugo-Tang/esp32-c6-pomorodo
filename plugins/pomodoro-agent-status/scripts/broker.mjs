@@ -83,10 +83,12 @@ export function validateRequest(value, isAlive = pidIsAlive) {
 }
 
 function response(core, ok, error) {
+  const selection = selectionState(core.selected);
   return {
     ok,
-    selected: core.selected,
+    selected: selection.selected,
     revision: core.revision,
+    ...(selection.selectedHost === "opencode" ? { selectedHost: selection.selectedHost } : {}),
     ...(error ? { error } : {}),
   };
 }
