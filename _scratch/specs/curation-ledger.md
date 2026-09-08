@@ -12,12 +12,15 @@ A subsequent 2026-09-01 reconciliation reviewed the five remaining issues after 
 
 The latest 2026-09-01 run absorbed feature-spec requirements into domain documents under `specs/`. A status-only change had marked the Agent Waiting Sound issue and spec completed without adding device evidence or superseding the retained limitation; reconciliation restored them to `needs-triage` and `in-progress`. Feature specs now act as short lifecycle entrypoints, while each lasting rule has one domain home. No cleanup was authorized or performed.
 
+On 2026-09-07, the completed OpenCode Workspace Agent Status feature was reconciled into `specs/agent-status.md`. Its 23-check host integration suite passed with exit code 0 outside the process sandbox, and the tracker records coordinator acceptance of the real OpenCode 1.18.29 TUI and physical-device criteria. Cleanup was authorized: six completed issues, the replaced feature spec, the temporary duplicate domain spec, and its feature-local ledger were moved to the operating system Trash.
+
 ## Issue status review history
 
 All paths are relative to `_scratch/`. Every reviewed issue maps to the `spec.md` in its feature directory. Two reviewed files were already absent before the current run and remain here only to preserve status and cleanup history.
 
 | Issue | Previous → current | Evidence and reason | Canonical mapping and lasting home |
 | --- | --- | --- | --- |
+| `opencode-agent-status/issues/01-*.md` through `06-*.md` | `ready-for-agent` / pending acceptance → `completed` | Delivered broker, lifecycle, TUI, installation, recovery, documentation, and device behavior passed the 23-check host suite and recorded coordinator/human acceptance. | `specs/agent-status.md` |
 | `agent-status/issues/01-add-agent-status-broker.md` | `ready-for-agent` → `completed` | All criteria are checked; broker source, runnable check, ADRs, and a fresh 5/5 broker check verify the contract. | `agent-status/spec.md` |
 | `agent-status/issues/02-add-codex-workspace-adapter.md` | `ready-for-human` → `completed` | Automated adapter checks pass 8/8, all acceptance criteria are checked, and the maintainer explicitly confirmed the status update on 2026-09-01, superseding the earlier pending comments. | `agent-status/spec.md` |
 | `agent-waiting-sound/issues/01-add-agent-waiting-sound.md` | `ready-for-human` → `completed` | Implementation, assets, documentation, host coverage, and build evidence satisfy this implementation ticket; device acceptance is isolated in the next ticket. | `agent-waiting-sound/spec.md` |
@@ -60,6 +63,7 @@ All paths are relative to `_scratch/`. Every reviewed issue maps to the `spec.md
 
 | Feature spec | Lifecycle status | Basis |
 | --- | --- | --- |
+| `opencode-agent-status/spec.md` | `completed` | OpenCode Workspace lifecycle, direct TUI selection, cross-host isolation, installation, recovery, and device acceptance are complete. |
 | `agent-status/spec.md` | `completed` | Broker, adapter, supported-client acceptance, and device integration are complete. |
 | `agent-waiting-sound/spec.md` | `in-progress` | Implementation is complete; target-device criteria are checked without an explicit result and need triage. |
 | `complete-device-app/spec.md` | `in-progress` | Core application slices are complete; earlier pending RTC, hardware-control, and display-lifecycle notes lack explicit superseding acceptance records. |
@@ -77,6 +81,7 @@ All paths are relative to `_scratch/`. Every reviewed issue maps to the `spec.md
 
 | Feature spec | Lasting domain home |
 | --- | --- |
+| `opencode-agent-status/spec.md` | `specs/agent-status.md` |
 | `agent-status/spec.md` | `specs/agent-status.md` |
 | `agent-waiting-sound/spec.md` | `specs/sound.md` |
 | `complete-device-app/spec.md` | `specs/pomodoro-and-statistics.md`, `specs/date-and-time.md`, `specs/navigation-and-settings.md`, `specs/display-and-input.md`, `specs/sound.md`, and `specs/firmware-boundaries.md` |
@@ -91,6 +96,20 @@ All paths are relative to `_scratch/`. Every reviewed issue maps to the `spec.md
 | `wake-display-on-first-pwr-press/spec.md` | `specs/display-and-input.md` |
 
 ## Current cleanup
+
+The following OpenCode Workspace Agent Status sources were moved to Trash on 2026-09-07 after their completed behavior and cleanup history were absorbed:
+
+| Source | Trash destination |
+| --- | --- |
+| `_scratch/opencode-agent-status/issues/01-add-explicit-host-qualified-agent-source-activation.md` | `/Users/hugo/.Trash/opencode-agent-status-curation-2026-09-07/01-add-explicit-host-qualified-agent-source-activation.md` |
+| `_scratch/opencode-agent-status/issues/02-select-an-opencode-workspace-from-the-tui.md` | `/Users/hugo/.Trash/opencode-agent-status-curation-2026-09-07/02-select-an-opencode-workspace-from-the-tui.md` |
+| `_scratch/opencode-agent-status/issues/03-aggregate-complete-opencode-workspace-lifecycle.md` | `/Users/hugo/.Trash/opencode-agent-status-curation-2026-09-07/03-aggregate-complete-opencode-workspace-lifecycle.md` |
+| `_scratch/opencode-agent-status/issues/04-isolate-opencode-and-codex-source-switching.md` | `/Users/hugo/.Trash/opencode-agent-status-curation-2026-09-07/04-isolate-opencode-and-codex-source-switching.md` |
+| `_scratch/opencode-agent-status/issues/05-harden-user-level-installation-and-recovery.md` | `/Users/hugo/.Trash/opencode-agent-status-curation-2026-09-07/05-harden-user-level-installation-and-recovery.md` |
+| `_scratch/opencode-agent-status/issues/06-complete-documentation-and-release-acceptance.md` | `/Users/hugo/.Trash/opencode-agent-status-curation-2026-09-07/06-complete-documentation-and-release-acceptance.md` |
+| `_scratch/opencode-agent-status/spec.md` | `/Users/hugo/.Trash/opencode-agent-status-curation-2026-09-07/spec.md` |
+| `_scratch/opencode-agent-status/specs/agent-status.md` | `/Users/hugo/.Trash/opencode-agent-status-curation-2026-09-07/agent-status.md` |
+| `_scratch/opencode-agent-status/curation-ledger.md` | `/Users/hugo/.Trash/opencode-agent-status-curation-2026-09-07/curation-ledger.md` |
 
 Cleanup was authorized for the latest review's only candidate. The completed issue was fully absorbed into `switch-setting-scroll/spec.md` and moved to Trash:
 
@@ -259,17 +278,17 @@ The following non-ticket artifacts remain because cleanup authority covered only
 
 Current tracker decisions remain:
 
-- The removed release-acceptance ticket named temporary SoftAP behavior even though ADR-0009 removes it. Any replacement release checklist must use the current local-wall-time and Codex-only product.
+- The removed release-acceptance ticket named temporary SoftAP behavior even though ADR-0009 removes it. Any replacement release checklist must use the current local-wall-time and host-qualified Codex/OpenCode Agent Status product.
 - Checked acceptance boxes lack explicit target-device result records for Agent Waiting Sound and roller smoothness, and no acceptance record supersedes the earlier pending comments for PCF85063 failure recovery, hardware controls, or AMOLED lifecycle. A maintainer must record acceptance evidence or reopen the boxes; removing a pending checklist alone does not establish completion.
 
 Explicit supersession resolves the other apparent conflicts:
 
-- Codex Workspace-only Agent Status replaces OpenCode and multi-client source identity.
+- OpenCode Workspace support supersedes the former Codex-only source restriction; the historical OpenCode Process and multi-client identity remain superseded.
 - RTC local wall time replaces fixed UTC-offset storage and input.
 
-## Current cleanup eligibility
+## Earlier cleanup eligibility (2026-09-01)
 
-Cleanup was not authorized in the current request, so nothing moved. The following noncanonical feature stubs are fully absorbed and may be moved to Trash in a separately authorized cleanup after one final backlink check:
+Cleanup was not authorized in that review, so nothing moved then. The following noncanonical feature stubs were recorded as eligible for a later authorized cleanup after one final backlink check:
 
 - `_scratch/agent-status/spec.md`
 - `_scratch/keep-display-awake-on-usb-power/spec.md`

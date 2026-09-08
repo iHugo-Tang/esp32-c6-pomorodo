@@ -157,7 +157,6 @@ None.
 - On-demand broker: [ADR-0014](../adr/0014-start-agent-status-broker-on-selection.md)
 - Superseded Codex-only boundary: [ADR-0015](../adr/0015-agent-status-only-supports-codex-workspaces.md)
 - Accepted OpenCode source boundary: [ADR-0016](../adr/0016-support-opencode-workspaces-as-agent-sources.md)
-- Published implementation specification: [_scratch/opencode-agent-status/spec.md](../../_scratch/opencode-agent-status/spec.md)
 - Broker implementation: `plugins/pomodoro-agent-status/scripts/broker.mjs`
 - Codex adapter implementation: `plugins/pomodoro-agent-status/scripts/reporter.mjs`
 
