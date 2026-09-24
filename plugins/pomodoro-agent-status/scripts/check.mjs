@@ -456,6 +456,43 @@ async function testOnDemandBroker() {
   pass("on-demand broker exits after reports stop");
 }
 
+async function testSerialDebugLog() {
+  const root = await mkdtemp("/tmp/pomodoro-serial-debug-");
+  const stateDir = path.join(root, "pomodoro", "agent-status");
+  const logPath = path.join(stateDir, "serial-debug.jsonl");
+  const env = { ...process.env, XDG_STATE_HOME: root, POMODORO_BROKER_DEBUG: "1" };
+  const serialLines = [];
+  const broker = await runBroker({
+    stateDir,
+    env,
+    logger: () => {},
+    publisherOptions: {
+      resolvePort: async () => "/dev/fake-cu",
+      connect: async (port, onLine) => {
+        setImmediate(() => onLine("OC1 ENABLED"));
+        return { write: async (line) => { serialLines.push(line); }, close: async () => {} };
+      },
+    },
+  });
+  try {
+    await brokerRequest(broker.socketPath, { type: "report", groupId: "debug-g", memberId: "m", pid: process.pid, startedAt: Date.now(), mask: MASK.WAITING });
+    await waitFor(async () => {
+      const text = await readFile(logPath, "utf8").catch(() => "");
+      const events = text.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line).ev);
+      return events.includes("connect") && events.includes("enabled") && events.includes("send");
+    }, 3_000, "serial debug log captured connect→enabled→send");
+    const text = await readFile(logPath, "utf8");
+    const events = text.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+    assert.ok(events.every((event) => Number.isInteger(event.t)), "every debug line carries a timestamp");
+    const send = events.find((event) => event.ev === "send");
+    assert.equal(send.enabled, true, "send snapshot records enabled state");
+    assert.equal(send.hasTransport, true, "send snapshot records transport presence");
+    pass("POMODORO_BROKER_DEBUG writes serial-debug.jsonl with connect/enabled/send snapshots");
+  } finally {
+    await broker.close();
+  }
+}
+
 function forbiddenClientProxy(counter) {
   return new Proxy({}, {
     get(target, property) {
@@ -465,29 +502,39 @@ function forbiddenClientProxy(counter) {
   });
 }
 
-function fakeTuiApi({ directory, worktree, counter }) {
+function fakeTuiApi({ directory, worktree, counter, options }) {
   const disposers = [];
   const commands = [];
+  const location = { directory, worktree };
   return {
     api: {
-      app: { version: "1.18.29" },
-      command: {
-        register: (factory) => {
-          commands.push(factory);
+      app: { version: "2.0.16" },
+      options: options ?? {},
+      location,
+      data: { location: { default: () => location } },
+      keymap: {
+        layer: (factory) => {
+          const layer = factory();
+          commands.push(...(layer.commands ?? []));
           return () => {};
         },
-        trigger: () => counter.triggers++,
-        show: () => counter.triggers++,
       },
-      ui: { toast: (input) => counter.toasts.push(input) },
-      state: { path: { directory, worktree, state: directory, config: directory } },
+      ui: {
+        toast: { show: (input) => counter.toasts.push(input) },
+        // The plugin registers its command layer from an app-level slot render,
+        // where a keymap provider exists in the real host.
+        slot: (claim) => {
+          claim.render?.({});
+          return () => {};
+        },
+      },
       client: forbiddenClientProxy(counter),
       lifecycle: {
         signal: new AbortController().signal,
         onDispose(fn) { disposers.push(fn); return () => {}; },
       },
     },
-    commands: () => commands.flatMap((factory) => factory()),
+    commands: () => commands,
     toasts: () => counter.toasts,
     dispose: () => Promise.all(disposers.map((fn) => fn())),
   };
@@ -500,7 +547,7 @@ async function testOpenCodePluginSelection() {
   const stateDir = path.join(root, "pomodoro", "agent-status");
   const env = { ...process.env, XDG_STATE_HOME: root };
   const counter = { toasts: [], triggers: 0, clientTouches: [] };
-  const tui = fakeTuiApi({ directory: workspace, worktree: workspace, counter });
+  const tui = fakeTuiApi({ directory: workspace, worktree: workspace, counter, options: { env } });
   const socketGone = () => stat(broker.socketPath).then(() => false, () => true);
   const broker = await runBroker({ stateDir, logger: () => {}, publisherOptions: { resolvePort: async () => null } });
   const serverInput = {
@@ -511,23 +558,22 @@ async function testOpenCodePluginSelection() {
     serverUrl: new URL("http://127.0.0.1:0"),
     $: undefined,
   };
+  let tuiCleanup;
   try {
-    const serverModule = await import("./opencode-server.mjs");
-    const serverExport = Object.entries(serverModule).filter(([, value]) => typeof value === "function");
-    assert.equal(serverExport.length, 1, "the server plugin module exports exactly one plugin function");
-    const hooks = await serverExport[0][1](serverInput, { env });
+    const hooks = await loadServerPlugin(serverInput, { env });
 
     const tuiModule = await import("./opencode-tui.mjs");
-    assert.equal(typeof tuiModule.default, "object", "the TUI module is a { id, tui } module");
-    await tuiModule.default.tui(tui.api, { env });
+    assert.equal(tuiModule.default.id, "pomodoro-agent-status.cli", "the TUI module is a Plugin.define definition");
+    assert.equal(typeof tuiModule.default.setup, "function");
+    tuiCleanup = await tuiModule.default.setup(tui.api);
     const commands = tui.commands();
     assert.equal(commands.length, 1, "exactly one TUI command is registered");
     assert.deepEqual(commands[0].slash, { name: "pomodoro-select" });
-    assert.equal(typeof commands[0].onSelect, "function");
+    assert.equal(typeof commands[0].run, "function");
 
     const groupId = hashId(await realpath(workspace));
     const before = broker.core.revision;
-    commands[0].onSelect();
+    commands[0].run();
     const selection = await waitFor(() => broker.core.selected === `opencode:${groupId}` && broker.core.revision === before + 1)
       .then(() => true, () => { throw new Error("selection did not create exactly one revision"); });
     assert.equal(selection, true);
@@ -537,7 +583,7 @@ async function testOpenCodePluginSelection() {
     assert.match(tui.toasts()[0].message, /revision/);
     assert.deepEqual(counter.clientTouches, [], "neither plugin touched the SDK client (no model, message, or Task use)");
 
-    commands[0].onSelect();
+    commands[0].run();
     await waitFor(() => broker.core.revision === before + 2, 2_000);
     assert.equal(broker.core.revision, before + 2, "repeat selection creates exactly one more revision");
     assert.equal(counter.clientTouches.length, 0);
@@ -563,7 +609,7 @@ async function testOpenCodePluginSelection() {
       socket.end("not-json\n");
     });
     await new Promise((resolve) => impostor.listen(broker.socketPath, resolve));
-    tui.commands()[0].onSelect();
+    tui.commands()[0].run();
     await waitFor(() => tui.toasts().length === 3);
     assert.equal(tui.toasts()[2].variant, "error", "selection failure feedback is bounded and visible");
     assert.doesNotMatch(tui.toasts()[2].message, /Error:|at /, "failure feedback exposes no error details");
@@ -573,7 +619,7 @@ async function testOpenCodePluginSelection() {
     assert.equal(await readFile(path.join(stateDir, "agent-coordination.json"), "utf8"), persistedBefore,
       "the failed selection neither changed nor overwrote the persisted selection");
 
-    tui.commands()[0].onSelect();
+    tui.commands()[0].run();
     await waitFor(() => tui.toasts().length === 4);
     assert.equal(tui.toasts()[3].variant, "info", "a freshly started broker reports waiting-for-takeover feedback");
     assert.match(tui.toasts()[3].message, /waiting for the broker/);
@@ -586,6 +632,7 @@ async function testOpenCodePluginSelection() {
       "the on-demand broker restored the persisted selection with exactly one new revision");
     pass("real plugin entry points select the Workspace with one revision, publish Working/Completed, start the broker on demand, and fail without a broker");
   } finally {
+    await Promise.resolve(tuiCleanup?.()).catch(() => {});
     await tui.dispose().catch(() => {});
     await broker.close().catch(() => {});
     await waitFor(socketGone, MEMBER_LEASE_MS + 4_000);
@@ -605,10 +652,16 @@ function fakeServerInput({ directory, worktree, counter }) {
 
 async function loadServerPlugin(input, options) {
   const serverModule = await import("./opencode-server.mjs");
-  const exports = Object.entries(serverModule).filter(([, value]) => typeof value === "function");
-  assert.equal(exports.length, 1, "the server plugin module exports exactly one plugin function");
-  const hooks = await exports[0][1](input, options);
-  return hooks;
+  assert.equal(typeof serverModule.createPomodoroReporter, "function",
+    "the server plugin module exports createPomodoroReporter");
+  assert.equal(serverModule.default?.id, "pomodoro-agent-status",
+    "the server module is a Plugin.define definition");
+  const reporter = await serverModule.createPomodoroReporter(input, options);
+  // V1 callers wrap the event in { event }; adapt once so every call site stays.
+  return {
+    event: ({ event }) => reporter.handleEvent(event),
+    dispose: () => reporter.dispose(),
+  };
 }
 
 async function spawnOpenCodeProcess({ socketPath, groupId, mask, intervalMs = 150 }) {
@@ -871,24 +924,24 @@ async function testInstallationAndRecovery() {
   const configDir = path.join(root, "opencode-config");
   await mkdir(configDir, { recursive: true });
   const installer = await import("./install-opencode.mjs");
-  const installOptions = { configDir, opencodeVersion: "1.18.29" };
+  const installOptions = { configDir, opencodeVersion: "2.0.16" };
 
   await installer.install(installOptions);
   await installer.install(installOptions);
   const pluginDir = path.join(configDir, "plugins", "pomodoro-agent-status");
   const installedFiles = (await readdir(pluginDir)).sort();
-  assert.deepEqual(installedFiles, ["broker.mjs", "opencode-core.mjs", "opencode-server.mjs", "opencode-tui.mjs", "reporter.mjs"],
+  assert.deepEqual(installedFiles, ["broker.mjs", "index.mjs", "opencode-core.mjs", "opencode-server.mjs", "opencode-tui.mjs", "package.json", "reporter.mjs", "tui.mjs"],
     "the user-level plugin directory holds exactly the authoritative surfaces");
   for (const file of installedFiles) {
     assert.equal(await readFile(path.join(pluginDir, file), "utf8"), await readFile(path.join(scriptsDir, file), "utf8"),
       `installed ${file} is byte-identical to the repository source`);
   }
   const serverConfig = JSON.parse(await readFile(path.join(configDir, "opencode.json"), "utf8"));
-  const tuiConfig = JSON.parse(await readFile(path.join(configDir, "tui.json"), "utf8"));
-  assert.equal(serverConfig.plugin.length, 1, "the server plugin is registered exactly once");
-  assert.equal(tuiConfig.plugin.length, 1, "the TUI plugin is registered exactly once");
-  assert.equal(serverConfig.plugin[0], path.join(pluginDir, "opencode-server.mjs"));
-  assert.equal(tuiConfig.plugin[0], path.join(pluginDir, "opencode-tui.mjs"));
+  const cliConfig = JSON.parse(await readFile(path.join(configDir, "cli.json"), "utf8"));
+  assert.equal(serverConfig.plugins.length, 1, "the server plugin is registered exactly once");
+  assert.equal(cliConfig.plugins.length, 1, "the TUI plugin is registered exactly once");
+  assert.equal(serverConfig.plugins[0], pluginDir, "opencode.json activates the plugin directory");
+  assert.equal(cliConfig.plugins[0], pluginDir, "cli.json activates the plugin directory");
 
   const projectA = path.join(root, "project-a");
   const projectB = path.join(root, "project-b");
@@ -916,41 +969,41 @@ async function testInstallationAndRecovery() {
     "a plural .opencode/plugins duplicate is rejected");
 
   const serverConfigPath = path.join(configDir, "opencode.json");
-  const tuiConfigPath = path.join(configDir, "tui.json");
-  const relativeServer = "plugins/pomodoro-agent-status/opencode-server.mjs";
-  const relativeTui = "plugins/pomodoro-agent-status/opencode-tui.mjs";
+  const tuiConfigPath = path.join(configDir, "cli.json");
+  const relativeServer = "plugins/pomodoro-agent-status";
+  const relativeTui = "plugins/pomodoro-agent-status";
   const rewrite = async (configPath, relative) => {
     const config = JSON.parse(await readFile(configPath, "utf8"));
-    config.plugin = [relative];
+    config.plugins = [relative];
     await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
   };
   await rewrite(serverConfigPath, relativeServer);
   await rewrite(tuiConfigPath, relativeTui);
   await installer.install(installOptions);
-  assert.deepEqual(JSON.parse(await readFile(serverConfigPath, "utf8")).plugin, [relativeServer],
+  assert.deepEqual(JSON.parse(await readFile(serverConfigPath, "utf8")).plugins, [relativeServer],
     "a genuine relative entry is recognized and never duplicated");
-  assert.deepEqual(JSON.parse(await readFile(tuiConfigPath, "utf8")).plugin, [relativeTui]);
+  assert.deepEqual(JSON.parse(await readFile(tuiConfigPath, "utf8")).plugins, [relativeTui]);
   await installer.verify(installOptions);
   await installer.uninstall({ configDir });
-  assert.equal(JSON.parse(await readFile(serverConfigPath, "utf8")).plugin, undefined, "uninstall matches the relative server entry");
-  assert.equal(JSON.parse(await readFile(tuiConfigPath, "utf8")).plugin, undefined, "uninstall matches the relative TUI entry");
+  assert.equal(JSON.parse(await readFile(serverConfigPath, "utf8")).plugins, undefined, "uninstall matches the relative server entry");
+  assert.equal(JSON.parse(await readFile(tuiConfigPath, "utf8")).plugins, undefined, "uninstall matches the relative TUI entry");
   await installer.install(installOptions);
   pass("idempotent user-level installation serves multiple projects without a project-level duplicate");
 
   const badShapeConfig = path.join(root, "bad-shape-config");
   await mkdir(badShapeConfig, { recursive: true });
-  await installer.install({ configDir: badShapeConfig, opencodeVersion: "1.18.29" });
+  await installer.install({ configDir: badShapeConfig, opencodeVersion: "2.0.16" });
   const serverBefore = await readFile(path.join(badShapeConfig, "opencode.json"), "utf8");
-  const brokenTui = JSON.stringify({ plugin: "not-an-array" }, null, 2);
-  await writeFile(path.join(badShapeConfig, "tui.json"), `${brokenTui}\n`, { mode: 0o600 });
+  const brokenTui = JSON.stringify({ plugins: "not-an-array" }, null, 2);
+  await writeFile(path.join(badShapeConfig, "cli.json"), `${brokenTui}\n`, { mode: 0o600 });
   await assert.rejects(installer.uninstall({ configDir: badShapeConfig }), /not an array/,
     "uninstall refuses a non-array tui plugin before mutating opencode.json");
   assert.equal(await readFile(path.join(badShapeConfig, "opencode.json"), "utf8"), serverBefore,
     "the valid server config is byte-identical after the refused uninstall");
-  assert.equal(await readFile(path.join(badShapeConfig, "tui.json"), "utf8"), `${brokenTui}\n`,
+  assert.equal(await readFile(path.join(badShapeConfig, "cli.json"), "utf8"), `${brokenTui}\n`,
     "the invalid TUI config is byte-identical after the refused uninstall");
   assert.deepEqual((await readdir(path.join(badShapeConfig, "plugins", "pomodoro-agent-status"))).sort(),
-    ["broker.mjs", "opencode-core.mjs", "opencode-server.mjs", "opencode-tui.mjs", "reporter.mjs"],
+    ["broker.mjs", "index.mjs", "opencode-core.mjs", "opencode-server.mjs", "opencode-tui.mjs", "package.json", "reporter.mjs", "tui.mjs"],
     "the installed plugin directory survives a refused uninstall untouched");
 
   assert.equal(await installer.verifyRuntimeNode(), "node", "verify validates the broker's Node runtime from PATH");
@@ -961,32 +1014,31 @@ async function testInstallationAndRecovery() {
 
   const oldConfigDir = path.join(root, "old-config");
   await mkdir(oldConfigDir, { recursive: true });
-  await assert.rejects(installer.install({ configDir: oldConfigDir, opencodeVersion: "1.18.0" }), /1\.18\.29/,
+  await assert.rejects(installer.install({ configDir: oldConfigDir, opencodeVersion: "1.18.0" }), /2\.0\.0/,
     "installation below the minimum verified version fails explicitly");
   assert.deepEqual(await readdir(oldConfigDir).then((files) => files.filter((name) => name !== "plugins")), [],
     "a failed install leaves no configuration behind");
   const tuiModule = await import("./opencode-tui.mjs");
-  await assert.rejects(tuiModule.default.tui({ ui: { toast() {} } }), /api\.command/,
-    "TUI initialization fails explicitly without the direct slash API");
-  await assert.rejects(tuiModule.default.tui({ command: { register() {}, trigger() {} } }), /toast/);
+  assert.throws(() => tuiModule.default.setup({}), TypeError,
+    "TUI initialization fails explicitly without a keymap-capable context");
 
   const jsoncConfig = path.join(root, "jsonc-config");
   await mkdir(jsoncConfig, { recursive: true });
   const jsonc = `{\n  // user comment that must survive\n  "theme": "opencode"\n}\n`;
   await writeFile(path.join(jsoncConfig, "opencode.jsonc"), jsonc, { mode: 0o600 });
   const tuiPlain = `{\n  "theme": "opencode"\n}\n`;
-  await writeFile(path.join(jsoncConfig, "tui.json"), tuiPlain, { mode: 0o600 });
-  await assert.rejects(installer.install({ configDir: jsoncConfig, opencodeVersion: "1.18.29" }), /JSONC/,
+  await writeFile(path.join(jsoncConfig, "cli.json"), tuiPlain, { mode: 0o600 });
+  await assert.rejects(installer.install({ configDir: jsoncConfig, opencodeVersion: "2.0.16" }), /JSONC/,
     "a JSONC-only configuration refuses installation instead of creating a conflicting opencode.json");
   assert.equal(await readFile(path.join(jsoncConfig, "opencode.jsonc"), "utf8"), jsonc,
     "the JSONC source stays byte-identical after refusal");
-  assert.equal(await readFile(path.join(jsoncConfig, "tui.json"), "utf8"), tuiPlain,
+  assert.equal(await readFile(path.join(jsoncConfig, "cli.json"), "utf8"), tuiPlain,
     "the plain TUI config stays byte-identical after refusal");
-  assert.deepEqual(await readdir(jsoncConfig).then((files) => files.sort()), ["opencode.jsonc", "tui.json"],
+  assert.deepEqual(await readdir(jsoncConfig).then((files) => files.sort()), ["cli.json", "opencode.jsonc"],
     "no plugin directory or conflicting config was created");
 
   await writeFile(path.join(jsoncConfig, "opencode.json"), `${tuiPlain}`, { mode: 0o600 });
-  await assert.rejects(installer.install({ configDir: jsoncConfig, opencodeVersion: "1.18.29" }), /JSONC/,
+  await assert.rejects(installer.install({ configDir: jsoncConfig, opencodeVersion: "2.0.16" }), /JSONC/,
     "a dual JSON/JSONC configuration also refuses");
   await assert.rejects(installer.uninstall({ configDir: jsoncConfig }), /JSONC/,
     "uninstall refuses to edit configurations it cannot parse safely");
@@ -996,12 +1048,12 @@ async function testInstallationAndRecovery() {
   await mkdir(partialConfig, { recursive: true });
   const validServer = `{\n  "theme": "x"\n}\n`;
   await writeFile(path.join(partialConfig, "opencode.json"), validServer, { mode: 0o600 });
-  await writeFile(path.join(partialConfig, "tui.json"), "{broken\n", { mode: 0o600 });
-  await assert.rejects(installer.install({ configDir: partialConfig, opencodeVersion: "1.18.29" }), /not valid JSON/,
+  await writeFile(path.join(partialConfig, "cli.json"), "{broken\n", { mode: 0o600 });
+  await assert.rejects(installer.install({ configDir: partialConfig, opencodeVersion: "2.0.16" }), /not valid JSON/,
     "a malformed TUI config fails before any mutation");
   assert.equal(await readFile(path.join(partialConfig, "opencode.json"), "utf8"), validServer,
     "the valid config is untouched by the failed install");
-  assert.deepEqual(await readdir(partialConfig).then((files) => files.sort()), ["opencode.json", "tui.json"],
+  assert.deepEqual(await readdir(partialConfig).then((files) => files.sort()), ["cli.json", "opencode.json"],
     "no plugin directory was created for a failed all-or-nothing install");
 
   const stateRoot = path.join(root, "state");
@@ -1073,13 +1125,13 @@ async function testActivationRetention() {
   const stateDir = path.join(root, "pomodoro", "agent-status");
   const env = { ...process.env, XDG_STATE_HOME: root };
   const counter = { toasts: [], triggers: 0, clientTouches: [] };
-  const tui = fakeTuiApi({ directory: workspaceA, worktree: workspaceA, counter });
+  const tui = fakeTuiApi({ directory: workspaceA, worktree: workspaceA, counter, options: { env } });
   const groupA = hashId(await realpath(workspaceA));
   let broker = await runBroker({ stateDir, logger: () => {}, publisherOptions: { resolvePort: async () => null } });
   try {
     const tuiModule = await import("./opencode-tui.mjs");
-    await tuiModule.default.tui(tui.api, { env });
-    tui.commands()[0].onSelect();
+    await tuiModule.default.setup(tui.api);
+    tui.commands()[0].run();
     await waitFor(() => broker.core.selected === `opencode:${groupA}` && broker.core.revision === 1, 3_000);
     assert.equal(tui.toasts().length, 1);
     const rootA = await realpath(workspaceA);
@@ -1093,9 +1145,9 @@ async function testActivationRetention() {
       socket.end("not-json\n");
     });
     await new Promise((resolve) => impostor.listen(broker.socketPath, resolve));
-    tui.api.state.path.directory = workspaceB;
-    tui.api.state.path.worktree = workspaceB;
-    tui.commands()[0].onSelect();
+    tui.api.location.directory = workspaceB;
+    tui.api.location.worktree = workspaceB;
+    tui.commands()[0].run();
     await waitFor(() => tui.toasts().length === 2);
     assert.equal(tui.toasts()[1].variant, "error", "the failed replacement selection reports bounded failure");
     for (const socket of impostorSockets) socket.destroy();
@@ -1256,4 +1308,5 @@ await testUnselectedExpiryIsolation();
 await testLegacyPersistedSelection();
 await testBrokerRecoveryAndFailures();
 await testOnDemandBroker();
+await testSerialDebugLog();
 console.log(`pomodoro-agent-status check: ${checks} checks passed`);

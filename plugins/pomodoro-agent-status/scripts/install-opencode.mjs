@@ -7,10 +7,15 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-export const MINIMUM_OPENCODE_VERSION = "1.18.29";
+export const MINIMUM_OPENCODE_VERSION = "2.0.0";
 export const PLUGIN_DIRECTORY_NAME = "pomodoro-agent-status";
 const PLUGIN_ID = "pomodoro-agent-status";
-const PLUGIN_FILES = ["opencode-server.mjs", "opencode-tui.mjs", "opencode-core.mjs", "reporter.mjs", "broker.mjs"];
+// index.mjs and tui.mjs are the entry shims OpenCode 2.x resolves for directory
+// plugins ("index"/"tui" subpaths); package.json gives the loader a package root.
+const PLUGIN_FILES = [
+  "index.mjs", "tui.mjs", "package.json",
+  "opencode-server.mjs", "opencode-tui.mjs", "opencode-core.mjs", "reporter.mjs", "broker.mjs",
+];
 
 const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -29,7 +34,7 @@ export function assertSupportedVersion(version) {
   if (!supported) {
     throw new Error(
       `OpenCode ${version} is older than the minimum verified ${MINIMUM_OPENCODE_VERSION}. `
-      + "The direct TUI slash registration API cannot be validated on this version; refusing to install.",
+      + "The Plugin.define + cli.json surface requires OpenCode 2.x; refusing to install.",
     );
   }
   return version;
@@ -78,9 +83,9 @@ function entryMatches(entry, targetPath, baseDir) {
 }
 
 function pluginEntries(config) {
-  const entries = config.plugin;
+  const entries = config.plugins;
   if (entries === undefined) return { entries: [], replace: false };
-  if (!Array.isArray(entries)) throw new Error("the existing `plugin` value is not an array; refusing to modify the configuration");
+  if (!Array.isArray(entries)) throw new Error("the existing `plugins` value is not an array; refusing to modify the configuration");
   return { entries, replace: true };
 }
 
@@ -89,8 +94,8 @@ async function upsertPluginEntry(configPath, targetPath) {
   const config = await readJsonConfig(configPath);
   const { entries, replace } = pluginEntries(config);
   if (entries.some((entry) => entryMatches(entry, targetPath, baseDir))) return false;
-  if (!replace) config.plugin = [];
-  config.plugin.push(targetPath);
+  if (!replace) config.plugins = [];
+  config.plugins.push(targetPath);
   await writeJsonConfig(configPath, config);
   return true;
 }
@@ -101,8 +106,8 @@ async function removePluginEntry(configPath, targetPath) {
   const { entries, replace } = pluginEntries(config);
   const remaining = entries.filter((entry) => !entryMatches(entry, targetPath, baseDir));
   if (!replace || remaining.length === entries.length) return false;
-  if (remaining.length === 0) delete config.plugin;
-  else config.plugin = remaining;
+  if (remaining.length === 0) delete config.plugins;
+  else config.plugins = remaining;
   await writeJsonConfig(configPath, config);
   return true;
 }
@@ -128,21 +133,21 @@ async function installPluginFiles(targetDir) {
   await chmod(targetDir, 0o755);
 }
 
-async function assertNotDisabled(tuiConfig) {
-  if (tuiConfig.plugin_enabled?.[PLUGIN_ID] === false) {
+async function assertNotDisabled(cliConfig) {
+  if (cliConfig.plugin_enabled?.[PLUGIN_ID] === false) {
     throw new Error(
-      `tui.json disables the "${PLUGIN_ID}" plugin via plugin_enabled. `
+      `cli.json disables the "${PLUGIN_ID}" plugin via plugin_enabled. `
       + "Remove or enable that entry and restart OpenCode fully before installing.",
     );
   }
 }
 
-// The installer only rewrites plain-JSON `opencode.json` and `tui.json`. When a
+// The installer only rewrites plain-JSON `opencode.json` and `cli.json`. When a
 // JSONC variant exists (JSONC-only or next to a JSON file) it refuses before any
 // copy or write, because a naive JSON rewrite would strip comments or create a
 // conflicting second global configuration.
 export async function assertPlainJsonConfigs(configDir) {
-  for (const base of ["opencode", "tui"]) {
+  for (const base of ["opencode", "cli"]) {
     const jsoncPath = path.join(configDir, `${base}.jsonc`);
     const jsonPath = path.join(configDir, `${base}.json`);
     const jsoncExists = await stat(jsoncPath).then(() => true, (error) => {
@@ -158,8 +163,8 @@ export async function assertPlainJsonConfigs(configDir) {
       `${jsoncExists ? jsoncPath : ""} uses JSONC${jsonExists ? ` next to an existing ${jsonPath}` : ""}. `
       + "This installer only rewrites plain-JSON configuration and cannot preserve comments; it refuses to "
       + "create or modify a conflicting configuration. Resolve manually: keep the .jsonc file and add the "
-      + "Pomodoro plugin entries by hand (absolute paths to plugins/pomodoro-agent-status/opencode-server.mjs "
-      + "in the opencode plugin list and opencode-tui.mjs in the tui plugin list), or migrate the config to "
+      + "Pomodoro plugin directory by hand (absolute path to plugins/pomodoro-agent-status in both the "
+      + "opencode.json and cli.json plugins lists), or migrate the config to "
       + "plain JSON first, then rerun install.",
     );
   }
@@ -170,36 +175,34 @@ export async function install({ configDir = resolveConfigDir(), opencodeVersion,
   // Validate everything that could refuse before copying or writing anything.
   await assertPlainJsonConfigs(configDir);
   const serverConfigPath = path.join(configDir, "opencode.json");
-  const tuiConfigPath = path.join(configDir, "tui.json");
+  const cliConfigPath = path.join(configDir, "cli.json");
   const serverConfig = await readJsonConfig(serverConfigPath);
-  const tuiConfig = await readJsonConfig(tuiConfigPath);
+  const cliConfig = await readJsonConfig(cliConfigPath);
   pluginEntries(serverConfig);
-  pluginEntries(tuiConfig);
-  await assertNotDisabled(tuiConfig);
+  pluginEntries(cliConfig);
+  await assertNotDisabled(cliConfig);
   const targetDir = path.join(configDir, "plugins", pluginDirName);
   await installPluginFiles(targetDir);
-  const serverTarget = path.join(targetDir, "opencode-server.mjs");
-  const tuiTarget = path.join(targetDir, "opencode-tui.mjs");
-  await upsertPluginEntry(serverConfigPath, serverTarget);
-  await upsertPluginEntry(tuiConfigPath, tuiTarget);
-  return { configDir, pluginDir: targetDir, serverTarget, tuiTarget };
+  // OpenCode 2.x resolves the plugin directory itself: "index"/"server" give the
+  // server plugin, "tui" the CLI plugin, so both configs point at the directory.
+  await upsertPluginEntry(serverConfigPath, targetDir);
+  await upsertPluginEntry(cliConfigPath, targetDir);
+  return { configDir, pluginDir: targetDir };
 }
 
 export async function uninstall({ configDir = resolveConfigDir(), pluginDirName = PLUGIN_DIRECTORY_NAME } = {}) {
   await assertPlainJsonConfigs(configDir);
   const serverConfigPath = path.join(configDir, "opencode.json");
-  const tuiConfigPath = path.join(configDir, "tui.json");
+  const cliConfigPath = path.join(configDir, "cli.json");
   // Parse and shape-validate both configs before the first mutation, so a valid
   // JSON file is never partially rewritten when the other one would be refused.
   const serverConfig = await readJsonConfig(serverConfigPath);
-  const tuiConfig = await readJsonConfig(tuiConfigPath);
+  const cliConfig = await readJsonConfig(cliConfigPath);
   pluginEntries(serverConfig);
-  pluginEntries(tuiConfig);
+  pluginEntries(cliConfig);
   const targetDir = path.join(configDir, "plugins", pluginDirName);
-  const serverTarget = path.join(targetDir, "opencode-server.mjs");
-  const tuiTarget = path.join(targetDir, "opencode-tui.mjs");
-  await removePluginEntry(serverConfigPath, serverTarget);
-  await removePluginEntry(tuiConfigPath, tuiTarget);
+  await removePluginEntry(serverConfigPath, targetDir);
+  await removePluginEntry(cliConfigPath, targetDir);
   await rm(targetDir, { recursive: true, force: true });
   return { configDir, removed: targetDir };
 }
@@ -215,17 +218,15 @@ export async function verify({ configDir = resolveConfigDir(), opencodeVersion, 
     if (installed !== source) throw new Error(`${file} in ${targetDir} does not match the repository source; rerun install`);
   }
   const serverConfig = await readJsonConfig(path.join(configDir, "opencode.json"));
-  const tuiConfig = await readJsonConfig(path.join(configDir, "tui.json"));
-  const serverTarget = path.join(targetDir, "opencode-server.mjs");
-  const tuiTarget = path.join(targetDir, "opencode-tui.mjs");
-  if (!serverConfig.plugin?.some((entry) => entryMatches(entry, serverTarget, configDir))) {
-    throw new Error("opencode.json does not activate the Pomodoro server plugin; rerun install and fully restart OpenCode");
+  const cliConfig = await readJsonConfig(path.join(configDir, "cli.json"));
+  if (!serverConfig.plugins?.some((entry) => entryMatches(entry, targetDir, configDir))) {
+    throw new Error("opencode.json does not activate the Pomodoro plugin; rerun install and fully restart OpenCode");
   }
-  if (!tuiConfig.plugin?.some((entry) => entryMatches(entry, tuiTarget, configDir))) {
-    throw new Error("tui.json does not activate the Pomodoro TUI plugin; rerun install and fully restart OpenCode");
+  if (!cliConfig.plugins?.some((entry) => entryMatches(entry, targetDir, configDir))) {
+    throw new Error("cli.json does not activate the Pomodoro CLI plugin; rerun install and fully restart OpenCode");
   }
-  if (tuiConfig.plugin_enabled?.[PLUGIN_ID] === false) {
-    throw new Error(`tui.json disables "${PLUGIN_ID}" via plugin_enabled; the TUI surface is not active`);
+  if (cliConfig.plugin_enabled?.[PLUGIN_ID] === false) {
+    throw new Error(`cli.json disables "${PLUGIN_ID}" via plugin_enabled; the TUI surface is not active`);
   }
   if (projectDir) {
     const projectRoot = path.resolve(projectDir);
@@ -247,7 +248,7 @@ export async function verify({ configDir = resolveConfigDir(), opencodeVersion, 
     configDir,
     pluginDir: targetDir,
     versionValidated: opencodeVersion,
-    runtimeApiCheck: "the TUI plugin validates api.command.register at startup and fails explicitly without it; no Markdown fallback exists",
+    runtimeApiCheck: "the TUI plugin registers /pomodoro-select via context.keymap.layer inside an app slot; it requires the OpenCode 2.x CLI plugin host",
   };
 }
 

@@ -2,7 +2,7 @@
 
 import { constants as fsConstants } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { chmod, lstat, mkdir, open, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
+import { appendFile, chmod, lstat, mkdir, open, readFile, readdir, rename, stat, truncate, unlink, writeFile } from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -18,6 +18,7 @@ export const MAX_REVISION = 0xffff_ffff;
 const ID_MAX_LENGTH = 128;
 const O_EXLOCK = 0x20;
 const HOSTS = new Set(["codex", "opencode"]);
+const DEBUG_LOG_MAX_BYTES = 256 * 1024;
 const REQUEST_FIELDS = {
   report: ["type", "groupId", "memberId", "pid", "startedAt", "mask"],
   select: ["type", "groupId"],
@@ -300,7 +301,31 @@ export async function discoverPort(explicit = process.env.POMODORO_PORT) {
   return candidates.length === 1 ? path.join("/dev", candidates[0]) : null;
 }
 
-export async function openSerialTransport(port, onLine, onDisconnect) {
+// Append-only JSONL diagnostic sink for the serial publisher. Enabled via
+// POMODORO_BROKER_DEBUG; capped at DEBUG_LOG_MAX_BYTES by rewriting the tail.
+function makeDebugLog(logPath) {
+  if (!logPath) return () => {};
+  let chain = Promise.resolve();
+  return (event) => {
+    chain = chain.catch(() => {}).then(async () => {
+      await appendFile(logPath, `${JSON.stringify({ t: Date.now(), ...event })}\n`);
+      const { size } = await stat(logPath);
+      if (size > DEBUG_LOG_MAX_BYTES) {
+        const handle = await open(logPath, "r");
+        try {
+          const keep = Buffer.alloc(Math.floor(DEBUG_LOG_MAX_BYTES / 2));
+          const { bytesRead } = await handle.read(keep, 0, keep.length, size - keep.length);
+          await handle.close();
+          await writeFile(logPath, keep.subarray(0, bytesRead));
+        } finally {
+          await handle.close().catch(() => {});
+        }
+      }
+    });
+  };
+}
+
+export async function openSerialTransport(port, onLine, onDisconnect, debug = () => {}) {
   spawnSync("stty", ["-f", port, "raw", "-echo"], { stdio: "ignore" });
   const handle = await open(port, fsConstants.O_RDWR | fsConstants.O_NONBLOCK | O_EXLOCK);
   let buffered = "";
@@ -313,9 +338,13 @@ export async function openSerialTransport(port, onLine, onDisconnect) {
     try {
       const { bytesRead } = await handle.read(chunk, 0, chunk.length, null);
       if (bytesRead === 0) return;
+      debug({ ev: "poll-read", bytesRead });
       buffered += chunk.toString("utf8", 0, bytesRead);
     } catch (error) {
-      if (!["EAGAIN", "EWOULDBLOCK"].includes(error.code)) onDisconnect(error);
+      if (!["EAGAIN", "EWOULDBLOCK"].includes(error.code)) {
+        debug({ ev: "poll-error", error: error.message });
+        onDisconnect(error);
+      }
       return;
     } finally {
       reading = false;
@@ -325,9 +354,9 @@ export async function openSerialTransport(port, onLine, onDisconnect) {
       if (newline < 0) break;
       const line = buffered.slice(0, newline).replace(/\r$/, "");
       buffered = buffered.slice(newline + 1);
-      if (Buffer.byteLength(line) <= 64) onLine(line);
+      if (Buffer.byteLength(line) <= 64) { debug({ ev: "line", line }); onLine(line); }
     }
-    if (Buffer.byteLength(buffered) > 64) buffered = "";
+    if (Buffer.byteLength(buffered) > 64) { debug({ ev: "buffer-overflow" }); buffered = ""; }
   };
   const timer = setInterval(() => void poll(), 50);
   timer.unref?.();
@@ -343,12 +372,13 @@ export async function openSerialTransport(port, onLine, onDisconnect) {
 
 export class SerialPublisher {
   constructor({ publication, reserved, resolvePort = discoverPort, connect = openSerialTransport,
-                now = Date.now, retryMs = RETRY_MS, heartbeatMs = HEARTBEAT_MS,
+                now = Date.now, retryMs = RETRY_MS, heartbeatMs = HEARTBEAT_MS, debug = () => {},
                 onAck = () => {}, onError = () => {} }) {
     this.publication = publication;
     this.reserved = reserved;
     this.resolvePort = resolvePort;
     this.connect = connect;
+    this.debug = debug;
     this.now = now;
     this.retryMs = retryMs;
     this.heartbeatMs = heartbeatMs;
@@ -361,6 +391,18 @@ export class SerialPublisher {
     this.nextHeartbeat = 0;
   }
 
+  snapshot(ev, extra = {}) {
+    this.debug({
+      ev,
+      enabled: this.enabled,
+      hasTransport: this.transport !== null,
+      lastError: this.lastError,
+      nextHeartbeat: this.nextHeartbeat,
+      nextRetry: this.nextRetry,
+      ...extra,
+    });
+  }
+
   reportError(error) {
     const message = error?.message ?? String(error);
     if (message !== this.lastError) this.onError(message);
@@ -371,10 +413,12 @@ export class SerialPublisher {
     const transport = this.transport;
     this.transport = null;
     this.enabled = false;
+    this.snapshot("close");
     await transport?.close();
   }
 
   async disconnected(error) {
+    this.snapshot("disconnected", { error: error?.message ?? null });
     if (error) this.reportError(error);
     await this.close();
     this.nextRetry = this.now() + this.retryMs;
@@ -382,11 +426,16 @@ export class SerialPublisher {
 
   async send() {
     const current = this.publication();
-    if (!this.transport || !this.enabled || !current) return;
+    if (!this.transport || !this.enabled || !current) {
+      this.snapshot("send-skip", { hasPublication: Boolean(current) });
+      return;
+    }
     try {
       await this.transport.write(`OC1 STATE ${current.revision} ${current.mask}`);
       this.nextHeartbeat = this.now() + this.heartbeatMs;
+      this.snapshot("send", { revision: current.revision, mask: current.mask });
     } catch (error) {
+      this.snapshot("send-error", { error: error.message });
       await this.disconnected(error);
     }
   }
@@ -394,16 +443,19 @@ export class SerialPublisher {
   receive(line) {
     if (line === "OC1 ENABLED") {
       this.enabled = true;
+      this.snapshot("enabled");
       void this.send();
       return;
     }
     if (line === "OC1 DISABLED") {
       this.enabled = false;
+      this.snapshot("disabled");
       return;
     }
     const match = /^OC1 ACK (0|[1-9][0-9]*) (1|8)$/.exec(line);
     const current = this.publication();
     if (match && current && Number(match[1]) === current.revision && (current.mask & Number(match[2])) !== 0) {
+      this.snapshot("ack", { revision: current.revision, mask: Number(match[2]) });
       this.onAck({ revision: current.revision, mask: Number(match[2]) });
     }
   }
@@ -417,18 +469,21 @@ export class SerialPublisher {
       shouldClose = true;
     }
     if (shouldClose) {
+      this.snapshot("tick-close");
       await this.close();
       return;
     }
     if (!this.transport) {
-      if (this.now() < this.nextRetry) return;
+      if (this.now() < this.nextRetry) { this.snapshot("tick-backoff"); return; }
       try {
         const port = await this.resolvePort();
         if (!port) throw new Error("no unambiguous serial port");
-        this.transport = await this.connect(port, (line) => this.receive(line), (error) => void this.disconnected(error));
+        this.transport = await this.connect(port, (line) => this.receive(line), (error) => void this.disconnected(error), this.debug);
         this.lastError = null;
         this.nextHeartbeat = this.now();
+        this.snapshot("connect", { port });
       } catch (error) {
+        this.snapshot("connect-error", { error: error.message });
         this.reportError(error);
         await this.close();
         this.nextRetry = this.now() + this.retryMs;
@@ -525,14 +580,16 @@ export function defaultStateDir(env = process.env) {
   return path.join(root, "pomodoro", "agent-status");
 }
 
-export async function runBroker({ stateDir = defaultStateDir(), logger = console.error, publisherOptions = {}, idleMs = null, reapMs = 250 } = {}) {
+export async function runBroker({ stateDir = defaultStateDir(), logger = console.error, publisherOptions = {}, idleMs = null, reapMs = 250, env = process.env } = {}) {
   const prepared = await prepareState(stateDir);
   const core = new BrokerCore(prepared);
   const socketPath = path.join(stateDir, "agent-status.sock");
+  const debug = makeDebugLog(env.POMODORO_BROKER_DEBUG ? path.join(stateDir, "serial-debug.jsonl") : null);
   const publisher = new SerialPublisher({
     publication: () => core.publication(),
     reserved: () => reservationIsActive(path.join(stateDir, "flash-reservation")),
     onError: (message) => logger(`broker: serial unavailable; retrying (${message})`),
+    debug,
     ...publisherOptions,
   });
   const sockets = new Set();

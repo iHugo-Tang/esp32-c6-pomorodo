@@ -1,13 +1,21 @@
 #!/usr/bin/env node
 
 import process from "node:process";
+// @opencode/plugin only exists inside the OpenCode host; under plain Node
+// (check.mjs, broker children) Plugin.define is the identity function anyway.
+let define;
+try {
+  ({ Plugin: { define } } = await import("@opencode/plugin"));
+} catch {
+  define = (plugin) => plugin;
+}
 import {
   REPORT_INTERVAL_MS, MemberState, brokerSocketPath, eventSessionId, hashId, memberId, reduceMemberEvent, request, workspaceRoot,
 } from "./opencode-core.mjs";
 
 const IGNORED_EVENTS = new Set(["session.compacted", "message.removed", "message.part.removed", "message.part.delta"]);
 
-export const PomodoroAgentStatusPlugin = async (input, options = {}) => {
+export const createPomodoroReporter = async (input, options = {}) => {
   const env = options.env ?? process.env;
   const socketPath = options.socketPath ?? brokerSocketPath(env);
   const baseRoot = options.baseRoot ?? await workspaceRoot(input?.worktree ?? input?.directory ?? process.cwd());
@@ -98,7 +106,7 @@ export const PomodoroAgentStatusPlugin = async (input, options = {}) => {
 
   return {
     dispose,
-    event: ({ event }) => {
+    handleEvent: (event) => {
       // Serialize membership mutations so concurrent events cannot interleave
       // a group move with a report for the stale group.
       const run = handling.then(() => handleEvent(event));
@@ -107,3 +115,25 @@ export const PomodoroAgentStatusPlugin = async (input, options = {}) => {
     },
   };
 };
+
+export default define({
+  id: "pomodoro-agent-status",
+  async setup(ctx) {
+    const reporter = await createPomodoroReporter(
+      { directory: ctx.location?.directory },
+      ctx.options ?? {},
+    );
+    const controller = new AbortController();
+
+    void (async () => {
+      for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+        await reporter.handleEvent(event);
+      }
+    })().catch(() => {});
+
+    return async () => {
+      controller.abort();
+      await reporter.dispose();
+    };
+  },
+});

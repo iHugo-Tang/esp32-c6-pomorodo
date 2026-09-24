@@ -1,74 +1,71 @@
 #!/usr/bin/env node
 
 import process from "node:process";
+// @opencode/plugin/tui only exists inside the OpenCode host; under plain Node
+// (check.mjs) Plugin.define is the identity function anyway.
+let define;
+try {
+  ({ Plugin: { define } } = await import("@opencode/plugin/tui"));
+} catch {
+  define = (plugin) => plugin;
+}
 import {
   ActivationSession, brokerSocketPath, failureFeedback, selectionFeedback, workspaceRoot,
 } from "./opencode-core.mjs";
 
 const COMMAND_SLUG = "pomodoro-select";
 
-function createTuiPlugin(options = {}) {
-  let active = null;
+export default define({
+  id: "pomodoro-agent-status.cli",
+  setup(context) {
+    let active = null;
 
-  const selectCurrentWorkspace = async (api) => {
-    let candidate = null;
-    try {
-      const path = api?.state?.path ?? {};
-      const root = await workspaceRoot(path.worktree ?? path.directory ?? process.cwd());
-      candidate = new ActivationSession({
-        root,
-        env: options.env ?? process.env,
-        socketPath: options.socketPath ?? brokerSocketPath(options.env ?? process.env),
-      });
-      const result = await candidate.activate();
-      const previous = active;
-      active = candidate;
-      // Retain the previous activation until the replacement has succeeded so a
-      // failed selection cannot starve the still-selected Workspace's keep-alive.
-      previous?.stop();
-      api?.ui?.toast?.(selectionFeedback(result));
-    } catch (error) {
-      candidate?.stop();
-      api?.ui?.toast?.(failureFeedback(error));
-    }
-  };
+    const selectCurrentWorkspace = async () => {
+      let candidate = null;
+      try {
+        const location = context.location ?? context.data?.location?.default?.() ?? {};
+        const root = await workspaceRoot(location.directory ?? process.cwd());
+        candidate = new ActivationSession({
+          root,
+          env: context.options?.env ?? process.env,
+          socketPath: context.options?.socketPath ?? brokerSocketPath(context.options?.env ?? process.env),
+        });
+        const result = await candidate.activate();
+        const previous = active;
+        active = candidate;
+        // Retain the previous activation until the replacement has succeeded so a
+        // failed selection cannot starve the still-selected Workspace's keep-alive.
+        previous?.stop();
+        context.ui.toast.show(selectionFeedback(result));
+      } catch (error) {
+        candidate?.stop();
+        context.ui.toast.show(failureFeedback(error));
+      }
+    };
 
-  return {
-    stop() {
+    // keymap.layer is a reactive primitive: it must run inside a Solid owner,
+    // so commands are registered from an app-level slot render instead of
+    // directly in setup().
+    const disposeSlot = context.ui.slot({
+      append: "app",
+      render: () => {
+        context.keymap.layer(() => ({
+          mode: "global",
+          commands: [{
+            id: "pomodoro-agent-status.select",
+            title: "Pomodoro: select workspace",
+            slash: { name: COMMAND_SLUG },
+            run: () => { void selectCurrentWorkspace(); },
+          }],
+        }));
+        return null;
+      },
+    });
+
+    return () => {
+      disposeSlot?.();
       active?.stop();
       active = null;
-    },
-    register(api) {
-      api.command.register(() => [{
-        title: "Pomodoro: select workspace",
-        value: "pomodoro-agent-status.select",
-        description: "Select the current OpenCode Workspace as the Pomodoro Agent Source",
-        slash: { name: COMMAND_SLUG },
-        onSelect: () => { void selectCurrentWorkspace(api); },
-      }]);
-    },
-  };
-}
-
-function assertDirectCommandApi(api) {
-  const command = api?.command;
-  if (typeof command?.register !== "function" || typeof command?.trigger !== "function") {
-    throw new Error(
-      "pomodoro-agent-status: the direct TUI slash registration API (api.command.register) is unavailable in this OpenCode version. "
-      + "Installation stopped without registering a Markdown prompt command or any model-backed fallback.",
-    );
-  }
-  if (typeof api?.ui?.toast !== "function") {
-    throw new Error("pomodoro-agent-status: the TUI toast API is unavailable; no model-backed fallback is registered.");
-  }
-}
-
-export default {
-  id: "pomodoro-agent-status",
-  tui: async (api, options = {}) => {
-    assertDirectCommandApi(api);
-    const plugin = createTuiPlugin(options);
-    plugin.register(api);
-    api.lifecycle?.onDispose?.(() => { plugin.stop(); });
+    };
   },
-};
+});
