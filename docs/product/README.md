@@ -7,5 +7,4 @@
 - [导航与设置](navigation-and-settings.md)
 - [显示、供电与输入](display-power-and-input.md)
 - [声音](sound.md)
-- [Agent Status](agent-status.md)
 - [固件边界](firmware.md)

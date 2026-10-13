@@ -1,8 +1,10 @@
 ---
-status: accepted
+status: superseded
 ---
 
 # 使用独立 Agent Status broker 独占串口
+
+> 已被 [ADR-0017](0017-use-device-only-as-pomodoro-timer.md) 取代；以下内容仅保留为历史。
 
 > Agent Source 类型和 IPC identity 已被 [ADR-0015](./0015-agent-status-only-supports-codex-workspaces.md) 取代；独立 broker、串口独占和 `OC1` 协议仍然有效。
 

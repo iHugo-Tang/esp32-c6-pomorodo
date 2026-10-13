@@ -165,10 +165,6 @@ typedef struct {
     lv_obj_t *auto_breaks_switch;
     lv_obj_t *auto_focus_switch;
     lv_obj_t *sound_switch;
-    lv_obj_t *agent_status_switch;
-    lv_obj_t *waiting_sound_switch;
-    lv_obj_t *agent_status_circle;
-    lv_obj_t *agent_status_touch;
     lv_obj_t *auxiliary_buttons_container;
     lv_obj_t *statistics_chart;
     lv_obj_t *numeric_roller;
@@ -684,35 +680,6 @@ static void gesture(lv_event_t *event)
     }
 }
 
-static void agent_status_clicked(lv_event_t *event)
-{
-    (void) event;
-    dispatch(POMODORO_APPLICATION_ACTION_ACK_AGENT_STATUS);
-}
-
-static void hide_agent_status_indicator(void)
-{
-    lv_obj_add_flag(view_context.agent_status_circle, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(view_context.agent_status_touch, LV_OBJ_FLAG_HIDDEN);
-}
-
-static void render_agent_status_indicator(const pomodoro_application_view_t *view)
-{
-    if (!view->agent_status_visible ||
-        view->confirmation != POMODORO_APPLICATION_CONFIRM_NONE) {
-        hide_agent_status_indicator();
-        return;
-    }
-    lv_obj_remove_flag(view_context.agent_status_circle, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_style_bg_color(view_context.agent_status_circle,
-                              lv_color_hex(view->agent_status_color), 0);
-    if (view->agent_status_acknowledgeable) {
-        lv_obj_remove_flag(view_context.agent_status_touch, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_add_flag(view_context.agent_status_touch, LV_OBJ_FLAG_HIDDEN);
-    }
-}
-
 static void tick(lv_timer_t *timer)
 {
     (void) timer;
@@ -1047,31 +1014,6 @@ esp_err_t pomodoro_device_view_create(
     lv_obj_align(view_context.boundary_feedback, LV_ALIGN_BOTTOM_MID, 0, -76);
     lv_obj_add_flag(view_context.boundary_feedback, LV_OBJ_FLAG_HIDDEN);
 
-    view_context.agent_status_circle = lv_obj_create(screen);
-    lv_obj_remove_style_all(view_context.agent_status_circle);
-    lv_obj_set_size(view_context.agent_status_circle, 28, 28);
-    lv_obj_set_style_bg_opa(view_context.agent_status_circle, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(view_context.agent_status_circle,
-                              lv_color_hex(UI_COLOR_MUTED), 0);
-    lv_obj_set_style_radius(view_context.agent_status_circle, LV_RADIUS_CIRCLE, 0);
-    lv_obj_remove_flag(view_context.agent_status_circle, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_align(view_context.agent_status_circle, LV_ALIGN_BOTTOM_LEFT, 36,
-                 -36);
-    lv_obj_add_flag(view_context.agent_status_circle, LV_OBJ_FLAG_HIDDEN);
-    view_context.agent_status_touch = lv_obj_create(screen);
-    lv_obj_remove_style_all(view_context.agent_status_touch);
-    lv_obj_set_size(view_context.agent_status_touch, UI_TOUCH_TARGET,
-                    UI_TOUCH_TARGET);
-    lv_obj_set_style_bg_opa(view_context.agent_status_touch, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(view_context.agent_status_touch, 0, 0);
-    lv_obj_set_style_radius(view_context.agent_status_touch, LV_RADIUS_CIRCLE, 0);
-    lv_obj_remove_flag(view_context.agent_status_touch, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(view_context.agent_status_touch, agent_status_clicked,
-                        LV_EVENT_CLICKED, NULL);
-    lv_obj_align(view_context.agent_status_touch, LV_ALIGN_BOTTOM_LEFT,
-                 UI_PAGE_INSET, -UI_PAGE_INSET);
-    lv_obj_add_flag(view_context.agent_status_touch, LV_OBJ_FLAG_HIDDEN);
-
     view_context.page_panel = lv_obj_create(screen);
     lv_obj_set_size(view_context.page_panel, 480, 480);
     lv_obj_align(view_context.page_panel, LV_ALIGN_CENTER, 0, 0);
@@ -1239,16 +1181,6 @@ esp_err_t pomodoro_device_view_create(
         view_context.settings_switches, "Auto-start focus",
         POMODORO_APPLICATION_ACTION_TOGGLE_AUTO_FOCUS,
         &view_context.auto_focus_switch);
-    (void) make_settings_section_label(view_context.settings_switches,
-                                       "Agent", true);
-    (void) make_setting_switch_row(
-        view_context.settings_switches, "Agent status",
-        POMODORO_APPLICATION_ACTION_TOGGLE_AGENT_STATUS,
-        &view_context.agent_status_switch);
-    (void) make_setting_switch_row(
-        view_context.settings_switches, "Waiting sound",
-        POMODORO_APPLICATION_ACTION_TOGGLE_WAITING_SOUND,
-        &view_context.waiting_sound_switch);
     (void) make_settings_section_label(view_context.settings_switches,
                                        "Sound", true);
     (void) make_setting_switch_row(
@@ -2056,17 +1988,6 @@ static void render_auxiliary_page(const pomodoro_application_view_t *view)
     } else {
         lv_obj_remove_state(view_context.sound_switch, LV_STATE_CHECKED);
     }
-    if (view->settings.agent_status_enabled) {
-        lv_obj_add_state(view_context.agent_status_switch, LV_STATE_CHECKED);
-    } else {
-        lv_obj_remove_state(view_context.agent_status_switch, LV_STATE_CHECKED);
-    }
-    if (view->settings.waiting_sound_enabled) {
-        lv_obj_add_state(view_context.waiting_sound_switch, LV_STATE_CHECKED);
-    } else {
-        lv_obj_remove_state(view_context.waiting_sound_switch,
-                            LV_STATE_CHECKED);
-    }
     lv_obj_add_flag(view_context.page_content, LV_OBJ_FLAG_SCROLLABLE);
 }
 
@@ -2149,8 +2070,6 @@ static void apply_pixel_shift(const pomodoro_application_view_t *view)
         view_context.top_power_status,
         view_context.page_panel,
         view_context.status_overlay,
-        view_context.agent_status_circle,
-        view_context.agent_status_touch,
     };
     for (size_t index = 0; index < sizeof(objects) / sizeof(objects[0]);
          index++) {
@@ -2229,7 +2148,6 @@ bool pomodoro_device_view_render(const pomodoro_application_view_t *view)
         lv_obj_add_flag(view_context.confirmation_mask, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(view_context.confirmation_overlay, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(view_context.status_overlay, LV_OBJ_FLAG_HIDDEN);
-        hide_agent_status_indicator();
         lv_obj_add_flag(view_context.top_power_status, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(view_context.set_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(view_context.boundary_feedback, LV_OBJ_FLAG_HIDDEN);
@@ -2254,7 +2172,6 @@ bool pomodoro_device_view_render(const pomodoro_application_view_t *view)
     if (view->phase == POMODORO_APPLICATION_PHASE_TIME_SETUP ||
         view->page != POMODORO_APPLICATION_PAGE_MAIN) {
         lv_obj_add_flag(view_context.sound_button, LV_OBJ_FLAG_HIDDEN);
-        hide_agent_status_indicator();
         render_auxiliary_page(view);
         render_confirmation(view);
         return true;
@@ -2334,7 +2251,6 @@ bool pomodoro_device_view_render(const pomodoro_application_view_t *view)
         }
     }
 
-    render_agent_status_indicator(view);
     render_confirmation(view);
     return true;
 }
@@ -2391,7 +2307,6 @@ void pomodoro_device_view_show_startup_error(const char *message,
         lv_obj_add_flag(view_context.top_power_status, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(view_context.set_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(view_context.boundary_feedback, LV_OBJ_FLAG_HIDDEN);
-        hide_agent_status_indicator();
         for (uint8_t index = 0; index < 4U; index++) {
             lv_obj_add_flag(view_context.set_markers[index],
                             LV_OBJ_FLAG_HIDDEN);

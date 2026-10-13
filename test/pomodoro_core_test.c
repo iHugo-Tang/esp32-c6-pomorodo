@@ -325,6 +325,49 @@ static void test_persistence_detects_corruption(void)
                                         &restored_statistics, NULL));
 }
 
+static void test_version_10_settings_preserve_timer_and_statistics(void)
+{
+    /* Bytes from the previous little-endian settings layout, including padding. */
+    uint8_t settings_bytes[] = {
+        25, 0, 5, 0, 15, 0, 8, 1, 1, 3, 80, 40, 1, 1, 10, 0,
+    };
+    assert(POMODORO_SETTINGS_VERSION == 10U);
+    assert(sizeof(pomodoro_settings_t) == sizeof(settings_bytes));
+    assert(offsetof(pomodoro_settings_t, reserved) == 12U);
+    assert(offsetof(pomodoro_settings_t,
+                    pomodoro_completion_transition_seconds) == 14U);
+
+    pomodoro_model_t model = fresh_model();
+    model.timer.set_progress = 2U;
+    assert(pomodoro_start(&model, 100U) == POMODORO_OK);
+    pomodoro_statistics_store_t statistics;
+    pomodoro_statistics_init(&statistics);
+    statistics.count = 1U;
+    statistics.days[0] = (pomodoro_daily_statistics_t) {
+        .date = {2026U, 10U, 13U},
+        .completed_pomodoros = 2U,
+        .completed_focus_seconds = 3000U,
+    };
+    for (uint8_t flags = 0U; flags < 4U; ++flags) {
+        pomodoro_persisted_state_t persisted;
+        assert(pomodoro_persistence_pack(&persisted, &model, &statistics));
+        settings_bytes[12] = flags & 1U;
+        settings_bytes[13] = (flags >> 1U) & 1U;
+        memcpy(&persisted.settings.value, settings_bytes, sizeof(settings_bytes));
+        persisted.checksum = pomodoro_test_crc32(
+            &persisted, offsetof(pomodoro_persisted_state_t, checksum));
+
+        pomodoro_model_t restored;
+        pomodoro_statistics_store_t restored_statistics;
+        assert(pomodoro_persistence_unpack(&persisted, &restored,
+                                           &restored_statistics, NULL));
+        assert(restored.settings.focus_minutes == 25U);
+        assert(restored.settings.pomodoro_completion_transition_seconds == 10U);
+        assert(memcmp(&restored.timer, &model.timer, sizeof(model.timer)) == 0);
+        assert(memcmp(&restored_statistics, &statistics, sizeof(statistics)) == 0);
+    }
+}
+
 static void test_journal_survives_torn_write(void)
 {
     pomodoro_test_memory_journal_t memory;
@@ -410,6 +453,7 @@ int main(void)
     test_statistics_rejection_does_not_consume_settlement_sequence();
     test_local_time_round_trips_through_wall_time();
     test_persistence_detects_corruption();
+    test_version_10_settings_preserve_timer_and_statistics();
     test_journal_survives_torn_write();
     test_legacy_persisted_version_is_treated_as_empty();
     puts("pomodoro_core_test: all tests passed");

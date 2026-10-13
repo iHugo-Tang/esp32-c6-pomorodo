@@ -40,7 +40,6 @@ bool pomodoro_board_read_volume_buttons(bool *increase, bool *decrease);
 bool pomodoro_board_read_power_events(bool *short_press, bool *long_press);
 bool pomodoro_board_play_focus_completion_sound(uint8_t volume);
 bool pomodoro_board_play_break_completion_sound(uint8_t volume);
-bool pomodoro_board_play_waiting_sound(uint8_t volume);
 bool pomodoro_board_read_acceleration(pomodoro_orientation_accel_t *accel);
 bool pomodoro_board_is_touch_active(void);
 void pomodoro_board_set_display_rotation(pomodoro_ui_orientation_t orientation);

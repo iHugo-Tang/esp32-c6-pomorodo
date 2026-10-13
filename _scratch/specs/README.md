@@ -8,8 +8,7 @@ Read these by product domain. Each rule has one home; feature specs only show li
 - [Date and time](date-and-time.md) — local wall time, RTC failure, and manual setup.
 - [Navigation and settings](navigation-and-settings.md) — page flow, settings editing, and switch-row interaction.
 - [Display and input](display-and-input.md) — display lifecycle, touch, buttons, hardware status, and UI Orientation.
-- [Sound and audio feedback](sound.md) — volume, completion audio, and Waiting Sound.
-- [Agent Status](agent-status.md) — Codex Workspace status, broker, device protocol, and safe flashing.
+- [Sound and audio feedback](sound.md) — volume and completion audio.
 
 ## Engineering boundary
 

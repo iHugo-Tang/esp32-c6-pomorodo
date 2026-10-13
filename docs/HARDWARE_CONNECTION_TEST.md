@@ -32,7 +32,6 @@
 - PCF85063 失效、恢复和 Pending Statistics 的完整实机流程；
 - 物理音量键、电池、充电、USB Power 和 PMIC 行为；
 - AMOLED 调暗、Display Off、触摸唤醒、完成唤醒和像素偏移；
-- Waiting Sound 的触发、抑制、音量和音频竞争；
 - 日期时间滚轮快速滑动的流畅度和停稳值；
 - 长时间运行、跨午夜和重复断电恢复的计时误差。
 
@@ -55,6 +54,6 @@ idf.py -p /dev/cu.usbmodem11101 monitor
 
 ## 安全烧录
 
-使用 `tools/flash.sh`，不要直接抢占 Agent Status broker 的串口。脚本创建 `flash-reservation`，等待 broker 释放端口，并在成功、失败、超时或中断时清理自己的保留。
+使用 `tools/flash.sh`；烧录前关闭占用串口的 monitor。
 
 不要运行 `erase-flash`。它会删除 Settings、当前 Timer、Set Progress 和 Statistics。正常 flash 只更新固件相关分区并保留产品状态。

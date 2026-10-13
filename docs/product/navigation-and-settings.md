@@ -10,7 +10,7 @@ Menu 包含 Statistics、Settings 和 `Clear Set Progress`。从 Menu 打开的�
 
 ## Settings
 
-Settings 管理计时时长、自动开始、声音、显示、日期时间、Daily Goal、Agent Status、Waiting Sound 和电源操作。
+Settings 管理计时时长、自动开始、声音、显示、日期时间、Daily Goal 和电源操作。
 
 - switch 立即生效并保存；
 - 数值先编辑草稿，Confirm 后才保存；

@@ -1,8 +1,10 @@
 ---
-status: accepted
+status: superseded
 ---
 
 # 支持 OpenCode Workspace 作为独立 Agent Source
+
+> 已被 [ADR-0017](0017-use-device-only-as-pomodoro-timer.md) 取代；以下内容仅保留为历史。
 
 OpenCode 1.18.29 已提供 lifecycle events 和可直接执行 slash action 的 TUI plugin 接口，因此 Agent Status 可以在保留现有 Codex 集成的同时支持 OpenCode Workspace。OpenCode 与 Codex 即使指向同一代码库也使用不同 Agent Source identity；两者可以同时上报，但只有 Selected Agent Source 影响设备，显式选择 OpenCode 后 Codex 状态不再参与当前显示。
 

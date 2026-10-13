@@ -13,4 +13,4 @@ status: superseded by ADR-0012 and ADR-0015
 - 截图最大为 480×480 RGB565；截图期间不允许文本混入二进制帧。
 - 烧录工具通过存活 PID 保留协调串口，只等待有限时间，并且不向宿主进程发送停止或终止信号。
 
-OpenCode 来源模型后来被 [ADR-0012](./0012-use-independent-agent-status-broker.md) 和 [ADR-0015](./0015-agent-status-only-supports-codex-workspaces.md) 取代；`OC1` 与 `POMO1` 的设备边界保留。
+OpenCode 来源模型后来被 [ADR-0012](./0012-use-independent-agent-status-broker.md) 和 [ADR-0015](./0015-agent-status-only-supports-codex-workspaces.md) 取代；[ADR-0017](0017-use-device-only-as-pomodoro-timer.md) 已移除 `OC1`，仅保留 `POMO1` 只读截图。

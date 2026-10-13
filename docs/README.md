@@ -9,7 +9,6 @@
 - [导航与设置](product/navigation-and-settings.md)
 - [显示、供电与输入](product/display-power-and-input.md)
 - [声音](product/sound.md)
-- [Agent Status](product/agent-status.md)
 - [固件边界](product/firmware.md)
 
 领域术语以根目录的 [CONTEXT.md](../CONTEXT.md) 为准。
@@ -18,7 +17,7 @@
 
 - [硬件连接和实机验证](HARDWARE_CONNECTION_TEST.md)
 - [页面流程图](diagrams/pomodoro_prototype_01_flow_navigation.mmd)
-- [当前 UI 截图](ui/)
+- [实机 UI 截图](ui/)
 
 ## 决策记录
 

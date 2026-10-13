@@ -2,15 +2,15 @@
 
 运行在 Waveshare ESP32-C6-Touch-AMOLED-2.16 上的离线番茄钟。
 
-它不用联网。时间、设置、当前计时和统计都保存在设备中。固件在电脑上构建，通过 USB-C 烧录和调试。
+设备仅作为离线番茄钟使用。它不用联网。时间、设置、当前计时和统计都保存在设备中。固件在电脑上构建，通过 USB-C 烧录和调试。
 
-![当前固件的 Focus 暂停界面](docs/esp32-screen.png)
+![设备的 Focus 暂停界面](docs/esp32-screen.png)
 
-上图由设备上的当前固件直接导出。真机使用 480×480 AMOLED 触摸屏，界面为英文。
+上图由设备固件直接导出。真机使用 480×480 AMOLED 触摸屏，界面为英文。
 
 ## 界面
 
-下面的图片由当前固件在实机上绘制，再通过 USB 截图命令导出。Statistics 中的数字是截图用示例，不是用户数据。
+下面的图片来自此前固件的实机截图；Settings 中的 Agent 分组现已移除，新版截图待实机更新。Statistics 中的数字是截图用示例，不是用户数据。
 
 | Focus Ready                             | Focus Running                               | Focus Paused                              |
 | --------------------------------------- | ------------------------------------------- | ----------------------------------------- |
@@ -38,7 +38,6 @@
 - 手动设置本地日期和时间，不使用网络校时。
 - 支持触摸、滑动切换模式、声音、亮度和自动旋转。
 - 支持电池状态、低电量提示、自动调暗和熄屏。
-- 可通过 USB 显示当前 Codex Workspace 或 OpenCode Workspace 的 Agent Status。
 
 ## 硬件
 
@@ -92,6 +91,7 @@
 cmake -S test -B build/host
 cmake --build build/host --parallel
 ctest --test-dir build/host --output-on-failure
+python3 tools/check-flash.py
 ```
 
 ## 构建固件
@@ -115,13 +115,13 @@ ls /dev/cu.usbmodem*
 tools/flash.sh -p /dev/cu.usbmodem11101
 ```
 
-`tools/flash.sh` 会让 Agent Status broker 暂时释放 USB 串口，烧录结束后自动恢复。串口名称可能不同，也可以通过 `POMODORO_PORT` 指定。
+串口名称可能不同，也可以通过 `POMODORO_PORT` 指定。烧录前请关闭占用串口的 monitor。
 
 不要运行 `erase-flash`。它会删除 Settings、当前计时和 Statistics。
 
 ## 导出 UI 截图
 
-固件提供只读截图命令。先关闭占用串口的 monitor 或 Agent Status broker，再在 ESP-IDF 环境中运行：
+固件提供只读截图命令。先关闭占用串口的 monitor，再在 ESP-IDF 环境中运行：
 
 ```sh
 python tools/export_screenshot.py \
@@ -130,63 +130,6 @@ python tools/export_screenshot.py \
 ```
 
 脚本会把设备当前显示缓冲保存为 480×480 PNG，不会修改设备状态。
-
-## Agent Status（可选）
-
-设备可以在主界面左下角显示所选 Workspace 的状态：Error、Waiting、Working、Completed 或 Idle。状态通过 USB 发送，不会控制或修改 Pomodoro 计时。Codex 与 OpenCode 是两个独立来源；只有显式选择才会切换，且同一时刻只有一个来源生效。
-
-插件源码位于 [plugins/pomodoro-agent-status](plugins/pomodoro-agent-status)。
-
-### Codex
-
-安装方法：
-
-```sh
-python3 ~/.codex/skills/.system/plugin-creator/scripts/create_basic_plugin.py \
-  pomodoro-agent-status --with-marketplace
-ditto plugins/pomodoro-agent-status "$HOME/plugins/pomodoro-agent-status"
-codex plugin add pomodoro-agent-status@personal
-```
-
-打开新的 Codex thread，运行 `/hooks` 并信任插件 hooks，然后重启 Codex Desktop。在需要显示状态的 thread 中运行：
-
-```text
-$pomodoro-select
-```
-
-这会选择当前 Codex Workspace，并在需要时启动 broker。也可以手动以前台方式运行 broker：
-
-```sh
-node tools/pomodoro-agent-status-broker.mjs
-```
-
-### OpenCode
-
-最低已验证版本为 OpenCode 1.18.29。安装、校验与卸载：
-
-```sh
-node plugins/pomodoro-agent-status/scripts/install-opencode.mjs install
-node plugins/pomodoro-agent-status/scripts/install-opencode.mjs verify
-node plugins/pomodoro-agent-status/scripts/install-opencode.mjs uninstall
-```
-
-`install` 是幂等的用户级安装：把权威源码复制到用户配置目录并在 `opencode.json`/`tui.json` 中注册 server 与 TUI 两个插件面。安装器只重写纯 JSON 配置：存在 `opencode.jsonc`/`tui.jsonc`（单独或与同名 JSON 并存）或任一配置无法解析时，安装/卸载/校验会在改动任何文件之前整体拒绝并给出手动处理指引。按需 broker 子进程用显式 Node 运行时启动：可用 `POMODORO_BROKER_NODE` 指定；非 Node 宿主（OpenCode/Bun TUI）从 PATH 解析 `node`，不可用时显式报错；`verify` 会校验该运行时。配置变更只在完全退出所有 OpenCode 进程并重启后生效。`verify` 会校验版本下限、文件一致性、两个注册项，并可用 `--project-dir DIR` 同时检查 `.opencode/plugin/` 与 `.opencode/plugins/` 两个项目级目录没有重复的 Pomodoro 插件副本。当前集成已实现并有自动化 host 检查覆盖；真实 OpenCode TUI 冒烟与物理设备验收仍待人工执行。
-
-在 OpenCode TUI 中输入 `/pomodoro-select` 直接选择当前 OpenCode Workspace。该动作不提交 prompt、不创建 Session 消息、不产生模型请求，也不产生伪状态周期。反馈只有三种有界结果：选择成功（含 revision）、等待 broker 接管、失败（保留原选择）。首版只支持从 OpenCode TUI 选择；OpenCode Desktop、Web、非交互 CLI 与 npm 发布不在范围内。`/pomodoro-select` 依赖 1.18.29 的直接 slash 注册 API（已标记 deprecated）。安装校验本身只校验版本下限与文件/注册项一致性；直接 slash API 由 TUI 插件在启动时校验——该 API 不可用时 TUI 插件启动显式失败，不会退化为会触发模型的同名 Markdown 命令。
-
-### Broker 与旧数据
-
-自动启动的 broker 在十秒没有有效 Agent report 后退出；手动以前台方式运行 broker：
-
-```sh
-node tools/pomodoro-agent-status-broker.mjs
-```
-
-如果安装过旧开发版，请先停止旧 broker，再删除旧状态目录。新版不会迁移这份数据：
-
-```sh
-rm -rf -- "${XDG_STATE_HOME:-$HOME/.local/state}/opencode/pomodoro-status"
-```
 
 ## 目录
 
@@ -197,8 +140,7 @@ rm -rf -- "${XDG_STATE_HOME:-$HOME/.local/state}/opencode/pomodoro-status"
 | `components/pomodoro_platform`  | 屏幕、触摸、RTC、音频、电源和 NVS    |
 | `main`                          | ESP-IDF 程序入口和依赖               |
 | `test`                          | 主机端自动化测试                     |
-| `tools`                         | 烧录、截图和 Agent Status 工具       |
-| `plugins/pomodoro-agent-status` | Codex 与 OpenCode Agent Status 插件源码 |
+| `tools`                         | 烧录和截图工具       |
 | `docs`                          | 产品说明、硬件记录和 ADR             |
 
 领域术语见 [CONTEXT.md](CONTEXT.md)，架构决定见 [docs/adr](docs/adr)。

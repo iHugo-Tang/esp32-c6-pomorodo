@@ -47,8 +47,8 @@ typedef struct {
     uint8_t volume;
     uint8_t brightness_percent;
     uint8_t idle_brightness_percent;
-    bool agent_status_enabled;
-    bool waiting_sound_enabled;
+    /* Retain the version 10 storage layout for existing timer and statistics. */
+    uint8_t reserved[2];
     uint8_t pomodoro_completion_transition_seconds;
 } pomodoro_settings_t;
 

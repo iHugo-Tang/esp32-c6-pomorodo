@@ -1,8 +1,10 @@
 ---
-status: accepted
+status: superseded
 ---
 
 # 使用 Codex Workspace lifecycle adapter
+
+> 已被 [ADR-0017](0017-use-device-only-as-pomodoro-timer.md) 取代；以下内容仅保留为历史。
 
 Codex 通过个人全局插件 `pomodoro-agent-status` 的 lifecycle hooks 向独立 Agent Status broker 上报。Agent Source 以 Codex Workspace 为边界：Git 目录使用规范化仓库根目录，非 Git 目录使用规范化工作目录；同一来源内的 chat、fork、side chat 与 subagent 由 broker 按成员 mask 聚合。
 

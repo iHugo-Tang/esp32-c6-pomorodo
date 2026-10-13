@@ -1,6 +1,8 @@
+> 已退役：Agent Status 插件与设备功能已移除。此文档仅保留历史，当前边界见 [ADR-0017](../adr/0017-use-device-only-as-pomodoro-timer.md)。
+
 # OpenCode Agent Status Handoff
 
-Status: confirmed
+Status: retired
 
 ## Goal
 

@@ -1,8 +1,10 @@
 ---
-status: accepted
+status: superseded
 ---
 
 # 选择 Agent Source 时按需启动 broker
+
+> 已被 [ADR-0017](0017-use-device-only-as-pomodoro-timer.md) 取代；以下内容仅保留为历史。
 
 Codex 的 `$pomodoro-select` 在 Agent Status broker socket 没有监听者时，以 detached Node 子进程启动插件内的 broker；已有实例时直接复用。broker 的唯一实现随插件安装，仓库 `tools/pomodoro-agent-status-broker.mjs` 只保留为薄前台入口。
 

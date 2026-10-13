@@ -10,7 +10,6 @@ idf_component_register(
         "pomodoro_nvs_journal.c"
     INCLUDE_DIRS "include"
     EMBED_FILES
-        "assets/warning.pcm"
         "assets/rest.pcm"
     REQUIRES
         pomodoro_app

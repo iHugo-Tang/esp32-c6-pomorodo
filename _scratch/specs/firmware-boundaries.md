@@ -12,7 +12,7 @@ The application boundary accepts user actions and time, renders observable view 
 
 ## Persistence formats
 
-Settings and top-level persisted state carry explicit format versions. Unreleased development formats that predate the current Agent Status and Waiting Sound settings are treated as empty storage rather than producing Storage Error. Such a reset restores default Settings, an empty Timer and Set Progress, and empty Statistics; `Agent status` and `Waiting sound` default to on. The independent RTC is not erased by this application-state reset.
+Settings and top-level persisted state carry explicit format versions. Settings version 10 retains two reserved bytes so existing Settings, Timer, Set Progress, and Statistics remain readable after removal of the external status integration. Unsupported earlier development formats are treated as empty storage. The independent RTC is not erased by this application-state reset.
 
 Current product state uses a dual-slot journal so Settings, Timer, Set Progress, and Statistics survive interrupted writes. The Timer record distinguishes unsettled from settled completion; recovery details live in [Pomodoro state and statistics](pomodoro-and-statistics.md#recovery).
 

@@ -1,6 +1,5 @@
 #include "pomodoro_application.h"
 #include "pomodoro_display_policy.h"
-#include "pomodoro_agent_status.h"
 #include "pomodoro_settings_editor.h"
 #include "pomodoro_statistics_projection.h"
 
@@ -35,10 +34,6 @@ struct pomodoro_application {
     uint8_t effective_brightness_percent;
     pomodoro_application_manual_time_t manual_time_draft;
     bool time_setup_can_cancel;
-    pomodoro_agent_status_t agent_status;
-    uint64_t last_oc1_control_wall_time_seconds;
-    bool waiting_sound_status_valid;
-    pomodoro_agent_status_state_t waiting_sound_last_status;
 };
 
 static pomodoro_application_result_t confirm_settings(
@@ -103,10 +98,7 @@ static bool platform_is_valid(const pomodoro_application_platform_t *platform)
            platform->load != NULL && platform->save != NULL &&
            platform->render != NULL &&
            platform->play_focus_complete != NULL &&
-           platform->play_break_complete != NULL &&
-           platform->play_waiting_sound != NULL &&
-           platform->read_oc1_line != NULL &&
-           platform->write_oc1_line != NULL;
+           platform->play_break_complete != NULL;
 }
 
 static void snapshot_view(pomodoro_application_t *application,
@@ -175,42 +167,6 @@ static void snapshot_view(pomodoro_application_t *application,
     application->view.statistics_available = application->view.rtc_is_valid;
     application->view.time_setup_can_cancel =
         application->time_setup_can_cancel;
-    uint64_t agent_status_now = time != NULL
-        ? time->wall_time_seconds
-        : (application->has_last_time
-               ? application->last_time.wall_time_seconds
-               : 0U);
-    pomodoro_agent_status_state_t agent_status =
-        pomodoro_agent_status_resolve(&application->agent_status,
-                                      agent_status_now);
-    application->view.agent_status = agent_status;
-    application->view.agent_status_visible =
-        pomodoro_agent_status_connected(&application->agent_status);
-    application->view.agent_status_acknowledgeable =
-        application->view.agent_status_visible &&
-        (agent_status == POMODORO_AGENT_STATUS_ERROR ||
-         agent_status == POMODORO_AGENT_STATUS_COMPLETED);
-    uint32_t agent_status_color = 0U;
-    switch (agent_status) {
-    case POMODORO_AGENT_STATUS_ERROR:
-        agent_status_color = 0xFF5C5C;
-        break;
-    case POMODORO_AGENT_STATUS_WAITING:
-        agent_status_color = 0xFFD166;
-        break;
-    case POMODORO_AGENT_STATUS_WORKING:
-        agent_status_color = 0x5B8CFF;
-        break;
-    case POMODORO_AGENT_STATUS_COMPLETED:
-        agent_status_color = 0x4DD17A;
-        break;
-    case POMODORO_AGENT_STATUS_IDLE:
-        agent_status_color = 0x454B56;
-        break;
-    default:
-        break;
-    }
-    application->view.agent_status_color = agent_status_color;
     pomodoro_statistics_project_view(
         &application->statistics,
         resolved_time != NULL ? resolved_time->local_date
@@ -260,25 +216,9 @@ static pomodoro_application_result_t render(
     pomodoro_event_t completion_event)
 {
     snapshot_view(application, time, completion_event);
-    bool waiting_sound_requested =
-        application->view.agent_status_visible &&
-        application->view.agent_status == POMODORO_AGENT_STATUS_WAITING &&
-        (!application->waiting_sound_status_valid ||
-         application->waiting_sound_last_status !=
-             POMODORO_AGENT_STATUS_WAITING);
-    application->waiting_sound_status_valid =
-        application->view.agent_status_visible;
-    application->waiting_sound_last_status = application->view.agent_status;
     if (!application->platform.render(application->platform.context,
                                       &application->view)) {
         return fail_platform(application, POMODORO_APPLICATION_ERROR_DISPLAY);
-    }
-    if (waiting_sound_requested && completion_event == POMODORO_EVENT_NONE &&
-        application->model.settings.waiting_sound_enabled &&
-        application->model.settings.volume > 0U) {
-        (void) application->platform.play_waiting_sound(
-            application->platform.context,
-            application->model.settings.volume);
     }
     return POMODORO_APPLICATION_OK;
 }
@@ -533,11 +473,6 @@ static pomodoro_application_result_t boot(
         .hour = 12U,
         .minute = 0U,
     };
-    pomodoro_agent_status_init(
-        &application->agent_status,
-        application->model.settings.agent_status_enabled,
-        time.wall_time_seconds);
-    application->last_oc1_control_wall_time_seconds = 0U;
     if (!application->platform.set_display_awake(
             application->platform.context, true) ||
         !application->platform.set_display_brightness_percent(
@@ -738,51 +673,6 @@ static pomodoro_application_result_t confirm_mode_switch(
     return save_and_render(application, NULL);
 }
 
-static pomodoro_application_result_t process_agent_status(
-    pomodoro_application_t *application,
-    const pomodoro_application_time_t *time)
-{
-    if (time == NULL) {
-        return POMODORO_APPLICATION_OK;
-    }
-    uint64_t now = time->wall_time_seconds;
-    char line[POMODORO_OC1_MAX_LINE_LENGTH + 1U];
-    bool available = false;
-    while (application->platform.read_oc1_line(
-               application->platform.context, line, sizeof(line),
-               &available) && available) {
-        if (application->model.settings.agent_status_enabled) {
-            uint32_t revision = 0U;
-            uint8_t mask = 0U;
-            if (pomodoro_oc1_parse_line(line, strlen(line), &revision,
-                                        &mask) == POMODORO_OC1_LINE_STATE) {
-                pomodoro_agent_status_apply(
-                    &application->agent_status, revision, mask, now);
-            }
-        }
-    }
-    pomodoro_agent_status_tick(&application->agent_status, now);
-    if (now - application->last_oc1_control_wall_time_seconds >=
-        POMODORO_OC1_CONTROL_INTERVAL_SECONDS) {
-        application->last_oc1_control_wall_time_seconds = now;
-        char control[POMODORO_OC1_MAX_LINE_LENGTH + 1U];
-        if (pomodoro_oc1_format_control(
-                application->model.settings.agent_status_enabled,
-                control, sizeof(control))) {
-            (void) application->platform.write_oc1_line(
-                application->platform.context, control);
-        }
-    }
-    if (pomodoro_agent_status_take_wake(&application->agent_status)) {
-        application->display_manually_asleep = false;
-        application->last_interaction_wall_time_seconds = now;
-        return set_display_state(
-            application, true,
-            application->model.settings.brightness_percent);
-    }
-    return POMODORO_APPLICATION_OK;
-}
-
 static pomodoro_application_result_t tick(
     pomodoro_application_t *application)
 {
@@ -790,10 +680,6 @@ static pomodoro_application_result_t tick(
         application->last_time.rtc_is_valid;
     pomodoro_application_time_t time;
     pomodoro_application_result_t result = read_time(application, &time);
-    if (result != POMODORO_APPLICATION_OK) {
-        return result;
-    }
-    result = process_agent_status(application, &time);
     if (result != POMODORO_APPLICATION_OK) {
         return result;
     }
@@ -824,10 +710,6 @@ static pomodoro_application_result_t tick_time_setup(
 {
     pomodoro_application_time_t time;
     pomodoro_application_result_t result = read_time(application, &time);
-    if (result != POMODORO_APPLICATION_OK) {
-        return result;
-    }
-    result = process_agent_status(application, &time);
     if (result != POMODORO_APPLICATION_OK) {
         return result;
     }
@@ -1184,36 +1066,6 @@ pomodoro_application_result_t pomodoro_application_dispatch(
         }
         return confirm_settings(application, &settings);
     }
-    if (action == POMODORO_APPLICATION_ACTION_TOGGLE_AGENT_STATUS) {
-        pomodoro_settings_t settings = application->model.settings;
-        settings.agent_status_enabled = !settings.agent_status_enabled;
-        return confirm_settings(application, &settings);
-    }
-    if (action == POMODORO_APPLICATION_ACTION_TOGGLE_WAITING_SOUND) {
-        pomodoro_settings_t settings = application->model.settings;
-        settings.waiting_sound_enabled = !settings.waiting_sound_enabled;
-        return confirm_settings(application, &settings);
-    }
-    if (action == POMODORO_APPLICATION_ACTION_ACK_AGENT_STATUS) {
-        if (application->page != POMODORO_APPLICATION_PAGE_MAIN) {
-            return POMODORO_APPLICATION_ERR_INVALID_STATE;
-        }
-        uint8_t acknowledged = 0U;
-        uint64_t now = application->has_last_time
-            ? application->last_time.wall_time_seconds
-            : 0U;
-        if (pomodoro_agent_status_acknowledge(&application->agent_status, now,
-                                         &acknowledged)) {
-            char line[POMODORO_OC1_MAX_LINE_LENGTH + 1U];
-            if (pomodoro_oc1_format_ack(
-                    application->agent_status.revision, acknowledged,
-                    line, sizeof(line))) {
-                (void) application->platform.write_oc1_line(
-                    application->platform.context, line);
-            }
-        }
-        return render(application, NULL, POMODORO_EVENT_NONE);
-    }
     return POMODORO_APPLICATION_ERR_INVALID_STATE;
 }
 
@@ -1318,12 +1170,6 @@ static pomodoro_application_result_t confirm_settings(
         application->model.last_nonzero_volume = settings->volume;
     }
     application->model.settings = *settings;
-    pomodoro_agent_status_set_enabled(
-        &application->agent_status, settings->agent_status_enabled,
-        application->has_last_time
-            ? application->last_time.wall_time_seconds
-            : 0U);
-    application->last_oc1_control_wall_time_seconds = 0U;
     if (application->model.timer.timer_state == POMODORO_TIMER_READY) {
         application->model.timer.configured_duration_seconds =
             pomodoro_duration_seconds(&application->model,

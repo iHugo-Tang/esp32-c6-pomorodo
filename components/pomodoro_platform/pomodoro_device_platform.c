@@ -29,11 +29,9 @@ typedef struct {
     bool pending_power_action_set;
     pomodoro_application_action_t pending_power_action;
     pomodoro_orientation_resolver_t orientation;
-    char usb_line_buffer[POMODORO_OC1_MAX_LINE_LENGTH + 1U];
+    char usb_line_buffer[POMODORO_SCREENSHOT_COMMAND_LENGTH];
     size_t usb_line_length;
     bool usb_line_overflow;
-    char oc1_line[POMODORO_OC1_MAX_LINE_LENGTH + 1U];
-    bool oc1_line_available;
 } runtime_context_t;
 
 static const char *TAG = "pomodoro_runtime";
@@ -135,11 +133,6 @@ static bool play_break_completion(void *context, uint8_t volume)
            pomodoro_board_play_break_completion_sound(volume);
 }
 
-static bool play_waiting_sound(void *context, uint8_t volume)
-{
-    return context != NULL && pomodoro_board_play_waiting_sound(volume);
-}
-
 static void poll_usb_input(runtime_context_t *target)
 {
     if (target == NULL) {
@@ -154,65 +147,19 @@ static void poll_usb_input(runtime_context_t *target)
                 memcmp(target->usb_line_buffer, POMODORO_SCREENSHOT_COMMAND,
                        POMODORO_SCREENSHOT_COMMAND_LENGTH) == 0) {
                 (void) pomodoro_board_request_screenshot();
-            } else if (!target->oc1_line_available &&
-                       !target->usb_line_overflow) {
-                memcpy(target->oc1_line, target->usb_line_buffer,
-                       target->usb_line_length);
-                target->oc1_line[target->usb_line_length] = '\0';
-                target->oc1_line_available = true;
             }
             target->usb_line_length = 0U;
             target->usb_line_overflow = false;
-            if (target->oc1_line_available) {
-                return;
-            }
         } else if (byte == '\r') {
             continue;
         } else if (target->usb_line_length <
-                   POMODORO_OC1_MAX_LINE_LENGTH) {
+                   POMODORO_SCREENSHOT_COMMAND_LENGTH) {
             target->usb_line_buffer[target->usb_line_length++] =
                 (char) byte;
         } else {
             target->usb_line_overflow = true;
         }
     }
-}
-
-static bool read_oc1_line(void *context, char *line, size_t size,
-                               bool *available)
-{
-    runtime_context_t *target = context;
-    if (line == NULL || size == 0U || available == NULL) {
-        return false;
-    }
-    *available = false;
-    if (target == NULL || !target->oc1_line_available) {
-        return true;
-    }
-    size_t length = strlen(target->oc1_line);
-    if (length >= size) {
-        target->oc1_line_available = false;
-        return false;
-    }
-    memcpy(line, target->oc1_line, length + 1U);
-    target->oc1_line_available = false;
-    *available = true;
-    return true;
-}
-
-static bool write_oc1_line(void *context, const char *line)
-{
-    runtime_context_t *target = context;
-    if (target == NULL || line == NULL) {
-        return false;
-    }
-    size_t length = strlen(line);
-    if (length == 0U || length > POMODORO_OC1_MAX_LINE_LENGTH) {
-        return false;
-    }
-    return pomodoro_board_write_usb_serial_jtag(line, length) ==
-               (int) length &&
-           pomodoro_board_write_usb_serial_jtag("\n", 1U) == 1;
 }
 
 static void dispatch_action(pomodoro_application_action_t action,
@@ -460,9 +407,6 @@ esp_err_t pomodoro_platform_start(void)
         .render = render_view,
         .play_focus_complete = play_completion,
         .play_break_complete = play_break_completion,
-        .play_waiting_sound = play_waiting_sound,
-        .read_oc1_line = read_oc1_line,
-        .write_oc1_line = write_oc1_line,
     };
     pomodoro_application_result_t app_result =
         pomodoro_application_create(&runtime.application, &platform);
